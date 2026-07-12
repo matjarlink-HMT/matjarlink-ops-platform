@@ -1,0 +1,28 @@
+# Render.com blueprint — one-click deploy for a dedicated online URL.
+# 1) ارفع هذا المجلد إلى مستودع GitHub.
+# 2) Render → New → Blueprint → اختر المستودع → Apply.
+# 3) أضف متغيرات البيئة (من .env.example) في Render dashboard.
+services:
+  - type: web
+    name: matjarlink-ops
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: MODE
+        value: mock            # حوّلها إلى live بعد إضافة المفاتيح
+      - key: META_ACCESS_TOKEN
+        sync: false
+      - key: META_IG_USER_ID
+        value: "17841449202353128"
+      - key: META_PAGE_ID
+        value: "1247632705095985"
+      - key: WHATSAPP_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_ID
+        sync: false
+      - key: WINDSOR_API_KEY
+        sync: false
+      - key: DASHBOARD_PASSWORD
+        sync: false
