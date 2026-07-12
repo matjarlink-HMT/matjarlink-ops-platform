@@ -27,7 +27,10 @@ export const I18N = {
     install: "ثبّت كتطبيق", notif: "التنبيهات", notif_none: "لا تنبيهات جديدة", refreshOn: "تحديث تلقائي",
     campNone: "لا حملات مدفوعة نشطة", campPolicy: "سياسة ما قبل الإطلاق. المخطّط لاحقًا:",
     mediaShare: "لعرض التصاميم داخل الموقع، شارِك مجلد Designs/Batch_July في Drive كـ«أي شخص لديه الرابط — مُشاهد».",
-    cal_pub: "نشر", cal_start: "بدء تصميم"
+    cal_pub: "نشر", cal_start: "بدء تصميم",
+    nav_connections: "الربط", conn_on: "مربوط", conn_off: "غير مربوط", conn_activate: "تفعيل الربط",
+    conn_open: "افتح صفحة المزوّد ↗", conn_saved: "تم الحفظ — الحالة محدّثة", conn_set: "محفوظ ✓",
+    conn_hint: "تُحفظ المفاتيح في الخادم فقط ولا تظهر في المتصفح. يُفضّل تفعيل كلمة مرور اللوحة (DASHBOARD_PASSWORD)."
   },
   en: {
     brand_sub: "AI Ops · Command Center", sub: "AI marketing team operations — MatjarLink",
@@ -49,7 +52,10 @@ export const I18N = {
     install: "Install app", notif: "Notifications", notif_none: "No new alerts", refreshOn: "Auto-refresh",
     campNone: "No active paid campaigns", campPolicy: "Pre-launch policy. Planned:",
     mediaShare: "To preview designs in-site, share the Drive folder Designs/Batch_July as “Anyone with the link — Viewer”.",
-    cal_pub: "publish", cal_start: "design start"
+    cal_pub: "publish", cal_start: "design start",
+    nav_connections: "Connections", conn_on: "Connected", conn_off: "Not connected", conn_activate: "Activate",
+    conn_open: "Open provider ↗", conn_saved: "Saved — status updated", conn_set: "saved ✓",
+    conn_hint: "Keys are stored on the server only, never shown in the browser. Enable a dashboard password (DASHBOARD_PASSWORD)."
   },
   fa: {
     brand_sub: "AI Ops · مرکز فرماندهی", sub: "عملیات تیم بازاریابی هوش مصنوعی — متجرلینک",
@@ -71,6 +77,9 @@ export const I18N = {
     install: "نصب برنامه", notif: "اعلان‌ها", notif_none: "هشدار جدیدی نیست", refreshOn: "بروزرسانی خودکار",
     campNone: "کمپین پولی فعالی نیست", campPolicy: "سیاست پیش از راه‌اندازی. برنامه‌ریزی‌شده:",
     mediaShare: "برای نمایش طرح‌ها در سایت، پوشه Designs/Batch_July در Drive را «هر کسی با لینک — بیننده» کنید.",
-    cal_pub: "انتشار", cal_start: "شروع طراحی"
+    cal_pub: "انتشار", cal_start: "شروع طراحی",
+    nav_connections: "اتصالات", conn_on: "متصل", conn_off: "متصل نیست", conn_activate: "فعال‌سازی",
+    conn_open: "باز کردن ارائه‌دهنده ↗", conn_saved: "ذخیره شد — وضعیت بروزرسانی شد", conn_set: "ذخیره‌شده ✓",
+    conn_hint: "کلیدها فقط روی سرور ذخیره می‌شوند و در مرورگر نمایش داده نمی‌شوند. رمز داشبورد را فعال کنید."
   }
 };

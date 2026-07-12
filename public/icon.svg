@@ -1,7 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#6E1444"/>
-  <path d="M150 210 h95 a20 20 0 0 1 20 18 l16 150 a18 18 0 0 1-18 20 h-131 a18 18 0 0 1-18-20 l16-150 a20 20 0 0 1 20-18z" fill="#E8890F"/>
-  <path d="M175 210 v-14 a34 34 0 0 1 68 0 v14" fill="none" stroke="#E8890F" stroke-width="14" stroke-linecap="round"/>
-  <path d="M270 250 h95 a20 20 0 0 1 20 18 l16 120 a18 18 0 0 1-18 20 h-131 a18 18 0 0 1-18-20 l16-120 a20 20 0 0 1 20-18z" fill="#F9A43C"/>
-  <text x="256" y="330" font-family="Arial, sans-serif" font-size="120" font-weight="800" fill="#fff" text-anchor="middle">ML</text>
+  <rect width="512" height="512" rx="112" fill="#FFFFFF"/>
+  <g transform="translate(86 84) scale(2.5)">
+    <rect x="62" y="34" width="40" height="46" rx="12" fill="#9D1F60"/>
+    <path d="M40 56 H72 Q78 56 79 62 L84 92 Q85 99 78 99 H34 Q27 99 28 92 L33 62 Q34 56 40 56 Z" fill="#F9A43C"/>
+    <path d="M44 56 C44 28 70 26 80 40" fill="none" stroke="#F9A43C" stroke-width="7" stroke-linecap="round"/>
+    <circle cx="44" cy="56" r="6.5" fill="#9D1F60"/>
+    <circle cx="80" cy="40" r="6.5" fill="#F9A43C"/>
+  </g>
 </svg>

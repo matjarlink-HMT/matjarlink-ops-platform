@@ -5,11 +5,20 @@ let lang = localStorage.getItem("ml_lang") || "ar";
 let autoTimer = null;
 const T = (k) => (I18N[lang] && I18N[lang][k]) || I18N.ar[k] || k;
 const $ = (s) => document.querySelector(s);
-const CH = { IG: ["#C13584", "IG"], FB: ["#1877F2", "f"], WA: ["#25D366", "WA"], TT: ["#111", "TT"], LI: ["#0A66C2", "in"], TH: ["#111", "@"] };
-const chan = (k) => { const c = CH[k] || ["#888", "?"]; return `<span class="chan" style="background:${c[0]}">${c[1]}</span>`; };
+const CH = { IG: "#C13584", FB: "#1877F2", WA: "#25D366", TT: "#111111", LI: "#0A66C2", TH: "#111111", AN: "#7A5A1A" };
+const GLYPH = {
+  IG: `<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="#fff" stroke-width="1.4"><rect x="2.3" y="2.3" width="11.4" height="11.4" rx="3.4"/><circle cx="8" cy="8" r="3"/><circle cx="11.4" cy="4.6" r=".85" fill="#fff" stroke="none"/></svg>`,
+  FB: `<svg viewBox="0 0 16 16" width="11" height="11" fill="#fff"><path d="M9.6 16v-6h2l.35-2.4H9.6V6.05c0-.7.22-1.15 1.2-1.15H12V2.7C11.5 2.63 10.7 2.6 9.85 2.6 8 2.6 6.8 3.73 6.8 5.75V7.6H4.7V10h2.1v6z"/></svg>`,
+  WA: `<svg viewBox="0 0 16 16" width="11" height="11" fill="#fff"><path d="M8 1.7A6.3 6.3 0 0 0 2.5 11.1L1.7 14l3-.8A6.3 6.3 0 1 0 8 1.7zm3 8.9c-.15.4-.75.75-1 .78-.28.03-.28.24-1.75-.37C6.4 10.2 5.5 8.6 5.42 8.5c-.07-.1-.6-.8-.6-1.5s.36-1.06.5-1.2c.13-.15.28-.18.37-.18h.27c.1 0 .2-.03.33.25l.5 1.2c.04.1.07.2 0 .3l-.15.24-.22.24c-.07.07-.15.15-.06.3.08.15.4.66.85 1.06.6.5 1.05.66 1.2.73.15.08.24.07.33-.04l.5-.58c.1-.15.22-.1.36-.06l1.13.53c.14.07.24.1.28.16.03.06.03.35-.12.74z"/></svg>`,
+  TT: `<svg viewBox="0 0 16 16" width="11" height="11" fill="#fff"><path d="M9.8 2c.2 1.4 1 2.35 2.5 2.5v1.9c-.9 0-1.7-.25-2.5-.75v3.75A3.45 3.45 0 1 1 6.3 5.05v1.95a1.6 1.6 0 1 0 1.6 1.6V2z"/></svg>`,
+  LI: `<svg viewBox="0 0 16 16" width="11" height="11" fill="#fff"><path d="M4.2 5.7H2.4V13h1.8zM3.3 2.6a1.05 1.05 0 1 0 0 2.1 1.05 1.05 0 0 0 0-2.1zM7.1 5.7H5.4V13h1.7V9.1c0-1 .2-1.95 1.35-1.95S9.5 8.2 9.5 9.2V13h1.75V8.8c0-2-.45-3.35-2.7-3.35-1.05 0-1.55.6-1.8 1z"/></svg>`,
+  TH: `<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="#fff" stroke-width="1.2"><path d="M8 14c-3.3 0-5-2.4-5-6s1.9-6 5-6c2.4 0 3.9 1.3 4.4 3.1M8.2 10.7c1.4 0 2.4-.7 2.4-1.8 0-1-.9-1.6-2-1.6-1.4 0-2.2.8-2.2 1.7 0 1 .9 1.5 1.9 1.5 1.9 0 2.7-1.3 2.7-3.1"/></svg>`,
+  AN: `<svg viewBox="0 0 16 16" width="11" height="11" fill="#fff"><rect x="2" y="9" width="2.6" height="5" rx=".5"/><rect x="6.7" y="5" width="2.6" height="9" rx=".5"/><rect x="11.4" y="7" width="2.6" height="7" rx=".5"/></svg>`
+};
+const chan = (k) => `<span class="chan" style="background:${CH[k] || "#888"}">${GLYPH[k] || k}</span>`;
 const pill = (a) => a ? `<span class="pill ${a[1]}">${a[0]}</span>` : "";
 const STMAP = { online: "p-ok", working: "p-info", scheduled: "p-info", idle: "p-idle", action: "p-bad", new: "p-new" };
-const NAV = ["overview", "agents", "needs", "queue", "prep", "analytics", "media", "calendar", "camp", "pub", "comments", "messages", "leads", "accounts"];
+const NAV = ["overview", "agents", "needs", "queue", "prep", "analytics", "media", "calendar", "camp", "pub", "comments", "messages", "leads", "accounts", "connections"];
 const HAS_COUNT = { agents: "agents", needs: "needs", queue: "queue", prep: "prep", pub: "published", comments: "comments", messages: "messages", leads: "leads", accounts: "accounts" };
 
 let gc = 0;
@@ -95,6 +104,30 @@ function render(p) {
   else if (p === "messages") { C.innerHTML = feed(S.messages, "m", "dm"); bindReply(); }
   else if (p === "leads") C.innerHTML = leadsView();
   else if (p === "accounts") C.innerHTML = `<div class="grid g2">${S.accounts.map(accCard).join("")}</div>`;
+  else if (p === "connections") renderConnections(C);
+}
+
+// ── connections (activation center) ───────────────────────────────
+async function renderConnections(C) {
+  C.innerHTML = `<div class="loading">…</div>`;
+  let data; try { data = await fetch("/api/connections").then(r => r.json()); } catch (e) { C.innerHTML = `<div class="loading">—</div>`; return; }
+  C.innerHTML = `<div class="note-info">🔒 ${T("conn_hint")}</div><div class="grid g2">${data.integrations.map(connCard).join("")}</div>`;
+  document.querySelectorAll("[data-conn]").forEach(b => b.onclick = () => activateConn(b.dataset.conn));
+}
+function connCard(it) {
+  return `<div class="card" id="cc-${it.key}"><div class="acc" style="margin-bottom:.5rem">${chan(it.icon)}<div style="flex:1"><div style="font-weight:800">${it.name}</div><div class="mut">${it.desc}</div></div>${pill([it.connected ? T("conn_on") : T("conn_off"), it.connected ? "p-ok" : "p-idle"])}</div>
+    ${it.fields.map(f => `<label class="clabel">${f.label}${f.secret ? " 🔑" : ""}</label><input class="cinput" data-k="${f.k}" type="${f.secret ? "password" : "text"}" placeholder="${f.set ? "•••••• " + T("conn_set") : ""}" autocomplete="off">`).join("")}
+    <div style="display:flex;gap:.6rem;margin-top:.7rem;align-items:center;flex-wrap:wrap"><button class="btn sm" data-conn="${it.key}">${T("conn_activate")}</button><a class="link" href="${it.help}" target="_blank">${T("conn_open")}</a><span class="ok-s" id="cm-${it.key}"></span></div></div>`;
+}
+async function activateConn(key) {
+  const card = document.querySelector("#cc-" + key), map = {};
+  card.querySelectorAll(".cinput").forEach(i => { if (i.value.trim()) map[i.dataset.k] = i.value.trim(); });
+  try {
+    await fetch("/api/connections", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(map) });
+    document.querySelector("#cm-" + key).textContent = "✓ " + T("conn_saved");
+    S = await fetch("/api/state").then(r => r.json()); buildChrome(); updateNotif();
+    setTimeout(() => renderConnections($("#content")), 700);
+  } catch (e) { document.querySelector("#cm-" + key).textContent = "✗"; }
 }
 
 // ── sections ──────────────────────────────────────────────────────
@@ -125,7 +158,7 @@ const campView = () => `<div class="card" style="text-align:center;padding:1.4re
   ${S.campaigns.map(c => `<div class="card" style="box-shadow:none"><div style="font-weight:800;font-size:.88rem">${c.name}</div><div class="mut">${c.meta}</div><div style="margin-top:.4rem">${pill(c.st)}</div></div>`).join("")}</div></div>`;
 const pubTbl = () => `<div class="tbl-wrap"><table><thead><tr><th>${lang === "en" ? "Content" : "المحتوى"}</th><th></th><th>${T("updated")}</th><th></th></tr></thead><tbody>
   ${S.published.map(p => `<tr><td style="font-weight:700">${p.url ? `<a class="link" target="_blank" href="${p.url}">${p.t}</a>` : p.t}</td><td>${chan(p.ch)} ${p.ch}</td><td>${p.d}</td><td class="mut">${p.m}</td></tr>`).join("")}</tbody></table></div>`;
-const accCard = (a) => { const c = CH[a.ch]; return `<div class="card acc"><div class="ic" style="background:${c[0]}">${c[1]}</div><div style="flex:1"><div style="font-weight:800">${a.h}</div><div class="mut">${a.s}</div></div>${pill(a.st)}</div>`; };
+const accCard = (a) => `<div class="card acc"><div class="ic" style="background:${CH[a.ch] || "#888"}">${GLYPH[a.ch] || a.ch}</div><div style="flex:1"><div style="font-weight:800">${a.h}</div><div class="mut">${a.s}</div></div>${pill(a.st)}</div>`;
 
 // ── analytics ─────────────────────────────────────────────────────
 async function renderAnalytics(C) {
@@ -136,10 +169,10 @@ async function renderAnalytics(C) {
   document.querySelectorAll(".rbtn").forEach(b => b.onclick = async () => { A = await fetch("/api/analytics?range=" + b.dataset.r).then(r => r.json()); renderAnalytics(C); });
 }
 function anCard(p) {
-  if (!p.active) return `<div class="card" style="opacity:.75"><div class="acc"><div class="ic" style="background:${p.color}">${CH[p.key][1]}</div><div style="flex:1"><div style="font-weight:800">${p.name}</div><div class="mut">${p.note || T("inactive")}</div></div>${pill([T("inactive"), "p-idle"])}</div></div>`;
+  if (!p.active) return `<div class="card" style="opacity:.75"><div class="acc"><div class="ic" style="background:${p.color}">${GLYPH[p.key] || p.key}</div><div style="flex:1"><div style="font-weight:800">${p.name}</div><div class="mut">${p.note || T("inactive")}</div></div>${pill([T("inactive"), "p-idle"])}</div></div>`;
   const m = p.metrics;
   const stat = (key, val) => `<div class="astat"><span class="an">${nf(val)}</span><span class="al">${T(key)}</span></div>`;
-  return `<div class="card"><div class="acc" style="margin-bottom:.5rem"><div class="ic" style="background:${p.color}">${CH[p.key][1]}</div><div style="flex:1"><div style="font-weight:800">${p.name}</div><div class="mut">${T("engRate")}: ${p.engagementRate}%</div></div>${pill([T("mode_live") && A.live ? "live" : "demo", A.live ? "p-ok" : "p-idle"])}</div>
+  return `<div class="card"><div class="acc" style="margin-bottom:.5rem"><div class="ic" style="background:${p.color}">${GLYPH[p.key] || p.key}</div><div style="flex:1"><div style="font-weight:800">${p.name}</div><div class="mut">${T("engRate")}: ${p.engagementRate}%</div></div>${pill([T("mode_live") && A.live ? "live" : "demo", A.live ? "p-ok" : "p-idle"])}</div>
     <div class="astats">${stat("followers", m.followers.total)}${stat("reach", m.reach.total)}${stat("impressions", m.impressions.total)}${stat("engagement", m.engagement.total)}${stat("clicks", m.clicks.total)}</div>
     <div class="mut" style="margin:.5rem 0 .2rem">${T("reach")} · ${A.days} ${lang === "en" ? "days" : "يوم"}</div>${chart(m.reach.series, p.color)}
     <div class="mut" style="margin:.5rem 0 .2rem">${T("engagement")}</div>${chart(m.engagement.series, "#E8890F")}</div>`;

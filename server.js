@@ -33,25 +33,24 @@ if (PW) {
 // ── Aggregated state ────────────────────────────────────────────────
 app.get("/api/state", async (req, res) => {
   const state = baseState();
-  state.mode = MODE;
+  const conn = { meta: meta.metaReady(), whatsapp: wa.whatsappReady(), windsor: windsor.windsorReady() };
+  state.connectivity = conn;
+  state.mode = (conn.meta || conn.whatsapp || conn.windsor || MODE === "live") ? "live" : "mock";
   state.generatedAt = new Date().toISOString();
-  state.connectivity = { meta: meta.metaReady(), whatsapp: wa.whatsappReady(), windsor: windsor.windsorReady() };
 
-  if (MODE === "live") {
-    const settle = async (p, fb) => { try { return await p; } catch (e) { console.error(e.message); return fb; } };
-    const [comments, igMsgs, published, insights] = await Promise.all([
-      settle(meta.getComments(), []),
-      settle(meta.getMessages(), []),
-      settle(meta.getPublished(), []),
-      settle(windsor.getInsights(), null)
-    ]);
-    const waMsgs = wa.getMessages();
-    if (comments.length) state.comments = comments;
-    const merged = [...igMsgs, ...waMsgs];
-    if (merged.length) state.messages = merged;
-    if (published.length) state.published = published;
-    state.insights = insights;
-  }
+  // Attempt live pulls for whichever integrations are connected; each returns
+  // empty/null instantly when not ready, so mock mode stays fast.
+  const settle = async (p, fb) => { try { return await p; } catch (e) { console.error(e.message); return fb; } };
+  const [comments, igMsgs, published, insights] = await Promise.all([
+    settle(meta.getComments(), []), settle(meta.getMessages(), []),
+    settle(meta.getPublished(), []), settle(windsor.getInsights(), null)
+  ]);
+  const waMsgs = wa.getMessages();
+  if (comments.length) state.comments = comments;
+  const merged = [...igMsgs, ...waMsgs];
+  if (merged.length) state.messages = merged;
+  if (published.length) state.published = published;
+  if (insights) state.insights = insights;
   state.notes = store.getNotes();
   res.json(state);
 });
@@ -60,8 +59,30 @@ app.get("/api/state", async (req, res) => {
 app.get("/api/analytics", async (req, res) => {
   const range = req.query.range === "30d" ? "30d" : "7d";
   let windsorData = null;
-  if (MODE === "live") { try { windsorData = await windsor.getInsights(); } catch (e) { /* fall back to mock */ } }
+  if (windsor.windsorReady()) { try { windsorData = await windsor.getInsights(); } catch (e) { /* fall back to mock */ } }
   res.json(getAnalytics(range, windsorData));
+});
+
+// ── Connections: status + activation (paste keys → server config) ───
+app.get("/api/connections", (req, res) => {
+  const f = (k, label, secret) => ({ k, label, secret: !!secret, set: store.cfgHas(k) });
+  res.json({ integrations: [
+    { key: "meta", name: "Meta — Instagram + Facebook", icon: "IG", connected: meta.metaReady(),
+      help: "https://developers.facebook.com", desc: "التعليقات والرسائل والمنشورات والردود (إنستغرام + فيسبوك).",
+      fields: [f("META_ACCESS_TOKEN", "Page Access Token", true), f("META_IG_USER_ID", "Instagram User ID"), f("META_PAGE_ID", "Facebook Page ID")] },
+    { key: "windsor", name: "Windsor.ai — التحليلات", icon: "AN", connected: windsor.windsorReady(),
+      help: "https://windsor.ai", desc: "بيانات الأداء (وصول/تفاعل/نقرات) لكل المنصات.",
+      fields: [f("WINDSOR_API_KEY", "API Key", true)] },
+    { key: "whatsapp", name: "WhatsApp Cloud API", icon: "WA", connected: wa.whatsappReady(),
+      help: "https://developers.facebook.com", desc: "استقبال رسائل واتساب والرد عليها.",
+      fields: [f("WHATSAPP_TOKEN", "Access Token", true), f("WHATSAPP_PHONE_ID", "Phone Number ID")] }
+  ]});
+});
+app.post("/api/connections", (req, res) => {
+  const allowed = ["META_ACCESS_TOKEN", "META_IG_USER_ID", "META_PAGE_ID", "WINDSOR_API_KEY", "WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID"];
+  const clean = {}; for (const k of allowed) if (k in (req.body || {})) clean[k] = req.body[k];
+  store.cfgSet(clean);
+  res.json({ ok: true, connectivity: { meta: meta.metaReady(), whatsapp: wa.whatsappReady(), windsor: windsor.windsorReady() } });
 });
 
 // ── Shared review notes / approvals ─────────────────────────────────
