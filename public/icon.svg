@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#6E1444"/>
+  <path d="M150 210 h95 a20 20 0 0 1 20 18 l16 150 a18 18 0 0 1-18 20 h-131 a18 18 0 0 1-18-20 l16-150 a20 20 0 0 1 20-18z" fill="#E8890F"/>
+  <path d="M175 210 v-14 a34 34 0 0 1 68 0 v14" fill="none" stroke="#E8890F" stroke-width="14" stroke-linecap="round"/>
+  <path d="M270 250 h95 a20 20 0 0 1 20 18 l16 120 a18 18 0 0 1-18 20 h-131 a18 18 0 0 1-18-20 l16-120 a20 20 0 0 1 20-18z" fill="#F9A43C"/>
+  <text x="256" y="330" font-family="Arial, sans-serif" font-size="120" font-weight="800" fill="#fff" text-anchor="middle">ML</text>
+</svg>

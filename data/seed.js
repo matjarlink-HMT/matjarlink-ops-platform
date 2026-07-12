@@ -91,10 +91,20 @@ export const kpis = [
   ["٥٥٨", "متابع على إنستغرام", "قبل الإطلاق", "p-info"]
 ];
 
+// WhatsApp / DM leads pipeline (mini-CRM). Stages: جديد / مهتم / تفاوض / عميل / معلّق
+export const leads = [
+  { name: "أم أحمد — منتجات منزلية", ch: "IG", stage: "جديد", note: "سألت عن الباقات ومتى الإطلاق", tm: "اليوم" },
+  { name: "salalah_crafts", ch: "IG", stage: "مهتم", note: "يريد باقة للمشاريع المنزلية", tm: "أمس" },
+  { name: "trader_muscat", ch: "IG", stage: "مهتم", note: "يريد تجهيز متجر من البداية", tm: "اليوم" },
+  { name: "Mona Trading", ch: "FB", stage: "تفاوض", note: "دعم كاشير للمحل + أونلاين", tm: "قبل يومين" },
+  { name: "Ahmed Al-Rawahi", ch: "FB", stage: "جديد", note: "تفاعل إيجابي على الصفحة", tm: "أمس" },
+  { name: "+968 …", ch: "WA", stage: "معلّق", note: "بانتظار تفعيل قناة واتساب", tm: "—" }
+];
+
 export function baseState() {
   return {
     mode: "mock", generatedAt: null,
-    agents, needs, queue, prep, campaigns, published, accounts, kpis,
+    agents, needs, queue, prep, campaigns, published, accounts, kpis, leads,
     comments: sampleComments, messages: sampleMessages,
     insights: null,
     connectivity: { meta: false, whatsapp: false, windsor: false }

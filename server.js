@@ -3,6 +3,8 @@ import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { baseState } from "./data/seed.js";
+import { getAnalytics } from "./data/analytics.js";
+import * as store from "./store.js";
 import * as meta from "./integrations/meta.js";
 import * as windsor from "./integrations/windsor.js";
 import * as wa from "./integrations/whatsapp.js";
@@ -50,7 +52,25 @@ app.get("/api/state", async (req, res) => {
     if (published.length) state.published = published;
     state.insights = insights;
   }
+  state.notes = store.getNotes();
   res.json(state);
+});
+
+// ── Per-platform analytics ──────────────────────────────────────────
+app.get("/api/analytics", async (req, res) => {
+  const range = req.query.range === "30d" ? "30d" : "7d";
+  let windsorData = null;
+  if (MODE === "live") { try { windsorData = await windsor.getInsights(); } catch (e) { /* fall back to mock */ } }
+  res.json(getAnalytics(range, windsorData));
+});
+
+// ── Shared review notes / approvals ─────────────────────────────────
+app.get("/api/notes", (req, res) => res.json(store.getNotes()));
+app.post("/api/notes", (req, res) => {
+  const { id, note, action } = req.body || {};
+  if (!id) return res.status(400).json({ ok: false, error: "id required" });
+  if (action === "approve") return res.json({ ok: true, notes: store.approve(id) });
+  res.json({ ok: true, notes: store.setNote(id, note || "") });
 });
 
 // ── Reply router ────────────────────────────────────────────────────
