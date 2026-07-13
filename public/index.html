@@ -86,6 +86,20 @@ table{width:100%;border-collapse:collapse;font-size:.83rem}th,td{text-align:star
 #mv .mvbox{background:#000;border-radius:16px;width:min(30rem,100%);max-height:92vh;overflow:hidden;position:relative;display:flex;flex-direction:column}
 #mvframe{position:relative;width:100%;aspect-ratio:9/16;background:#000}#mvframe iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 .mvbar{padding:.6rem .8rem;color:#fff;font-size:.82rem;background:#160a1b}.mvbar .h{font-weight:800;margin-bottom:.15rem}
+.navgroup{font-size:.6rem;letter-spacing:.07em;text-transform:uppercase;color:rgba(255,255,255,.42);font-weight:800;padding:.75rem .65rem .25rem}
+.chatwrap{display:flex;flex-direction:column;height:calc(100vh - 11rem);min-height:23rem}
+.chatscroll{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:.7rem;padding:.2rem .1rem}
+.chatempty{margin:auto;text-align:center;color:var(--muted);font-size:.85rem;max-width:27rem;padding:1.5rem 1rem}
+.cmsg{display:flex;gap:.5rem;max-width:84%}.cmsg.me{align-self:flex-end;flex-direction:row-reverse}.cmsg.mgr{align-self:flex-start}
+.cav{flex:0 0 2rem;height:2rem;border-radius:8px;background:linear-gradient(160deg,var(--plum),var(--plum-ink));color:#fff;display:grid;place-items:center;font-size:.64rem;font-weight:800}
+.cbody{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:.55rem .8rem;font-size:.88rem;line-height:1.55;box-shadow:var(--shadow)}
+.cmsg.me .cbody{background:var(--plum);color:#fff;border-color:var(--plum)}.cmsg.typing .cbody{color:var(--muted)}
+.qchips{display:flex;flex-wrap:wrap;gap:.4rem;margin:.6rem 0 .5rem}
+.qchip{all:unset;cursor:pointer;font-size:.74rem;background:var(--orange-soft);color:#a5670a;border-radius:999px;padding:.25rem .65rem;border:1px solid #f0dca6}.qchip:hover{background:#f8dcae}
+.chatbar{display:flex;gap:.4rem;align-items:center}
+#chatinput{flex:1;border:1px solid var(--line);border-radius:11px;padding:.55rem .8rem;font:inherit;font-size:.88rem;background:var(--card)}#chatinput:focus{outline:2px solid var(--orange-soft);border-color:var(--orange)}
+.setrow{display:flex;align-items:center;justify-content:space-between;gap:.6rem;padding:.45rem 0;border-bottom:1px solid var(--line);font-size:.85rem}.setrow:last-of-type{border:none}
+#langsel2{border:1px solid var(--line);border-radius:8px;padding:.3rem .5rem;font:inherit;font-size:.82rem;background:var(--card);color:var(--ink)}
 </style></head><body>
 <div class="app">
   <main class="main">

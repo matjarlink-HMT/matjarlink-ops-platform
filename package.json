@@ -8,9 +8,12 @@
     "start": "node server.js",
     "dev": "node --watch server.js"
   },
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
-    "express": "^4.19.2",
-    "dotenv": "^16.4.5"
+    "@anthropic-ai/sdk": "^0.111.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
   }
 }

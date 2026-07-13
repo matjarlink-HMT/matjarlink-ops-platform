@@ -21,6 +21,15 @@ export function cfgGet(key) { return process.env[key] || cfg[key] || ""; }
 export function cfgSet(map) { for (const k in map) { if (map[k] === "" || map[k] == null) delete cfg[k]; else cfg[k] = map[k]; } persistCfg(); }
 export function cfgHas(key) { return Boolean(cfgGet(key)); }
 
+// ── Manager chat history (CAIMO) ── persisted; capped to the last 60 turns.
+const CHAT_FILE = process.env.CHAT_FILE || new URL("./data/chat.json", import.meta.url).pathname;
+let chat = [];
+try { chat = JSON.parse(fs.readFileSync(CHAT_FILE, "utf8")); } catch (e) { chat = []; }
+function persistChat() { try { fs.writeFileSync(CHAT_FILE, JSON.stringify(chat)); } catch (e) {} }
+export function getChat() { return chat; }
+export function addChat(role, text) { chat.push({ role, text, at: new Date().toISOString() }); if (chat.length > 60) chat = chat.slice(-60); persistChat(); return chat; }
+export function resetChat() { chat = []; persistChat(); return chat; }
+
 export function getNotes() { return mem; }
 export function setNote(id, value, status) {
   if (value && value.trim()) mem[id] = { note: value.trim(), status: status || "قيد التعديل", at: new Date().toISOString() };

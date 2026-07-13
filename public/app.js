@@ -5,7 +5,7 @@ let lang = localStorage.getItem("ml_lang") || "ar";
 let autoTimer = null;
 const T = (k) => (I18N[lang] && I18N[lang][k]) || I18N.ar[k] || k;
 const $ = (s) => document.querySelector(s);
-const CH = { IG: "#C13584", FB: "#1877F2", WA: "#25D366", TT: "#111111", LI: "#0A66C2", TH: "#111111", AN: "#7A5A1A" };
+const CH = { IG: "#C13584", FB: "#1877F2", WA: "#25D366", TT: "#111111", LI: "#0A66C2", TH: "#111111", AN: "#7A5A1A", AI: "#6E56CF" };
 const GLYPH = {
   IG: `<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="#fff" stroke-width="1.4"><rect x="2.3" y="2.3" width="11.4" height="11.4" rx="3.4"/><circle cx="8" cy="8" r="3"/><circle cx="11.4" cy="4.6" r=".85" fill="#fff" stroke="none"/></svg>`,
   FB: `<svg viewBox="0 0 16 16" width="11" height="11" fill="#fff"><path d="M9.6 16v-6h2l.35-2.4H9.6V6.05c0-.7.22-1.15 1.2-1.15H12V2.7C11.5 2.63 10.7 2.6 9.85 2.6 8 2.6 6.8 3.73 6.8 5.75V7.6H4.7V10h2.1v6z"/></svg>`,
@@ -13,13 +13,23 @@ const GLYPH = {
   TT: `<svg viewBox="0 0 16 16" width="11" height="11" fill="#fff"><path d="M9.8 2c.2 1.4 1 2.35 2.5 2.5v1.9c-.9 0-1.7-.25-2.5-.75v3.75A3.45 3.45 0 1 1 6.3 5.05v1.95a1.6 1.6 0 1 0 1.6 1.6V2z"/></svg>`,
   LI: `<svg viewBox="0 0 16 16" width="11" height="11" fill="#fff"><path d="M4.2 5.7H2.4V13h1.8zM3.3 2.6a1.05 1.05 0 1 0 0 2.1 1.05 1.05 0 0 0 0-2.1zM7.1 5.7H5.4V13h1.7V9.1c0-1 .2-1.95 1.35-1.95S9.5 8.2 9.5 9.2V13h1.75V8.8c0-2-.45-3.35-2.7-3.35-1.05 0-1.55.6-1.8 1z"/></svg>`,
   TH: `<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="#fff" stroke-width="1.2"><path d="M8 14c-3.3 0-5-2.4-5-6s1.9-6 5-6c2.4 0 3.9 1.3 4.4 3.1M8.2 10.7c1.4 0 2.4-.7 2.4-1.8 0-1-.9-1.6-2-1.6-1.4 0-2.2.8-2.2 1.7 0 1 .9 1.5 1.9 1.5 1.9 0 2.7-1.3 2.7-3.1"/></svg>`,
-  AN: `<svg viewBox="0 0 16 16" width="11" height="11" fill="#fff"><rect x="2" y="9" width="2.6" height="5" rx=".5"/><rect x="6.7" y="5" width="2.6" height="9" rx=".5"/><rect x="11.4" y="7" width="2.6" height="7" rx=".5"/></svg>`
+  AN: `<svg viewBox="0 0 16 16" width="11" height="11" fill="#fff"><rect x="2" y="9" width="2.6" height="5" rx=".5"/><rect x="6.7" y="5" width="2.6" height="9" rx=".5"/><rect x="11.4" y="7" width="2.6" height="7" rx=".5"/></svg>`,
+  AI: `<svg viewBox="0 0 16 16" width="11" height="11" fill="#fff"><path d="M8 1.4l1.15 3.9 3.9 1.15-3.9 1.15L8 11.5 6.85 7.6 2.95 6.45l3.9-1.15zM12.6 10.4l.5 1.7 1.7.5-1.7.5-.5 1.7-.5-1.7-1.7-.5 1.7-.5z"/></svg>`
 };
 const chan = (k) => `<span class="chan" style="background:${CH[k] || "#888"}">${GLYPH[k] || k}</span>`;
 const pill = (a) => a ? `<span class="pill ${a[1]}">${a[0]}</span>` : "";
 const STMAP = { online: "p-ok", working: "p-info", scheduled: "p-info", idle: "p-idle", action: "p-bad", new: "p-new" };
-const NAV = ["overview", "agents", "needs", "queue", "prep", "analytics", "media", "calendar", "camp", "pub", "comments", "messages", "leads", "accounts", "connections"];
-const HAS_COUNT = { agents: "agents", needs: "needs", queue: "queue", prep: "prep", pub: "published", comments: "comments", messages: "messages", leads: "leads", accounts: "accounts" };
+const GROUPS = [
+  { items: ["overview"] },
+  { label: "g_manage", items: ["manager", "agents", "needs"] },
+  { label: "g_content", items: ["queue", "prep", "media", "calendar", "pub"] },
+  { label: "g_engage", items: ["comments", "messages", "leads"] },
+  { label: "g_perf", items: ["analytics", "camp"] },
+  { label: "g_settings", items: ["settings"] }
+];
+const HAS_COUNT = { agents: "agents", needs: "needs", queue: "queue", prep: "prep", pub: "published", comments: "comments", messages: "messages", leads: "leads" };
+const escapeHtml = (s) => (s || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])).replace(/\n/g, "<br>");
+let chatReady = false;
 
 let gc = 0;
 function chart(series, color, h = 70) {
@@ -54,7 +64,7 @@ async function refresh() {
   try { S = await fetch("/api/state").then(r => r.json()); } catch (e) { return; }
   buildNav(); updateNotif();
   const active = document.querySelector("#nav button.on")?.dataset.go;
-  if (active && active !== "media") render(active);
+  if (active && !["media", "manager", "settings"].includes(active)) render(active);
 }
 function applyLang() {
   const L = LANGS[lang]; document.documentElement.lang = lang; document.documentElement.dir = L.dir;
@@ -74,10 +84,13 @@ function buildChrome() {
   buildNav();
 }
 function buildNav() {
-  $("#nav").innerHTML = NAV.map((n, i) => {
-    const cnt = HAS_COUNT[n] && S[HAS_COUNT[n]] ? S[HAS_COUNT[n]].length : "";
-    const on = document.querySelector(`#nav button[data-go="${n}"]`)?.classList.contains("on") || (i === 0 && !document.querySelector("#nav button.on"));
-    return `<button data-go="${n}" class="${on ? "on" : ""}"><span>${T("nav_" + n)}</span>${cnt !== "" ? `<span class="cnt">${cnt}</span>` : ""}</button>`;
+  const active = document.querySelector("#nav button.on")?.dataset.go || "overview";
+  $("#nav").innerHTML = GROUPS.map(g => {
+    const head = g.label ? `<div class="navgroup">${T("nav_" + g.label)}</div>` : "";
+    return head + g.items.map(n => {
+      const cnt = HAS_COUNT[n] && S[HAS_COUNT[n]] ? S[HAS_COUNT[n]].length : "";
+      return `<button data-go="${n}" class="${n === active ? "on" : ""}"><span>${T("nav_" + n)}</span>${cnt !== "" ? `<span class="cnt">${cnt}</span>` : ""}</button>`;
+    }).join("");
   }).join("");
   document.querySelectorAll("#nav button").forEach(b => b.onclick = () => {
     document.querySelectorAll("#nav button").forEach(x => x.classList.remove("on")); b.classList.add("on");
@@ -103,8 +116,63 @@ function render(p) {
   else if (p === "comments") { C.innerHTML = feed(S.comments, "c", "comment"); bindReply(); }
   else if (p === "messages") { C.innerHTML = feed(S.messages, "m", "dm"); bindReply(); }
   else if (p === "leads") C.innerHTML = leadsView();
-  else if (p === "accounts") C.innerHTML = `<div class="grid g2">${S.accounts.map(accCard).join("")}</div>`;
-  else if (p === "connections") renderConnections(C);
+  else if (p === "manager") renderManager(C);
+  else if (p === "settings") renderSettings(C);
+}
+
+// ── manager chat (CAIMO) ──────────────────────────────────────────
+async function renderManager(C) {
+  C.innerHTML = `<div class="chatwrap">
+    <div class="chatscroll" id="chatscroll"><div class="loading">…</div></div>
+    <div class="qchips" id="qchips"></div>
+    <div class="chatbar"><button class="btn ghost sm" id="chatreset" title="${T("mgr_reset")}">↺</button><input id="chatinput" placeholder="${T("mgr_ph")}" autocomplete="off"><button class="btn" id="chatsend">${T("mgr_send")}</button></div>
+    <div class="mut" id="chatnote" style="margin-top:.4rem"></div></div>`;
+  const chips = T("mgr_chips") || [];
+  $("#qchips").innerHTML = chips.map(c => `<button class="qchip">${c}</button>`).join("");
+  document.querySelectorAll(".qchip").forEach(b => b.onclick = () => { $("#chatinput").value = b.textContent; $("#chatinput").focus(); });
+  let data; try { data = await fetch("/api/chat").then(r => r.json()); } catch (e) { data = { history: [], ready: false }; }
+  chatReady = data.ready; renderChat(data.history);
+  if (!chatReady) $("#chatnote").innerHTML = T("mgr_needkey");
+  $("#chatsend").onclick = sendChat;
+  $("#chatreset").onclick = async () => { const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reset: true }) }).then(r => r.json()); renderChat(r.history); };
+  $("#chatinput").onkeydown = (e) => { if (e.key === "Enter") sendChat(); };
+  $("#chatinput").focus();
+}
+function renderChat(history) {
+  const box = $("#chatscroll"); if (!box) return;
+  if (!history || !history.length) { box.innerHTML = `<div class="chatempty">${T("mgr_intro")}</div>`; return; }
+  box.innerHTML = history.map(m => m.role === "manager"
+    ? `<div class="cmsg mgr"><div class="cav">CA</div><div class="cbody">${escapeHtml(m.text)}</div></div>`
+    : `<div class="cmsg me"><div class="cbody">${escapeHtml(m.text)}</div></div>`).join("");
+  box.scrollTop = box.scrollHeight;
+}
+async function sendChat() {
+  const inp = $("#chatinput"); if (!inp) return; const msg = inp.value.trim(); if (!msg) return;
+  inp.value = ""; const box = $("#chatscroll"); box.querySelector(".chatempty")?.remove();
+  box.insertAdjacentHTML("beforeend", `<div class="cmsg me"><div class="cbody">${escapeHtml(msg)}</div></div><div class="cmsg mgr typing" id="typing"><div class="cav">CA</div><div class="cbody">…</div></div>`);
+  box.scrollTop = box.scrollHeight;
+  try {
+    const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: msg, lang }) }).then(r => r.json());
+    chatReady = r.ready; renderChat(r.history);
+    if (!chatReady) $("#chatnote").innerHTML = T("mgr_needkey");
+  } catch (e) { const t = document.querySelector("#typing .cbody"); if (t) t.textContent = "✗"; }
+}
+
+// ── settings hub (accounts + connections + preferences) ───────────
+function renderSettings(C) {
+  C.innerHTML = `<div class="sec-h"><h2>${T("set_accounts")}</h2></div>
+    <div class="grid g2">${S.accounts.map(accCard).join("")}</div>
+    <div class="sec-h" style="margin-top:1.3rem"><h2>${T("set_integrations")}</h2></div>
+    <div id="connhost"><div class="loading">…</div></div>
+    <div class="sec-h" style="margin-top:1.3rem"><h2>${T("set_prefs")}</h2></div>
+    <div class="card">
+      <div class="setrow"><span>${T("set_lang")}</span><select id="langsel2"></select></div>
+      <div class="setrow"><span>${T("set_install")}</span><button class="btn ghost sm" id="installbtn2">⬇</button></div>
+      <div class="mut" style="margin-top:.6rem">${T("set_pwnote")}</div></div>`;
+  renderConnections($("#connhost"));
+  const ls = $("#langsel2"); ls.innerHTML = Object.entries(LANGS).map(([k, v]) => `<option value="${k}" ${k === lang ? "selected" : ""}>${v.name}</option>`).join("");
+  ls.onchange = (e) => { lang = e.target.value; localStorage.setItem("ml_lang", lang); applyLang(); buildChrome(); render("settings"); };
+  $("#installbtn2").onclick = () => { if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt = null; } };
 }
 
 // ── connections (activation center) ───────────────────────────────

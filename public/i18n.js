@@ -30,7 +30,15 @@ export const I18N = {
     cal_pub: "نشر", cal_start: "بدء تصميم",
     nav_connections: "الربط", conn_on: "مربوط", conn_off: "غير مربوط", conn_activate: "تفعيل الربط",
     conn_open: "افتح صفحة المزوّد ↗", conn_saved: "تم الحفظ — الحالة محدّثة", conn_set: "محفوظ ✓",
-    conn_hint: "تُحفظ المفاتيح في الخادم فقط ولا تظهر في المتصفح. يُفضّل تفعيل كلمة مرور اللوحة (DASHBOARD_PASSWORD)."
+    conn_hint: "تُحفظ المفاتيح في الخادم فقط ولا تظهر في المتصفح. يُفضّل تفعيل كلمة مرور اللوحة (DASHBOARD_PASSWORD).",
+    nav_manager: "المدير", nav_settings: "الإعدادات",
+    nav_g_manage: "الإدارة", nav_g_content: "المحتوى", nav_g_engage: "التفاعل", nav_g_perf: "الأداء", nav_g_settings: "الإعدادات",
+    mgr_ph: "اكتب توجيهك أو ناقش المدير…", mgr_send: "إرسال", mgr_reset: "مسح المحادثة",
+    mgr_intro: "تحدّث مع CAIMO، مدير فريقك. أعطِه توجيهاتك أو ناقشه — يوافق حين يكون في مصلحة الحساب، ويعترض ويحاول إقناعك حين لا يكون.",
+    mgr_needkey: "🔌 الحوار الذكي غير مفعّل — أضف ANTHROPIC_API_KEY من «الإعدادات ← الربط».",
+    mgr_chips: ["ابدأوا النشر", "انشر MJ-001 الآن", "راجعوا الدفعة", "ما خطة اليوم؟", "كيف الأداء؟"],
+    set_accounts: "الحسابات المرتبطة", set_integrations: "الربط والتكاملات", set_prefs: "التفضيلات",
+    set_lang: "لغة اللوحة", set_install: "تثبيت كتطبيق", set_pwnote: "لحماية اللوحة بكلمة مرور، أضف DASHBOARD_PASSWORD في متغيّرات Railway."
   },
   en: {
     brand_sub: "AI Ops · Command Center", sub: "AI marketing team operations — MatjarLink",
@@ -55,7 +63,15 @@ export const I18N = {
     cal_pub: "publish", cal_start: "design start",
     nav_connections: "Connections", conn_on: "Connected", conn_off: "Not connected", conn_activate: "Activate",
     conn_open: "Open provider ↗", conn_saved: "Saved — status updated", conn_set: "saved ✓",
-    conn_hint: "Keys are stored on the server only, never shown in the browser. Enable a dashboard password (DASHBOARD_PASSWORD)."
+    conn_hint: "Keys are stored on the server only, never shown in the browser. Enable a dashboard password (DASHBOARD_PASSWORD).",
+    nav_manager: "Manager", nav_settings: "Settings",
+    nav_g_manage: "Management", nav_g_content: "Content", nav_g_engage: "Engagement", nav_g_perf: "Performance", nav_g_settings: "Settings",
+    mgr_ph: "Give a directive or debate the manager…", mgr_send: "Send", mgr_reset: "Clear chat",
+    mgr_intro: "Talk to CAIMO, your team manager. Give directives or debate — he agrees when it serves the account, and pushes back to convince you when it doesn't.",
+    mgr_needkey: "🔌 Smart chat is off — add ANTHROPIC_API_KEY in Settings → Connections.",
+    mgr_chips: ["Start publishing", "Publish MJ-001 now", "Review the batch", "What's today's plan?", "How's performance?"],
+    set_accounts: "Linked accounts", set_integrations: "Connections & integrations", set_prefs: "Preferences",
+    set_lang: "Dashboard language", set_install: "Install as app", set_pwnote: "To password-protect the dashboard, add DASHBOARD_PASSWORD in Railway variables."
   },
   fa: {
     brand_sub: "AI Ops · مرکز فرماندهی", sub: "عملیات تیم بازاریابی هوش مصنوعی — متجرلینک",
@@ -80,6 +96,14 @@ export const I18N = {
     cal_pub: "انتشار", cal_start: "شروع طراحی",
     nav_connections: "اتصالات", conn_on: "متصل", conn_off: "متصل نیست", conn_activate: "فعال‌سازی",
     conn_open: "باز کردن ارائه‌دهنده ↗", conn_saved: "ذخیره شد — وضعیت بروزرسانی شد", conn_set: "ذخیره‌شده ✓",
-    conn_hint: "کلیدها فقط روی سرور ذخیره می‌شوند و در مرورگر نمایش داده نمی‌شوند. رمز داشبورد را فعال کنید."
+    conn_hint: "کلیدها فقط روی سرور ذخیره می‌شوند و در مرورگر نمایش داده نمی‌شوند. رمز داشبورد را فعال کنید.",
+    nav_manager: "مدیر", nav_settings: "تنظیمات",
+    nav_g_manage: "مدیریت", nav_g_content: "محتوا", nav_g_engage: "تعامل", nav_g_perf: "عملکرد", nav_g_settings: "تنظیمات",
+    mgr_ph: "دستور بده یا با مدیر بحث کن…", mgr_send: "ارسال", mgr_reset: "پاک کردن گفتگو",
+    mgr_intro: "با CAIMO، مدیر تیم صحبت کن. دستور بده یا بحث کن — وقتی به نفع حساب باشد موافقت می‌کند و در غیر این صورت مخالفت و متقاعدت می‌کند.",
+    mgr_needkey: "🔌 گفتگوی هوشمند غیرفعال است — ANTHROPIC_API_KEY را در تنظیمات ← اتصالات اضافه کن.",
+    mgr_chips: ["شروع انتشار", "همین حالا MJ-001 را منتشر کن", "بررسی دسته", "برنامه امروز چیست؟", "عملکرد چطور است؟"],
+    set_accounts: "حساب‌های متصل", set_integrations: "اتصالات و یکپارچه‌سازی", set_prefs: "تنظیمات",
+    set_lang: "زبان داشبورد", set_install: "نصب به‌عنوان برنامه", set_pwnote: "برای محافظت با رمز، DASHBOARD_PASSWORD را در متغیرهای Railway اضافه کن."
   }
 };

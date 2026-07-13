@@ -8,6 +8,8 @@ import * as store from "./store.js";
 import * as meta from "./integrations/meta.js";
 import * as windsor from "./integrations/windsor.js";
 import * as wa from "./integrations/whatsapp.js";
+import * as claude from "./integrations/claude.js";
+import { managerSystem, demoReply, errReply } from "./data/manager.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -63,10 +65,32 @@ app.get("/api/analytics", async (req, res) => {
   res.json(getAnalytics(range, windsorData));
 });
 
+// ── Manager chat (CAIMO) — powered by Claude when a key is set ───────
+app.get("/api/chat", (req, res) => res.json({ history: store.getChat(), ready: claude.claudeReady() }));
+app.post("/api/chat", async (req, res) => {
+  const { message, reset, lang } = req.body || {};
+  if (reset) return res.json({ ok: true, history: store.resetChat(), ready: claude.claudeReady() });
+  if (!message || !message.trim()) return res.status(400).json({ ok: false, error: "message required" });
+  store.addChat("user", message.trim());
+  const st = baseState();
+  st.connectivity = { meta: meta.metaReady(), whatsapp: wa.whatsappReady(), windsor: windsor.windsorReady() };
+  st.insights = await settleOrNull(windsor.getInsights());
+  let reply = null;
+  try { reply = await claude.chat(store.getChat(), managerSystem(st, lang || "ar")); }
+  catch (e) { console.error("[chat]", e.message); }
+  if (!reply) reply = claude.claudeReady() ? errReply(lang) : demoReply(message, lang);
+  store.addChat("manager", reply);
+  res.json({ ok: true, history: store.getChat(), ready: claude.claudeReady() });
+});
+async function settleOrNull(p) { try { return await p; } catch (e) { return null; } }
+
 // ── Connections: status + activation (paste keys → server config) ───
 app.get("/api/connections", (req, res) => {
   const f = (k, label, secret) => ({ k, label, secret: !!secret, set: store.cfgHas(k) });
   res.json({ integrations: [
+    { key: "claude", name: "Claude — المدير الذكي (CAIMO)", icon: "AI", connected: claude.claudeReady(),
+      help: "https://console.anthropic.com/settings/keys", desc: "يشغّل حوار المدير: يناقش، يعترض، ويوجّه الفريق بذكاء.",
+      fields: [f("ANTHROPIC_API_KEY", "API Key", true)] },
     { key: "meta", name: "Meta — Instagram + Facebook", icon: "IG", connected: meta.metaReady(),
       help: "https://developers.facebook.com", desc: "التعليقات والرسائل والمنشورات والردود (إنستغرام + فيسبوك).",
       fields: [f("META_ACCESS_TOKEN", "Page Access Token", true), f("META_IG_USER_ID", "Instagram User ID"), f("META_PAGE_ID", "Facebook Page ID")] },
@@ -79,7 +103,7 @@ app.get("/api/connections", (req, res) => {
   ]});
 });
 app.post("/api/connections", (req, res) => {
-  const allowed = ["META_ACCESS_TOKEN", "META_IG_USER_ID", "META_PAGE_ID", "WINDSOR_API_KEY", "WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID"];
+  const allowed = ["META_ACCESS_TOKEN", "META_IG_USER_ID", "META_PAGE_ID", "WINDSOR_API_KEY", "WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL"];
   const clean = {}; for (const k of allowed) if (k in (req.body || {})) clean[k] = req.body[k];
   store.cfgSet(clean);
   res.json({ ok: true, connectivity: { meta: meta.metaReady(), whatsapp: wa.whatsappReady(), windsor: windsor.windsorReady() } });
