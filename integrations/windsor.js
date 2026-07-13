@@ -2,7 +2,13 @@
 // Key read dynamically (env or Connections page). Returns null if not connected.
 import { cfgGet } from "../store.js";
 
-const KEY = () => cfgGet("WINDSOR_API_KEY");
+// Accept either a raw API key OR the full connector URL pasted from Windsor
+// (…/all?api_key=XXXX&…) — extract the token either way.
+const KEY = () => {
+  const raw = cfgGet("WINDSOR_API_KEY") || "";
+  const m = raw.match(/api_key=([^&\s]+)/i);
+  return m ? m[1] : raw.trim();
+};
 const FIELDS = () => cfgGet("WINDSOR_FIELDS") || "source,date,followers,reach,impressions,engagement,clicks";
 
 export const windsorReady = () => Boolean(KEY());
