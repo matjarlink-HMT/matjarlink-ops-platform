@@ -134,11 +134,9 @@ async function activateConn(key) {
 function ovv() {
   const labels = [T("kpi_agents"), T("kpi_queue"), T("kpi_assets"), T("kpi_followers")];
   const k = S.kpis.map((x, i) => `<div class="card kpi"><span class="n">${x[0]}</span><span class="l">${labels[i]}</span><span class="d">${pill([x[2], x[3]])}</span></div>`).join("");
-  const ins = S.insights ? `<div class="card"><div class="sec-h"><h2>${T("perf")} (Windsor)</h2></div><div class="grid g4">
-    <div class="kpi"><span class="n">${nf(S.insights.reach)}</span><span class="l">${T("reach")}</span></div>
-    <div class="kpi"><span class="n">${nf(S.insights.impressions)}</span><span class="l">${T("impressions")}</span></div>
-    <div class="kpi"><span class="n">${nf(S.insights.engagement)}</span><span class="l">${T("engagement")}</span></div>
-    <div class="kpi"><span class="n">${nf(S.insights.clicks)}</span><span class="l">${T("clicks")}</span></div></div></div>`
+  const st = (k, v) => `<div class="astat"><span class="an">${nf(v)}</span><span class="al">${T(k)}</span></div>`;
+  const ins = S.insights ? `<div class="card"><div class="sec-h"><h2>${T("perf")} (Windsor)</h2><span class="pill p-ok">${T("conn_on")}</span></div>
+    <div class="astats">${st("followers", S.insights.followers)}${st("reach", S.insights.reach)}${st("impressions", S.insights.impressions)}${st("engagement", S.insights.engagement)}${st("clicks", S.insights.clicks)}</div></div>`
     : `<div class="card"><b>${T("perf")}:</b> ${T("notConnected")}.</div>`;
   return `<div class="grid g4">${k}</div><div style="margin-top:1rem">${ins}</div>`;
 }
