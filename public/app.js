@@ -1,8 +1,9 @@
 import { LANGS, I18N } from "./i18n.js";
 
-let S = null, A = null, cur = 0, mediaIdx = 0;
+let S = null, A = null, mediaIdx = 0;
 let lang = localStorage.getItem("ml_lang") || "ar";
 let autoTimer = null;
+let pf = { plat: "all", type: "all", status: "all" }; // pipeline filters
 const T = (k) => (I18N[lang] && I18N[lang][k]) || I18N.ar[k] || k;
 const $ = (s) => document.querySelector(s);
 const CH = { IG: "#C13584", FB: "#1877F2", WA: "#25D366", TT: "#111111", LI: "#0A66C2", TH: "#111111", AN: "#7A5A1A", AI: "#6E56CF" };
@@ -22,12 +23,12 @@ const STMAP = { online: "p-ok", working: "p-info", scheduled: "p-info", idle: "p
 const GROUPS = [
   { items: ["overview"] },
   { label: "g_manage", items: ["manager", "agents", "needs"] },
-  { label: "g_content", items: ["queue", "prep", "media", "calendar", "pub"] },
+  { label: "g_content", items: ["pipeline"] },
   { label: "g_engage", items: ["comments", "messages", "leads"] },
   { label: "g_perf", items: ["analytics", "camp"] },
   { label: "g_settings", items: ["settings"] }
 ];
-const HAS_COUNT = { agents: "agents", needs: "needs", queue: "queue", prep: "prep", pub: "published", comments: "comments", messages: "messages", leads: "leads" };
+const HAS_COUNT = { agents: "agents", needs: "needs", pipeline: "queue", comments: "comments", messages: "messages", leads: "leads" };
 const escapeHtml = (s) => (s || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])).replace(/\n/g, "<br>");
 let chatReady = false;
 
@@ -44,6 +45,10 @@ function chart(series, color, h = 70) {
     <circle cx="${pts.at(-1)[0].toFixed(1)}" cy="${pts.at(-1)[1].toFixed(1)}" r="3.4" fill="${color}"/></svg>`;
 }
 const nf = (n) => (n == null ? "—" : Number(n).toLocaleString("en-US"));
+
+// classify a queue item for filtering / status display
+function postType(q) { const t = q.ty || ""; if (t.includes("ريل")) return "reel"; if (t.includes("كاروسيل")) return "carousel"; if (t.includes("استطلاع") || t.includes("تفاعلي")) return "poll"; if (t.includes("ستوري")) return "story"; return "post"; }
+function postStatus(q) { const nt = (S.notes && S.notes[q.id]) || {}; if (S.publishedLog && S.publishedLog[q.id]) return "published"; if (nt.status === "معتمد") return "approved"; if (q.gen) return "generated"; return "pending"; }
 
 // ── boot ──────────────────────────────────────────────────────────
 async function boot() {
@@ -64,7 +69,8 @@ async function refresh() {
   try { S = await fetch("/api/state").then(r => r.json()); } catch (e) { return; }
   buildNav(); updateNotif();
   const active = document.querySelector("#nav button.on")?.dataset.go;
-  if (active && !["media", "manager", "settings"].includes(active)) render(active);
+  // don't blow away pages holding live input / typed notes
+  if (active && !["pipeline", "manager", "settings"].includes(active)) render(active);
 }
 function applyLang() {
   const L = LANGS[lang]; document.documentElement.lang = lang; document.documentElement.dir = L.dir;
@@ -72,10 +78,8 @@ function applyLang() {
 function buildChrome() {
   $("#sub").textContent = T("sub");
   $("#brandsub").textContent = T("brand_sub");
-  // language selector
   $("#langsel").innerHTML = Object.entries(LANGS).map(([k, v]) => `<option value="${k}" ${k === lang ? "selected" : ""}>${v.name}</option>`).join("");
   $("#langsel").onchange = (e) => { lang = e.target.value; localStorage.setItem("ml_lang", lang); applyLang(); buildChrome(); const a = document.querySelector("#nav button.on")?.dataset.go || "overview"; render(a); };
-  // banner
   const c = S.connectivity || {};
   const b = $("#banner");
   if (S.mode === "live") { b.className = "banner live"; b.innerHTML = `<span class="dotlive"></span> <b>${T("mode_live")}</b> — Meta ${c.meta ? "✓" : "—"} · WhatsApp ${c.whatsapp ? "✓" : "—"} · Windsor ${c.windsor ? "✓" : "—"}`; }
@@ -104,15 +108,11 @@ function buildNav() {
 function render(p) {
   const C = $("#content");
   if (p === "overview") C.innerHTML = ovv();
-  else if (p === "agents") C.innerHTML = `<div class="grid g3">${S.agents.map(agentCard).join("")}</div>`;
+  else if (p === "agents") { C.innerHTML = `<div class="note-info">🚀 ${T("agent_improve_hint")}</div><div class="grid g3">${S.agents.map((a, i) => agentCard(a, i)).join("")}</div>`; bindAgents(); }
   else if (p === "needs") C.innerHTML = `<div class="grid g2">${S.needs.map(needCard).join("")}</div>`;
-  else if (p === "queue") { C.innerHTML = `${S.contentBatch ? `<div class="note-info">✨ ${T("genBatch")}: <b>${S.contentBatch}</b> — ${T("genBy")}</div>` : ""}<div class="qwrap">${S.queue.map((q, i) => qCard(q, i)).join("")}</div>`; document.querySelectorAll(".qcard").forEach(c => c.onclick = () => openReview(+c.dataset.i)); }
-  else if (p === "prep") C.innerHTML = prepTbl();
+  else if (p === "pipeline") renderPipeline(C);
   else if (p === "analytics") renderAnalytics(C);
-  else if (p === "media") { C.innerHTML = mediaGrid(); document.querySelectorAll(".mtile").forEach(t => t.onclick = () => openMedia(+t.dataset.i)); }
-  else if (p === "calendar") C.innerHTML = calendarView();
   else if (p === "camp") C.innerHTML = campView();
-  else if (p === "pub") C.innerHTML = pubTbl();
   else if (p === "comments") { C.innerHTML = feed(S.comments, "c", "comment"); bindReply(); }
   else if (p === "messages") { C.innerHTML = feed(S.messages, "m", "dm"); bindReply(); }
   else if (p === "leads") C.innerHTML = leadsView();
@@ -198,33 +198,150 @@ async function activateConn(key) {
   } catch (e) { document.querySelector("#cm-" + key).textContent = "✗"; }
 }
 
-// ── sections ──────────────────────────────────────────────────────
+// ── dashboard (overview) ──────────────────────────────────────────
 function ovv() {
   const labels = [T("kpi_agents"), T("kpi_queue"), T("kpi_assets"), T("kpi_followers")];
   const k = S.kpis.map((x, i) => `<div class="card kpi"><span class="n">${x[0]}</span><span class="l">${labels[i]}</span><span class="d">${pill([x[2], x[3]])}</span></div>`).join("");
-  const st = (k, v) => `<div class="astat"><span class="an">${nf(v)}</span><span class="al">${T(k)}</span></div>`;
+  // pipeline health breakdown
+  const q = S.queue || []; let pub = 0, appr = 0, rev = 0;
+  q.forEach(x => { if (S.publishedLog && S.publishedLog[x.id]) pub++; else if (((S.notes && S.notes[x.id]) || {}).status === "معتمد") appr++; else rev++; });
+  const tot = q.length || 1;
+  const seg = (n, c) => n ? `<span style="width:${(n / tot * 100).toFixed(1)}%;background:${c}"></span>` : "";
+  const pipeHealth = `<div class="card"><div class="sec-h"><h2>${T("dash_pipeline")}</h2><span class="hint">${q.length} ${T("dash_posts")}</span></div>
+    <div class="segbar">${seg(rev, "var(--warn)")}${seg(appr, "var(--info)")}${seg(pub, "var(--ok)")}</div>
+    <div class="seglegend"><span><i style="background:var(--warn)"></i>${T("s_review")} <b>${rev}</b></span><span><i style="background:var(--info)"></i>${T("s_approved")} <b>${appr}</b></span><span><i style="background:var(--ok)"></i>${T("s_published")} <b>${pub}</b></span></div></div>`;
+  // trend charts
+  const ig = ((A && A.platforms) || []).find(p => p.active);
+  const trend = ig ? `<div class="card"><div class="sec-h"><h2>${T("dash_trend")}</h2><span class="pill ${A.live ? "p-ok" : "p-idle"}">${A.live ? "live" : "demo"}</span></div>
+    <div class="mut" style="margin:.2rem 0">${T("reach")} · ${ig.name} · ${A.days} ${lang === "en" ? "days" : "يوم"}</div>${chart(ig.metrics.reach.series, ig.color, 60)}
+    <div class="mut" style="margin:.5rem 0 .2rem">${T("engagement")}</div>${chart(ig.metrics.engagement.series, "#E8890F", 60)}</div>` : "";
+  // windsor insights
+  const st = (kk, v) => `<div class="astat"><span class="an">${nf(v)}</span><span class="al">${T(kk)}</span></div>`;
   const ins = S.insights ? `<div class="card"><div class="sec-h"><h2>${T("perf")} (Windsor)</h2><span class="pill p-ok">${T("conn_on")}</span></div>
     <div class="astats">${st("followers", S.insights.followers)}${st("reach", S.insights.reach)}${st("impressions", S.insights.impressions)}${st("engagement", S.insights.engagement)}${st("clicks", S.insights.clicks)}</div></div>`
-    : `<div class="card"><b>${T("perf")}:</b> ${T("notConnected")}.</div>`;
-  return `<div class="grid g4">${k}</div><div style="margin-top:1rem">${ins}</div>`;
+    : `<div class="card"><div class="sec-h"><h2>${T("perf")}</h2></div><div class="mut">${T("notConnected")}</div></div>`;
+  // upcoming schedule
+  const up = q.filter(x => !(S.publishedLog && S.publishedLog[x.id])).slice().sort((a, b) => a.date < b.date ? -1 : 1).slice(0, 6);
+  const sched = `<div class="card"><div class="sec-h"><h2>${T("dash_upcoming")}</h2></div>
+    <div class="agenda">${up.map(x => `<div class="agrow"><span class="agd">${x.date}</span><span class="agc">${chan(x.ch)}</span><span class="agt">${escapeHtml(x.t)}</span>${((S.notes && S.notes[x.id]) || {}).status === "معتمد" ? `<span class="pill p-ok">✓</span>` : `<span class="pill p-warn">${T("s_review")}</span>`}</div>`).join("") || `<div class="mut">—</div>`}</div></div>`;
+  const cmp = (A && A.platforms) ? `<div class="card"><div class="sec-h"><h2>${T("comparison")}</h2></div>${compareBars()}</div>` : "";
+  return `<div class="grid g4">${k}</div>
+    <div class="grid g2" style="margin-top:1rem">${pipeHealth}${trend}</div>
+    <div class="grid g2" style="margin-top:1rem">${sched}${ins}</div>
+    <div style="margin-top:1rem">${cmp}</div>`;
 }
-const agentCard = (a) => `<div class="card agent"><div class="hd"><div class="av" style="background:${a.c}">${a.n.slice(0, 2).toUpperCase()}</div>
-  <div><div class="nm">${a.n}${a.NEW ? ` <span class="pill p-new">${lang === "ar" ? "جديد" : lang === "en" ? "new" : "جدید"}</span>` : ""}</div><div class="rl">${a.r}</div></div></div>
-  <div>${pill([a.st[1], STMAP[a.st[0]]])}</div><div class="task">${a.task}</div>
+
+// ── agents (with self-improvement approval) ───────────────────────
+function agentCard(a, i) {
+  return `<div class="card agent"><div class="hd"><div class="av" style="background:${a.c}">${a.n.slice(0, 2).toUpperCase()}</div>
+  <div><div class="nm">${a.n}${a.NEW ? ` <span class="pill p-new">${lang === "ar" ? "جديد" : lang === "en" ? "new" : "جدید"}</span>` : ""}${a.improved ? ` <span class="pill p-ok" title="${T("agent_improved")}">↑${a.improvements || ""}</span>` : ""}</div><div class="rl">${a.r}</div></div></div>
+  <div>${pill([a.st[1], STMAP[a.st[0]]])}</div><div class="task">${escapeHtml(a.task)}</div>
   ${a.sc > 0 ? `<div class="row"><span>${T("eval")}</span><span class="bar"><i style="width:${a.sc}%"></i></span><b>${a.sc}</b></div>` : `<div class="row">${pill([T("noScore"), "p-idle"])}</div>`}
-  <div class="mut">${a.ev}</div><div class="sug"><b>${T("selfSug")}:</b> ${a.sug}</div></div>`;
+  <div class="mut">${escapeHtml(a.ev)}</div>
+  <div class="sug"><div class="sugh"><b>${T("selfSug")}</b>${a.sug ? `<button class="sugok" data-improve="${i}" title="${T("agent_approve")}">✓</button>` : ""}</div><div class="sugt">${escapeHtml(a.sug)}</div></div></div>`;
+}
+function bindAgents() {
+  document.querySelectorAll("[data-improve]").forEach(b => b.onclick = () => improveAgent(+b.dataset.improve, b));
+}
+async function improveAgent(i, btn) {
+  const a = S.agents[i]; if (!a) return;
+  btn.textContent = "…"; btn.disabled = true;
+  try {
+    const r = await fetch("/api/agent-improve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: a.n, lang }) }).then(r => r.json());
+    if (r.ok && r.agent) {
+      S.agents[i] = { ...a, task: r.agent.task, ev: r.agent.ev, sug: r.agent.sug, sc: r.agent.sc, improved: true, improvements: r.agent.improvements };
+      render("agents");
+    } else { btn.textContent = "✓"; btn.disabled = false; }
+  } catch (e) { btn.textContent = "✗"; setTimeout(() => { btn.textContent = "✓"; btn.disabled = false; }, 1200); }
+}
 const needCard = (n) => `<div class="card"><div style="display:flex;gap:.4rem;align-items:center;margin-bottom:.35rem">${pill(n.t)} ${pill(n.pr)}<span style="margin-inline-start:auto;font-size:.74rem;color:var(--muted)">${n.f}</span></div>
   <div style="font-weight:800">${n.ti}</div><div class="mut" style="margin-top:.25rem">${n.d}</div></div>`;
-const qCard = (q, i) => { const nt = S.notes && S.notes[q.id]; return `<div class="qcard" data-i="${i}"><div class="thumb" style="background:linear-gradient(160deg,${q.tyc},${q.tyc}cc)"><span class="tp">${q.id}</span>${q.ty.includes("ريل") && q.drive ? "▶" : ""}<div style="margin-top:.2rem">${q.t.slice(0, 20)}</div></div>
-  <div class="qmeta"><div class="qt">${q.t}</div><div class="qi">${chan(q.ch)} ${q.ty} · ${q.date}</div><div>${S.publishedLog && S.publishedLog[q.id] ? `<span class="pill p-ok">${T("published_ok")}</span>` : nt && nt.status === "معتمد" ? pill([T("approve"), "p-ok"]) : pill(q.st)} ${q.gen ? `<span class="pill p-new">✨ ${T("gen")}</span>` : ""} ${nt && nt.note ? `<span class="pill p-idle">📝 ${T("noteBadge")}</span>` : ""}</div></div></div>`; };
-const prepTbl = () => `<div class="tbl-wrap"><table><thead><tr><th>${T("cal_start")} ▲</th><th>${lang === "en" ? "Title" : "العنوان"}</th><th></th><th></th><th></th></tr></thead><tbody>
-  ${S.prep.slice().sort((a, b) => a.d < b.d ? -1 : 1).map(p => `<tr><td style="font-weight:700">${p.d}</td><td>${p.t}</td><td>${chan(p.ch)} ${p.ch}</td><td style="color:var(--muted)">${p.ag}</td><td>${pill(p.st)}</td></tr>`).join("")}</tbody></table></div>`;
-const campView = () => `<div class="card" style="text-align:center;padding:1.4rem"><div style="font-weight:800;color:var(--plum)">${T("campNone")}</div>
-  <p class="mut">${T("campPolicy")}</p><div class="grid g2" style="max-width:34rem;margin:auto;text-align:start">
-  ${S.campaigns.map(c => `<div class="card" style="box-shadow:none"><div style="font-weight:800;font-size:.88rem">${c.name}</div><div class="mut">${c.meta}</div><div style="margin-top:.4rem">${pill(c.st)}</div></div>`).join("")}</div></div>`;
-const pubTbl = () => `<div class="tbl-wrap"><table><thead><tr><th>${lang === "en" ? "Content" : "المحتوى"}</th><th></th><th>${T("updated")}</th><th></th></tr></thead><tbody>
-  ${S.published.map(p => `<tr><td style="font-weight:700">${p.url ? `<a class="link" target="_blank" href="${p.url}">${p.t}</a>` : p.t}</td><td>${chan(p.ch)} ${p.ch}</td><td>${p.d}</td><td class="mut">${p.m}</td></tr>`).join("")}</tbody></table></div>`;
-const accCard = (a) => `<div class="card acc"><div class="ic" style="background:${CH[a.ch] || "#888"}">${GLYPH[a.ch] || a.ch}</div><div style="flex:1"><div style="font-weight:800">${a.h}</div><div class="mut">${a.s}</div></div>${pill(a.st)}</div>`;
+
+// ── unified Pipeline (merges queue + prep + media + published) ─────
+function renderPipeline(C) {
+  const q = S.queue || [];
+  const plats = [...new Set(q.map(x => x.ch))];
+  const types = [["all", T("f_all")], ["post", T("t_post")], ["reel", T("t_reel")], ["carousel", T("t_carousel")], ["poll", T("t_poll")]];
+  const stats = [["all", T("f_all")], ["pending", T("s_pending")], ["approved", T("s_approved")], ["published", T("s_published")], ["generated", T("s_generated")]];
+  const chip = (active, val, label, key) => `<button class="fchip ${active ? "on" : ""}" data-f="${key}" data-v="${val}">${label}</button>`;
+  const filtered = q.filter(x => (pf.plat === "all" || x.ch === pf.plat) && (pf.type === "all" || postType(x) === pf.type) && (pf.status === "all" || postStatus(x) === pf.status));
+  const bar = `<div class="filterbar">
+    <div class="frow"><span class="flabel">${T("f_platform")}</span>${chip(pf.plat === "all", "all", T("f_all"), "plat")}${plats.map(p => chip(pf.plat === p, p, `${chan(p)} ${p}`, "plat")).join("")}</div>
+    <div class="frow"><span class="flabel">${T("f_type")}</span>${types.map(([v, l]) => chip(pf.type === v, v, l, "type")).join("")}</div>
+    <div class="frow"><span class="flabel">${T("f_status")}</span>${stats.map(([v, l]) => chip(pf.status === v, v, l, "status")).join("")}</div>
+  </div>`;
+  const batch = S.contentBatch ? `<div class="note-info">✨ ${T("genBatch")}: <b>${S.contentBatch}</b> — ${T("genBy")}</div>` : "";
+  const list = filtered.length ? filtered.map(pipeCard).join("") : `<div class="loading">${T("f_none")}</div>`;
+  C.innerHTML = `${batch}<div class="pipehead"><b>${T("nav_pipeline")}</b><span class="mut">${filtered.length} / ${q.length}</span></div>${bar}<div class="pipefeed">${list}</div>`;
+  bindPipeline();
+}
+function pipeCard(q) {
+  const nt = (S.notes && S.notes[q.id]) || {};
+  const pub = S.publishedLog && S.publishedLog[q.id];
+  const approved = nt.status === "معتمد";
+  const thread = nt.thread || [];
+  const isReel = (q.ty || "").includes("ريل");
+  const badges = [
+    pub ? `<span class="pill p-ok">📤 ${T("published_ok")}</span>` : approved ? `<span class="pill p-ok">✓ ${T("approve")}</span>` : pill(q.st),
+    q.gen ? `<span class="pill p-new">✨ ${T("gen")}</span>` : ""
+  ].filter(Boolean).join(" ");
+  const threadHtml = thread.length ? `<div class="pthread">${thread.map(bubble).join("")}</div>` : "";
+  let pubBtn = "";
+  if (pub) pubBtn = pub.permalink ? `<a class="link sm" target="_blank" href="${pub.permalink}">${T("published_ok")} ↗</a>` : "";
+  else if (S.publishReady && approved) pubBtn = `<button class="btn sm pubbtn" data-pub="${q.id}">📤 ${T("publish_now")}</button>`;
+  return `<div class="pcard" data-id="${q.id}">
+    <div class="pthumb" style="background:linear-gradient(160deg,${q.tyc},${q.tyc}bb)" ${q.drive ? `data-play="${q.drive}"` : ""}>
+      <span class="tp">${q.id}</span>${q.drive ? `<span class="pplay">${isReel ? "▶" : "🖼"}</span>` : `<span class="pplay dim">✎</span>`}
+      <div class="pthumbt">${escapeHtml(q.t.slice(0, 26))}</div></div>
+    <div class="pmain">
+      <div class="ptitle">${escapeHtml(q.t)}</div>
+      <div class="pmeta">${chan(q.ch)} ${q.ty} · <b>${q.date}</b></div>
+      <div class="pbadges">${badges}</div>
+      <div class="pcap">${escapeHtml((q.cap || "").slice(0, 170))}${(q.cap || "").length > 170 ? "…" : ""}</div>
+      ${threadHtml}
+      <div class="pnotebar"><input class="pnote" data-id="${q.id}" placeholder="${T("note_ask_ph")}" autocomplete="off"><button class="btn sm askbtn" data-ask="${q.id}">${T("note_ask")}</button></div>
+      <div class="pactions">
+        ${approved || pub ? "" : `<button class="btn ok sm" data-approve="${q.id}">✓ ${T("approve")}</button>`}
+        ${pubBtn}
+        ${q.drive ? `<a class="link sm" target="_blank" href="https://drive.google.com/file/d/${q.drive}/view">${T("openDrive")}</a>` : ""}
+      </div>
+    </div></div>`;
+}
+const bubble = (m) => `<div class="pbub ${m.role}">${m.role === "manager" ? '<span class="pba">CA</span>' : ""}<span>${escapeHtml(m.text)}</span></div>`;
+function bindPipeline() {
+  document.querySelectorAll(".fchip").forEach(b => b.onclick = () => { pf[b.dataset.f] = b.dataset.v; renderPipeline($("#content")); });
+  document.querySelectorAll(".pthumb[data-play]").forEach(t => t.onclick = () => openDrivePlay(t.dataset.play, t.closest(".pcard").querySelector(".ptitle").textContent));
+  document.querySelectorAll("[data-ask]").forEach(b => b.onclick = () => askManager(b.dataset.ask));
+  document.querySelectorAll(".pnote").forEach(i => i.onkeydown = e => { if (e.key === "Enter") askManager(i.dataset.id); });
+  document.querySelectorAll("[data-approve]").forEach(b => b.onclick = async () => { b.disabled = true; await postNote(b.dataset.approve, { id: b.dataset.approve, action: "approve" }); renderPipeline($("#content")); });
+  document.querySelectorAll("[data-pub]").forEach(b => b.onclick = () => publishPost(b.dataset.pub, b));
+}
+async function askManager(id) {
+  const inp = document.querySelector(`.pnote[data-id="${id}"]`); if (!inp) return;
+  const note = inp.value.trim(); if (!note) return;
+  inp.value = ""; inp.disabled = true;
+  const card = document.querySelector(`.pcard[data-id="${id}"]`);
+  let th = card.querySelector(".pthread");
+  if (!th) { th = document.createElement("div"); th.className = "pthread"; card.querySelector(".pcap").after(th); }
+  th.insertAdjacentHTML("beforeend", `${bubble({ role: "user", text: note })}<div class="pbub manager typing"><span class="pba">CA</span><span>…</span></div>`);
+  th.scrollTop = th.scrollHeight;
+  try {
+    const r = await fetch("/api/post-note", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, note, lang }) }).then(r => r.json());
+    if (r.notes) S.notes = r.notes;
+    th.innerHTML = (r.thread || []).map(bubble).join("");
+    th.scrollTop = th.scrollHeight;
+  } catch (e) { const t = card.querySelector(".pbub.typing span:last-child"); if (t) t.textContent = "✗"; }
+  inp.disabled = false; inp.focus();
+}
+async function publishPost(id, btn) {
+  if (!confirm(T("publish_confirm"))) return;
+  btn.disabled = true; btn.textContent = T("publishing");
+  try {
+    const r = await fetch("/api/publish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).then(r => r.json());
+    if (r.ok) { S = await fetch("/api/state").then(x => x.json()); renderPipeline($("#content")); }
+    else { btn.disabled = false; btn.textContent = "📤 " + T("publish_now"); alert("✗ " + (r.error || "")); }
+  } catch (e) { btn.disabled = false; btn.textContent = "📤 " + T("publish_now"); }
+}
 
 // ── analytics ─────────────────────────────────────────────────────
 async function renderAnalytics(C) {
@@ -238,7 +355,7 @@ function anCard(p) {
   if (!p.active) return `<div class="card" style="opacity:.75"><div class="acc"><div class="ic" style="background:${p.color}">${GLYPH[p.key] || p.key}</div><div style="flex:1"><div style="font-weight:800">${p.name}</div><div class="mut">${p.note || T("inactive")}</div></div>${pill([T("inactive"), "p-idle"])}</div></div>`;
   const m = p.metrics;
   const stat = (key, val) => `<div class="astat"><span class="an">${nf(val)}</span><span class="al">${T(key)}</span></div>`;
-  return `<div class="card"><div class="acc" style="margin-bottom:.5rem"><div class="ic" style="background:${p.color}">${GLYPH[p.key] || p.key}</div><div style="flex:1"><div style="font-weight:800">${p.name}</div><div class="mut">${T("engRate")}: ${p.engagementRate}%</div></div>${pill([T("mode_live") && A.live ? "live" : "demo", A.live ? "p-ok" : "p-idle"])}</div>
+  return `<div class="card"><div class="acc" style="margin-bottom:.5rem"><div class="ic" style="background:${p.color}">${GLYPH[p.key] || p.key}</div><div style="flex:1"><div style="font-weight:800">${p.name}</div><div class="mut">${T("engRate")}: ${p.engagementRate}%</div></div>${pill([A.live ? "live" : "demo", A.live ? "p-ok" : "p-idle"])}</div>
     <div class="astats">${stat("followers", m.followers.total)}${stat("reach", m.reach.total)}${stat("impressions", m.impressions.total)}${stat("engagement", m.engagement.total)}${stat("clicks", m.clicks.total)}</div>
     <div class="mut" style="margin:.5rem 0 .2rem">${T("reach")} · ${A.days} ${lang === "en" ? "days" : "يوم"}</div>${chart(m.reach.series, p.color)}
     <div class="mut" style="margin:.5rem 0 .2rem">${T("engagement")}</div>${chart(m.engagement.series, "#E8890F")}</div>`;
@@ -249,38 +366,19 @@ function compareBars() {
   return act.map(p => `<div class="cbar"><span class="cbl">${chan(p.key)} ${p.name}</span><span class="ctrack"><i style="width:${p.metrics.reach.total / max * 100}%;background:${p.color}"></i></span><b>${nf(p.metrics.reach.total)}</b></div>`).join("");
 }
 
-// ── media gallery + player ────────────────────────────────────────
-function mediaGrid() {
-  return `<div class="note-info">${T("mediaShare")}</div><div class="grid g4">${S.queue.map((q, i) => q.drive ? `<div class="mtile" data-i="${i}"><div class="mthumb" style="background:linear-gradient(160deg,${q.tyc},${q.tyc}bb)">${q.ty.includes("ريل") ? '<span class="play">▶</span>' : "🖼"}<span class="tp">${q.id}</span></div><div class="mcap">${q.t}</div></div>` : "").join("")}</div>`;
-}
-function openMedia(i) {
-  mediaIdx = i; const q = S.queue[i];
-  $("#mvtitle").textContent = q.id + " · " + q.t;
-  $("#mvframe").innerHTML = `<iframe src="https://drive.google.com/file/d/${q.drive}/preview" allow="autoplay" allowfullscreen></iframe>`;
-  $("#mvhint").innerHTML = `${q.ty} · ${q.date} — <a class="link" target="_blank" href="https://drive.google.com/file/d/${q.drive}/view">${T("openDrive")}</a>`;
+// ── media player (Drive preview) ──────────────────────────────────
+function openDrivePlay(driveId, title) {
+  $("#mvtitle").textContent = title || "";
+  $("#mvframe").innerHTML = `<iframe src="https://drive.google.com/file/d/${driveId}/preview" allow="autoplay" allowfullscreen></iframe>`;
+  $("#mvhint").innerHTML = `<a class="link" target="_blank" href="https://drive.google.com/file/d/${driveId}/view">${T("openDrive")}</a>`;
   $("#mv").classList.add("on");
 }
 
-// ── calendar ──────────────────────────────────────────────────────
-function calendarView() {
-  const y = 2026, mo = 6; // July 2026
-  const first = new Date(y, mo, 1).getDay(); const days = new Date(y, mo + 1, 0).getDate();
-  const ev = {};
-  S.queue.forEach(q => { const d = +q.date.slice(8, 10); (ev[d] = ev[d] || []).push({ t: "pub", q }); });
-  S.prep.forEach(p => { if (p.d.startsWith("2026-07")) { const d = +p.d.slice(8, 10); (ev[d] = ev[d] || []).push({ t: "start", p }); } });
-  const wd = lang === "en" ? ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"] : ["أحد", "إثن", "ثلا", "أرب", "خمي", "جمع", "سبت"];
-  let cells = "";
-  for (let i = 0; i < first; i++) cells += `<div class="ccell empty"></div>`;
-  for (let d = 1; d <= days; d++) {
-    const e = ev[d] || [];
-    const dots = e.map(x => `<span class="cdot ${x.t}"></span>`).join("");
-    const tip = e.map(x => x.t === "pub" ? `▲ ${T("cal_pub")}: ${x.q.id}` : `● ${T("cal_start")}: ${x.p.t}`).join(" · ");
-    cells += `<div class="ccell ${e.length ? "has" : ""}" title="${tip}"><span class="cd">${d}</span><span class="cdots">${dots}</span></div>`;
-  }
-  return `<div class="card"><div class="sec-h"><h2>${lang === "en" ? "July 2026" : "يوليو ٢٠٢٦"}</h2>
-    <span class="hint"><span class="cdot pub"></span> ${T("cal_pub")} &nbsp; <span class="cdot start"></span> ${T("cal_start")}</span></div>
-    <div class="cgrid head">${wd.map(w => `<div class="cwd">${w}</div>`).join("")}</div><div class="cgrid">${cells}</div></div>`;
-}
+// ── campaigns ─────────────────────────────────────────────────────
+const campView = () => `<div class="card" style="text-align:center;padding:1.4rem"><div style="font-weight:800;color:var(--plum)">${T("campNone")}</div>
+  <p class="mut">${T("campPolicy")}</p><div class="grid g2" style="max-width:34rem;margin:auto;text-align:start">
+  ${S.campaigns.map(c => `<div class="card" style="box-shadow:none"><div style="font-weight:800;font-size:.88rem">${c.name}</div><div class="mut">${c.meta}</div><div style="margin-top:.4rem">${pill(c.st)}</div></div>`).join("")}</div></div>`;
+const accCard = (a) => `<div class="card acc"><div class="ic" style="background:${CH[a.ch] || "#888"}">${GLYPH[a.ch] || a.ch}</div><div style="flex:1"><div style="font-weight:800">${a.h}</div><div class="mut">${a.s}</div></div>${pill(a.st)}</div>`;
 
 // ── leads (mini-CRM) ──────────────────────────────────────────────
 function leadsView() {
@@ -307,44 +405,10 @@ function bindReply() {
   });
 }
 
-// ── review modal (shared notes) ───────────────────────────────────
-function openReview(i) {
-  cur = i; const q = S.queue[i]; const nt = (S.notes && S.notes[q.id]) || {};
-  $("#mbig").style.background = `linear-gradient(160deg,${q.tyc},${q.tyc}bb)`;
-  $("#mbig").innerHTML = `<div><div style="font-size:.8rem;opacity:.85">${q.id}</div><div style="font-size:1.05rem;margin-top:.4rem">${q.t}</div><div style="font-size:.72rem;opacity:.8;margin-top:.6rem">${q.ty.includes("ريل") ? "▶" : "🖼"}</div></div>`;
-  $("#mtitle").textContent = q.t; $("#mchan").innerHTML = `${chan(q.ch)} ${q.ch} · ${q.ty} · ${q.date}`;
-  $("#mcap").innerHTML = escapeHtml(q.cap) + (q.brief ? `<div style="margin-top:.5rem;padding-top:.5rem;border-top:1px dashed var(--line);color:var(--muted)"><b>${T("brief")}:</b> ${escapeHtml(q.brief)}</div>` : "");
-  $("#mplaybtn").style.display = q.drive ? "" : "none";
-  $("#mdrive").style.display = q.drive ? "" : "none";
-  $("#mplaybtn").onclick = () => { $("#ov").classList.remove("on"); document.querySelector('#nav button[data-go="media"]').click(); setTimeout(() => openMedia(i), 60); };
-  $("#mdrive").href = "https://drive.google.com/file/d/" + q.drive + "/view"; $("#mdrive").textContent = T("openDrive");
-  $("#mnote").placeholder = T("note_ph"); $("#mnote").value = nt.note || "";
-  $("#msave").textContent = T("save"); $("#mapprove").textContent = "✓ " + T("approve"); $("#mnext").textContent = T("next") + " ↩";
-  $("#msaved").textContent = nt.status === "معتمد" ? "✓ " + T("approvedMsg") : nt.note ? "📝 " + nt.note : "";
-  // publish control
-  const pub = S.publishedLog && S.publishedLog[q.id];
-  const approved = nt.status === "معتمد";
-  const pb = $("#mpublish");
-  if (pub) { pb.style.display = ""; pb.disabled = true; pb.textContent = T("published_ok"); if (pub.permalink) $("#msaved").innerHTML = `✓ <a class="link" target="_blank" href="${pub.permalink}">${T("published_ok")}</a>`; }
-  else if (S.publishReady && approved) { pb.style.display = ""; pb.disabled = false; pb.textContent = "📤 " + T("publish_now"); }
-  else { pb.style.display = "none"; }
-  $("#ov").classList.add("on");
-}
-$("#mpublish").onclick = async () => {
-  const q = S.queue[cur]; if (!confirm(T("publish_confirm"))) return;
-  const pb = $("#mpublish"); pb.disabled = true; pb.textContent = T("publishing");
-  try {
-    const r = await fetch("/api/publish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: q.id }) }).then(r => r.json());
-    if (r.ok) { $("#msaved").innerHTML = r.result?.permalink ? `✓ <a class="link" target="_blank" href="${r.result.permalink}">${T("published_ok")}</a>` : "✓ " + T("published_ok"); pb.textContent = T("published_ok"); S = await fetch("/api/state").then(x => x.json()); }
-    else { $("#msaved").textContent = "✗ " + (r.error || ""); pb.disabled = false; pb.textContent = "📤 " + T("publish_now"); }
-  } catch (e) { $("#msaved").textContent = "✗"; pb.disabled = false; pb.textContent = "📤 " + T("publish_now"); }
-};
+// ── shared: save/approve note ─────────────────────────────────────
 async function postNote(id, body) { const r = await fetch("/api/notes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(r => r.json()); if (r.notes) S.notes = r.notes; return r; }
-$("#mx").onclick = () => $("#ov").classList.remove("on");
-$("#ov").onclick = (e) => { if (e.target.id === "ov") $("#ov").classList.remove("on"); };
-$("#msave").onclick = async () => { const q = S.queue[cur]; await postNote(q.id, { id: q.id, note: $("#mnote").value }); $("#msaved").textContent = $("#mnote").value.trim() ? T("noteSaved") : ""; };
-$("#mapprove").onclick = async () => { const q = S.queue[cur]; await postNote(q.id, { id: q.id, action: "approve" }); $("#msaved").textContent = "✓ " + T("approvedMsg"); };
-$("#mnext").onclick = () => openReview((cur + 1) % S.queue.length);
+
+// ── media player close ────────────────────────────────────────────
 $("#mvx").onclick = () => { $("#mv").classList.remove("on"); $("#mvframe").innerHTML = ""; };
 $("#mv").onclick = (e) => { if (e.target.id === "mv") { $("#mv").classList.remove("on"); $("#mvframe").innerHTML = ""; } };
 

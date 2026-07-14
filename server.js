@@ -12,7 +12,7 @@ import * as wa from "./integrations/whatsapp.js";
 import * as claude from "./integrations/claude.js";
 import * as metaPublish from "./integrations/metaPublish.js";
 import { fetchDrive } from "./integrations/driveMedia.js";
-import { managerSystem, demoReply, errReply } from "./data/manager.js";
+import { managerSystem, demoReply, errReply, managerNoteSystem, demoNoteReply, agentImproveSystem, fallbackImprovement } from "./data/manager.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -65,6 +65,13 @@ app.get("/api/state", async (req, res) => {
   if (merged.length) state.messages = merged;
   if (published.length) state.published = published;
   if (insights) state.insights = insights;
+  // Merge approved agent self-improvements (raised level, updated task/eval/suggestion).
+  const agState = store.getAgentState();
+  state.agents = state.agents.map((a) => {
+    const o = agState[a.n];
+    if (!o) return a;
+    return { ...a, task: o.task || a.task, ev: o.ev || a.ev, sug: o.sug || a.sug, sc: o.sc ?? a.sc, improved: true, improvements: o.improvements || 0 };
+  });
   state.notes = store.getNotes();
   state.publishReady = metaPublish.publishReady();
   state.autoPublish = (process.env.AUTO_PUBLISH || store.cfgGet("AUTO_PUBLISH")) === "on";
@@ -168,6 +175,43 @@ app.post("/api/notes", (req, res) => {
   if (!id) return res.status(400).json({ ok: false, error: "id required" });
   if (action === "approve") return res.json({ ok: true, notes: store.approve(id) });
   res.json({ ok: true, notes: store.setNote(id, note || "") });
+});
+
+// ── Per-post note → CAIMO replies directly on the post ──────────────
+app.post("/api/post-note", async (req, res) => {
+  const { id, note, lang } = req.body || {};
+  if (!id || !note || !note.trim()) return res.status(400).json({ ok: false, error: "id & note required" });
+  store.addPostNote(id, "user", note.trim());
+  const item = fullQueue().find((q) => q.id === id) || { id };
+  const st = baseState();
+  st.connectivity = { meta: meta.metaReady(), whatsapp: wa.whatsappReady(), windsor: windsor.windsorReady() };
+  let reply = null;
+  try {
+    const thread = store.getPostThread(id).map((m) => ({ role: m.role, text: m.text }));
+    reply = await claude.chat(thread, managerNoteSystem(st, item, lang || "ar"));
+  } catch (e) { console.error("[post-note]", e.message); }
+  if (!reply) reply = claude.claudeReady() ? errReply(lang) : demoNoteReply(item, note, lang);
+  store.addPostNote(id, "manager", reply);
+  res.json({ ok: true, thread: store.getPostThread(id), notes: store.getNotes() });
+});
+
+// ── Approve an agent's self-suggestion → CAIMO improves the agent ────
+app.post("/api/agent-improve", async (req, res) => {
+  const { name, lang } = req.body || {};
+  const base = baseState().agents.find((a) => a.n === name);
+  if (!base) return res.status(404).json({ ok: false, error: "agent not found" });
+  const cur = { ...base, ...(store.getAgentState()[name] || {}) }; // build on latest improvement
+  let patch = null;
+  try {
+    const raw = await claude.chat([{ role: "user", text: "نفّذ الاقتراح المعتمد وارفع مستوى الوكيل. أعد JSON فقط." }], agentImproveSystem(cur, lang || "ar"));
+    if (raw) {
+      const m = raw.match(/\{[\s\S]*\}/);
+      if (m) { const p = JSON.parse(m[0]); if (p && p.task && p.sug) patch = { task: String(p.task), ev: String(p.ev || ""), sug: String(p.sug), sc: Math.min(99, Math.max(Number(cur.sc) || 0, Number(p.sc) || 0)) }; }
+    }
+  } catch (e) { console.error("[agent-improve]", e.message); }
+  if (!patch) patch = fallbackImprovement(cur);
+  const saved = store.applyAgentImprovement(name, patch);
+  res.json({ ok: true, agent: { ...cur, ...saved } });
 });
 
 // ── Publishing (Instagram) ──────────────────────────────────────────

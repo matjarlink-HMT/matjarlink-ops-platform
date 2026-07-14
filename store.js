@@ -41,13 +41,45 @@ export function markPublished(id, result) { pub[id] = { ...result, id, at: resul
 
 export function getNotes() { return mem; }
 export function setNote(id, value, status) {
-  if (value && value.trim()) mem[id] = { note: value.trim(), status: status || "قيد التعديل", at: new Date().toISOString() };
+  const v = value && value.trim();
+  const cur = mem[id] || {};
+  if (v) { cur.note = v; cur.status = status || cur.status || "قيد التعديل"; cur.at = new Date().toISOString(); mem[id] = cur; }
+  else if (cur.thread?.length || cur.status === "معتمد") { cur.note = ""; mem[id] = cur; } // keep approval / thread
   else delete mem[id];
   persist();
   return mem;
 }
 export function approve(id) {
-  mem[id] = { note: "", status: "معتمد", at: new Date().toISOString() };
+  const cur = mem[id] || {};
+  cur.status = "معتمد"; cur.note = cur.note || ""; cur.at = new Date().toISOString();
+  mem[id] = cur;
   persist();
   return mem;
+}
+
+// ── Per-post note thread ── owner ⇄ CAIMO conversation about a single post.
+export function getPostThread(id) { return (mem[id] && mem[id].thread) || []; }
+export function addPostNote(id, role, text) {
+  const t = text && text.trim(); if (!t) return getPostThread(id);
+  const cur = mem[id] || {};
+  cur.thread = cur.thread || [];
+  cur.thread.push({ role, text: t, at: new Date().toISOString() });
+  if (cur.thread.length > 40) cur.thread = cur.thread.slice(-40);
+  if (role === "user") { cur.note = t; cur.status = cur.status || "قيد التعديل"; }
+  cur.at = new Date().toISOString();
+  mem[id] = cur; persist();
+  return cur.thread;
+}
+
+// ── Agent self-improvement state ── approved suggestions raise the agent's level.
+const AG_FILE = process.env.AGENTS_FILE || new URL("./data/agents_state.json", import.meta.url).pathname;
+let ag = {};
+try { ag = JSON.parse(fs.readFileSync(AG_FILE, "utf8")); } catch (e) { ag = {}; }
+function persistAg() { try { fs.writeFileSync(AG_FILE, JSON.stringify(ag)); } catch (e) {} }
+export function getAgentState() { return ag; }
+export function applyAgentImprovement(name, patch) {
+  const cur = ag[name] || { improvements: 0 };
+  ag[name] = { ...cur, ...patch, improvements: (cur.improvements || 0) + 1, at: new Date().toISOString() };
+  persistAg();
+  return ag[name];
 }

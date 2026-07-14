@@ -42,6 +42,59 @@ export function managerSystem(state = {}, lang = "ar") {
 مختصر، عملي، حاسم. سطران إلى أربعة عادةً — لا فقرات طويلة. استخدم تفاصيل محددة (أرقام المنشورات، التواريخ، أسماء الوكلاء). ${langLine}`;
 }
 
+// ── Per-post note thread ── CAIMO responds to a note on a specific post ──
+export function managerNoteSystem(state = {}, item = {}, lang = "ar") {
+  const langLine = { ar: "بالعربية بلهجة عُمانية مهنية.", en: "In clear English.", fa: "به فارسی روان." }[lang] || "طابق لغة المستخدم.";
+  return `أنت «CAIMO»، مدير التسويق بالذكاء الاصطناعي في «متجرلينك». إبراهيم (المالك) كتب ملاحظة على منشور محدد داخل قائمة النشر، وأنت تردّ عليه مباشرةً.
+
+## المنشور محل النقاش
+- المعرّف: ${item.id || "—"}
+- العنوان: ${item.t || "—"}
+- النوع/المنصة: ${item.ty || "—"} · ${item.ch || "IG"}
+- موعد النشر: ${item.date || "—"}
+- الكابشن: ${(item.cap || "").slice(0, 400)}
+${item.brief ? `- بريف التصميم: ${item.brief.slice(0, 300)}` : ""}
+
+## كيف تردّ
+- ردّ على ملاحظة إبراهيم تحديداً بخصوص هذا المنشور: إن كانت في مصلحة الحساب وافق ووضّح كيف ستنفّذها ومن الوكيل المسؤول (مثلاً وكيل التصميم/المحتوى)؛ إن رأيتها غير مناسبة اعترض باحترام واشرح السبب واقترح بديلاً وحاول إقناعه.
+- التزم بمعايير المحتوى: لهجة عُمانية («شو» لا «وش»)، تشويق ما قبل الإطلاق بـ«قريبًا» بلا تاريخ، طاقة بصرية عالية، Stop-the-Scroll.
+- كن محدداً وموجزاً: جملتان إلى أربع. لا فقرات طويلة. ${langLine}`;
+}
+export function demoNoteReply(item = {}, note = "", lang = "ar") {
+  return {
+    ar: `تلقّيت ملاحظتك على ${item.id || "المنشور"} ✓ — لتفعيل ردّي الذكي الكامل أضف ANTHROPIC_API_KEY من «الإعدادات ← الربط». مبدئياً: سأمرّرها لوكيل التصميم/المحتوى وأضبط التنفيذ على معيار الطاقة البصرية.`,
+    en: `Got your note on ${item.id || "this post"} ✓ — add ANTHROPIC_API_KEY under Settings → Connections to enable my full reply. For now I'll route it to the design/content agent and hold it to the Visual-Energy standard.`,
+    fa: `یادداشتت روی ${item.id || "این پست"} ثبت شد ✓ — برای پاسخ کامل، ANTHROPIC_API_KEY را در تنظیمات اضافه کن.`
+  }[lang] || `Note received on ${item.id || "this post"}.`;
+}
+
+// ── Agent self-improvement ── CAIMO executes an agent's self-suggestion ──
+export function agentImproveSystem(agent = {}, lang = "ar") {
+  const cur = Math.max(0, Number(agent.sc) || 0);
+  return `أنت «CAIMO»، المدير التنفيذي للتسويق بالذكاء الاصطناعي في «متجرلينك». وافق إبراهيم على الاقتراح الذاتي لأحد وكلائك، ومهمتك الآن أن «تنفّذ» هذا التحسين وترفع مستوى الوكيل.
+
+## الوكيل
+- الاسم: ${agent.n}
+- الدور: ${agent.r}
+- المهمة الحالية: ${agent.task}
+- التقييم الحالي: ${cur}/100
+- الاقتراح الذاتي المعتمد (نفّذه): ${agent.sug}
+
+## المطلوب
+طبّق الاقتراح فعلياً على وصف عمل الوكيل، ثم أعد **JSON فقط** بلا أي نص خارج الأقواس، بهذا الشكل بالضبط:
+{"task":"<مهمة محدّثة تعكس تطبيق الاقتراح — جملة عملية>","ev":"<تقييم موجز لما تحسّن بعد التطبيق>","sug":"<اقتراح ذاتي جديد للمستوى التالي، مختلف عن السابق>","sc":<عدد صحيح بين ${Math.min(99, cur + 2)} و 99 أعلى من ${cur}>}
+اكتب القيم بالعربية بلهجة عُمانية مهنية. JSON صالح فقط.`;
+}
+export function fallbackImprovement(agent = {}) {
+  const cur = Math.max(0, Number(agent.sc) || 70);
+  return {
+    task: agent.task,
+    ev: `اعتُمد الاقتراح ورُفع مستوى الوكيل — التنفيذ الذكي الكامل يحتاج ANTHROPIC_API_KEY.`,
+    sug: "راجع النتائج بعد أسبوع وحسّن بناءً على البيانات.",
+    sc: Math.min(98, cur + 4)
+  };
+}
+
 // Shown when no ANTHROPIC_API_KEY is set — guides activation without pretending.
 export function demoReply(userText = "", lang = "ar") {
   const snip = userText.slice(0, 60);

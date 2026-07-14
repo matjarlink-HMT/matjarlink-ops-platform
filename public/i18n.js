@@ -40,7 +40,15 @@ export const I18N = {
     set_accounts: "الحسابات المرتبطة", set_integrations: "الربط والتكاملات", set_prefs: "التفضيلات",
     set_lang: "لغة اللوحة", set_install: "تثبيت كتطبيق", set_pwnote: "لحماية اللوحة بكلمة مرور، أضف DASHBOARD_PASSWORD في متغيّرات Railway.",
     gen: "مُولّد", genBatch: "دفعة مُولّدة تلقائياً", genBy: "أنشأ خطتها وكابشناتها كلاودي — التصاميم على وكيل التصميم", brief: "بريف التصميم",
-    publish_now: "انشر الآن على إنستغرام", publish_confirm: "تأكيد: نشر هذا المنشور على إنستغرام الآن؟", published_ok: "نُشر ✓", publishing: "جارٍ النشر…", publish_need_media: "يحتاج رابط وسائط عام (mediaUrl) — يُضاف من التصميم", publish_not_ready: "فعّل ربط Meta أولاً"
+    publish_now: "انشر الآن على إنستغرام", publish_confirm: "تأكيد: نشر هذا المنشور على إنستغرام الآن؟", published_ok: "نُشر ✓", publishing: "جارٍ النشر…", publish_need_media: "يحتاج رابط وسائط عام (mediaUrl) — يُضاف من التصميم", publish_not_ready: "فعّل ربط Meta أولاً",
+    nav_pipeline: "قائمة النشر",
+    f_platform: "المنصة", f_type: "النوع", f_status: "الحالة", f_all: "الكل", f_none: "لا منشورات تطابق الفلتر",
+    t_post: "منشور", t_reel: "ريل", t_carousel: "كاروسيل", t_poll: "استطلاع", t_story: "ستوري",
+    s_pending: "بانتظار المراجعة", s_approved: "معتمد", s_published: "منشور", s_generated: "مُولّد", s_review: "للمراجعة",
+    note_ask: "أرسل للمدير", note_ask_ph: "أضف ملاحظة على المنشور… والمدير يردّ",
+    agent_improve_hint: "اعتمِد الاقتراح الذاتي لأي وكيل (✓) ليقوم CAIMO بتطبيقه ورفع مستوى الوكيل.",
+    agent_approve: "اعتمِد الاقتراح — يطبّقه المدير ويرفع المستوى", agent_improved: "حُسّن بواسطة المدير",
+    dash_pipeline: "صحة قائمة النشر", dash_posts: "منشور", dash_trend: "اتجاه الأداء", dash_upcoming: "النشر القادم"
   },
   en: {
     brand_sub: "AI Ops · Command Center", sub: "AI marketing team operations — MatjarLink",
@@ -75,7 +83,15 @@ export const I18N = {
     set_accounts: "Linked accounts", set_integrations: "Connections & integrations", set_prefs: "Preferences",
     set_lang: "Dashboard language", set_install: "Install as app", set_pwnote: "To password-protect the dashboard, add DASHBOARD_PASSWORD in Railway variables.",
     gen: "generated", genBatch: "Auto-generated batch", genBy: "plan & captions by Claude — designs by the design agent", brief: "Design brief",
-    publish_now: "Publish to Instagram now", publish_confirm: "Confirm: publish this post to Instagram now?", published_ok: "Published ✓", publishing: "Publishing…", publish_need_media: "Needs a public media URL (mediaUrl) — added from the design", publish_not_ready: "Connect Meta first"
+    publish_now: "Publish to Instagram now", publish_confirm: "Confirm: publish this post to Instagram now?", published_ok: "Published ✓", publishing: "Publishing…", publish_need_media: "Needs a public media URL (mediaUrl) — added from the design", publish_not_ready: "Connect Meta first",
+    nav_pipeline: "Publish Pipeline",
+    f_platform: "Platform", f_type: "Type", f_status: "Status", f_all: "All", f_none: "No posts match the filter",
+    t_post: "Post", t_reel: "Reel", t_carousel: "Carousel", t_poll: "Poll", t_story: "Story",
+    s_pending: "Pending review", s_approved: "Approved", s_published: "Published", s_generated: "Generated", s_review: "Review",
+    note_ask: "Ask manager", note_ask_ph: "Add a note on this post… the manager replies",
+    agent_improve_hint: "Approve any agent's self-suggestion (✓) and CAIMO applies it and raises the agent's level.",
+    agent_approve: "Approve suggestion — the manager applies it and levels up the agent", agent_improved: "Improved by the manager",
+    dash_pipeline: "Pipeline health", dash_posts: "posts", dash_trend: "Performance trend", dash_upcoming: "Upcoming posts"
   },
   fa: {
     brand_sub: "AI Ops · مرکز فرماندهی", sub: "عملیات تیم بازاریابی هوش مصنوعی — متجرلینک",
@@ -110,6 +126,14 @@ export const I18N = {
     set_accounts: "حساب‌های متصل", set_integrations: "اتصالات و یکپارچه‌سازی", set_prefs: "تنظیمات",
     set_lang: "زبان داشبورد", set_install: "نصب به‌عنوان برنامه", set_pwnote: "برای محافظت با رمز، DASHBOARD_PASSWORD را در متغیرهای Railway اضافه کن.",
     gen: "تولیدشده", genBatch: "دستهٔ خودکار", genBy: "طرح و کپشن‌ها را Claude ساخته — طراحی با ایجنت طراحی", brief: "بریف طراحی",
-    publish_now: "اکنون در اینستاگرام منتشر کن", publish_confirm: "تأیید: این پست اکنون در اینستاگرام منتشر شود؟", published_ok: "منتشر شد ✓", publishing: "در حال انتشار…", publish_need_media: "به URL عمومی رسانه (mediaUrl) نیاز دارد", publish_not_ready: "ابتدا Meta را متصل کن"
+    publish_now: "اکنون در اینستاگرام منتشر کن", publish_confirm: "تأیید: این پست اکنون در اینستاگرام منتشر شود؟", published_ok: "منتشر شد ✓", publishing: "در حال انتشار…", publish_need_media: "به URL عمومی رسانه (mediaUrl) نیاز دارد", publish_not_ready: "ابتدا Meta را متصل کن",
+    nav_pipeline: "صف انتشار",
+    f_platform: "پلتفرم", f_type: "نوع", f_status: "وضعیت", f_all: "همه", f_none: "پستی با این فیلتر نیست",
+    t_post: "پست", t_reel: "ریل", t_carousel: "کاروسل", t_poll: "نظرسنجی", t_story: "استوری",
+    s_pending: "در انتظار بررسی", s_approved: "تأییدشده", s_published: "منتشرشده", s_generated: "تولیدشده", s_review: "بررسی",
+    note_ask: "به مدیر بگو", note_ask_ph: "یادداشتی روی این پست بنویس… مدیر پاسخ می‌دهد",
+    agent_improve_hint: "پیشنهاد خودکار هر ایجنت را تأیید کن (✓) تا CAIMO آن را اجرا و سطح ایجنت را بالا ببرد.",
+    agent_approve: "تأیید پیشنهاد — مدیر آن را اجرا و ایجنت را ارتقا می‌دهد", agent_improved: "توسط مدیر بهبود یافت",
+    dash_pipeline: "سلامت صف انتشار", dash_posts: "پست", dash_trend: "روند عملکرد", dash_upcoming: "انتشارهای بعدی"
   }
 };
