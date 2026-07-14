@@ -11,3 +11,5 @@ data/agents_state.json
 data/overrides.json
 
 .claude/
+
+data/designs/

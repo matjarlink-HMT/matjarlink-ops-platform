@@ -50,7 +50,7 @@ export const I18N = {
     agent_approve: "اعتمِد الاقتراح — يطبّقه المدير ويرفع المستوى", agent_improved: "حُسّن بواسطة المدير",
     dash_pipeline: "صحة قائمة النشر", dash_posts: "منشور", dash_trend: "اتجاه الأداء", dash_upcoming: "النشر القادم",
     view_carousel: "المعرض", view_calendar: "التقويم",
-    regen: "أعد التوليد", regen_confirm: "يعيد كلاودي توليد هذا المنشور حسب ملاحظاتك المكتوبة. متابعة؟", regenerating: "يولّد…",
+    regen: "أعد التوليد", regen_confirm: "يعيد كلاودي توليد هذا المنشور حسب ملاحظاتك المكتوبة. متابعة؟", regenerating: "يولّد…", regen_working: "يصمّم صورة جديدة بهوية العلامة…",
     gennew: "بوست جديد", gennew_prompt: "توجيه للبوست الجديد (اتركه فارغاً ليقرّر كلاودي):", generating: "يولّد…",
     cd_in: "خلال", cd_d: "ي", cd_h: "س", cd_m: "د", cd_passed: "فات الموعد — يحتاج إعادة جدولة",
     silent_ok: "صمت = موافقة · نشر تلقائي", held: "معلّق — ملاحظتك"
@@ -98,7 +98,7 @@ export const I18N = {
     agent_approve: "Approve suggestion — the manager applies it and levels up the agent", agent_improved: "Improved by the manager",
     dash_pipeline: "Pipeline health", dash_posts: "posts", dash_trend: "Performance trend", dash_upcoming: "Upcoming posts",
     view_carousel: "Carousel", view_calendar: "Calendar",
-    regen: "Regenerate", regen_confirm: "Claude will regenerate this post based on your written note. Continue?", regenerating: "Generating…",
+    regen: "Regenerate", regen_confirm: "Claude will regenerate this post based on your written note. Continue?", regenerating: "Generating…", regen_working: "Designing a new on-brand image…",
     gennew: "New post", gennew_prompt: "Direction for the new post (leave blank to let Claude decide):", generating: "Generating…",
     cd_in: "in", cd_d: "d", cd_h: "h", cd_m: "m", cd_passed: "overdue — needs rescheduling",
     silent_ok: "silence = auto-publish", held: "held — your note"
@@ -146,7 +146,7 @@ export const I18N = {
     agent_approve: "تأیید پیشنهاد — مدیر آن را اجرا و ایجنت را ارتقا می‌دهد", agent_improved: "توسط مدیر بهبود یافت",
     dash_pipeline: "سلامت صف انتشار", dash_posts: "پست", dash_trend: "روند عملکرد", dash_upcoming: "انتشارهای بعدی",
     view_carousel: "گالری", view_calendar: "تقویم",
-    regen: "بازتولید", regen_confirm: "کلود این پست را بر اساس یادداشت شما بازتولید می‌کند. ادامه؟", regenerating: "در حال تولید…",
+    regen: "بازتولید", regen_confirm: "کلود این پست را بر اساس یادداشت شما بازتولید می‌کند. ادامه؟", regenerating: "در حال تولید…", regen_working: "در حال طراحی تصویر جدید…",
     gennew: "پست جدید", gennew_prompt: "راهنما برای پست جدید (خالی بگذارید تا کلود تصمیم بگیرد):", generating: "در حال تولید…",
     cd_in: "تا", cd_d: "ر", cd_h: "س", cd_m: "د", cd_passed: "زمانش گذشت — نیاز به زمان‌بندی مجدد",
     silent_ok: "سکوت = انتشار خودکار", held: "معلق — یادداشت شما"

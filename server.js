@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { baseState } from "./data/seed.js";
@@ -110,9 +111,13 @@ app.post("/api/regenerate", async (req, res) => {
   try { out = await generator.regeneratePost({ ...item, ...(store.getOverrides()[id] || {}) }, notes, lang || "ar"); }
   catch (e) { console.error("[regenerate]", e.message); return res.status(500).json({ ok: false, error: e.message }); }
   if (!out) return res.status(502).json({ ok: false, error: "generation failed" });
-  const saved = store.setOverride(id, out);
+  // Render a fresh on-brand design from the new headline (live).
+  let mediaUrl;
+  try { mediaUrl = await renderAndSaveDesign(item, out); }
+  catch (e) { console.error("[design]", e.message); }
+  const saved = store.setOverride(id, mediaUrl ? { ...out, mediaUrl } : out);
   // Record CAIMO's action in the post thread so the owner sees it happened.
-  store.addPostNote(id, "manager", `♻️ أعدتُ توليد المنشور حسب ملاحظتك: «${out.t}». حدّثتُ الكابشن والبريف — بانتظار التصميم الجديد.`);
+  store.addPostNote(id, "manager", `♻️ أعدتُ توليد المنشور حسب ملاحظتك: «${out.t}»${mediaUrl ? " — وصمّمتُ صورة جديدة بهوية العلامة" : ""}.`);
   res.json({ ok: true, override: saved, thread: store.getPostThread(id) });
 });
 
@@ -126,6 +131,7 @@ app.post("/api/generate-post", async (req, res) => {
   try { post = await generator.generatePost({ idNum, date: when, prompt: prompt || "" }, lang || "ar"); }
   catch (e) { console.error("[generate-post]", e.message); return res.status(500).json({ ok: false, error: e.message }); }
   if (!post) return res.status(502).json({ ok: false, error: "generation failed" });
+  try { post.mediaUrl = await renderAndSaveDesign(post, post); } catch (e) { console.error("[design]", e.message); }
   appendPost(post);
   res.json({ ok: true, post });
 });
@@ -148,10 +154,28 @@ function resolveMedia(q, base) {
   const isReel = (q.ty || "").includes("ريل");
   const cap = q.cap || q.t || "";
   if (q.images?.length) return { images: q.images, caption: cap, kind: q.images.length > 1 ? "carousel" : "image" };
-  if (q.mediaUrl) return { mediaUrl: q.mediaUrl.startsWith("/") ? `${base}${q.mediaUrl}` : q.mediaUrl, caption: cap, kind: isReel ? "reel" : "image" };
+  if (q.mediaUrl) { const url = q.mediaUrl.startsWith("/") ? `${base}${q.mediaUrl}` : q.mediaUrl; const isDesign = q.mediaUrl.includes("/media/design/"); return { mediaUrl: url, caption: cap, kind: (isReel && !isDesign) ? "reel" : "image" }; }
   if (q.drive) return { mediaUrl: `${base}/media/drive/${q.drive}?type=${isReel ? "video" : "image"}`, caption: cap, kind: isReel ? "reel" : "image" };
   return null;
 }
+
+// ── Live design engine ── render + serve on-brand post images (Volume-backed) ──
+function designsDir() { return process.env.DESIGNS_DIR || (fs.existsSync("/data") ? "/data/designs" : path.join(__dirname, "data", "designs")); }
+async function renderAndSaveDesign(item, content = {}) {
+  const { renderDesign } = await import("./data/designEngine.js");
+  const png = await renderDesign({ headline: content.t || item.t || "", tag: item.ty || "قريبًا", accent: item.tyc || "#E8890F" });
+  const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, item.id + ".png"), png);
+  return `/media/design/${item.id}?v=${Date.now()}`;
+}
+app.get("/media/design/:id", (req, res) => {
+  const id = (req.params.id || "").replace(/[^A-Za-z0-9_-]/g, "");
+  const f = path.join(designsDir(), id + ".png");
+  if (!id || !fs.existsSync(f)) return res.status(404).send("no design");
+  res.setHeader("Content-Type", "image/png");
+  res.setHeader("Cache-Control", "public, max-age=60");
+  fs.createReadStream(f).pipe(res);
+});
 
 // Drive media proxy — streams a public Drive file with a clean content-type.
 app.get("/media/drive/:id", async (req, res) => {

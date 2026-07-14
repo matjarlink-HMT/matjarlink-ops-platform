@@ -289,9 +289,9 @@ function carouselCard(q, i) {
   const isReel = (q.ty || "").includes("ريل");
   const grad = `linear-gradient(160deg,${q.tyc},${q.tyc}bb)`;
   let inner;
-  if (q.drive && !isReel) inner = `<img class="cmedia" loading="lazy" src="/media/drive/${q.drive}" alt="" onerror="this.remove()">`;
-  else if (q.mediaUrl && !isReel) inner = `<img class="cmedia" loading="lazy" src="${q.mediaUrl}" alt="" onerror="this.remove()">`;
-  else if ((q.drive || q.mediaUrl) && isReel) inner = `<span class="cplay">▶</span>`;
+  if (q.mediaUrl) inner = `<img class="cmedia" loading="lazy" src="${q.mediaUrl}" alt="" onerror="this.remove()">`;
+  else if (q.drive && !isReel) inner = `<img class="cmedia" loading="lazy" src="/media/drive/${q.drive}" alt="" onerror="this.remove()">`;
+  else if (q.drive && isReel) inner = `<span class="cplay">▶</span>`;
   else inner = `<span class="cph">✎</span>`;
   return `<div class="ccard ${i === pf.focus ? "focus" : ""}" data-idx="${i}" style="background:${grad}">
     ${inner}<span class="ctag">${q.id}${q.gen ? " ✨" : ""}</span>
@@ -402,14 +402,20 @@ setInterval(() => {
   });
 }, 1000);
 // ── regenerate a post from its note (Claude) ──────────────────────
+const dotsHtml = `<span class="dots"><span></span><span></span><span></span></span>`;
 async function regenPost(id, btn) {
-  if (!confirm(T("regen_confirm"))) return;
-  btn.disabled = true; btn.textContent = "⏳ " + T("regenerating");
+  // live loading: dots over the focused card + a bar in the detail
+  const card = document.querySelector(`.ccard[data-idx="${pf.focus}"]`);
+  if (card) card.insertAdjacentHTML("beforeend", `<div class="genov">${dotsHtml}</div>`);
+  const host = $("#cdetail");
+  if (host) host.insertAdjacentHTML("afterbegin", `<div class="genbar">${dotsHtml}<span>${T("regen_working")}</span></div>`);
+  if (btn) { btn.disabled = true; btn.textContent = "⏳ " + T("regenerating"); }
   try {
     const r = await fetch("/api/regenerate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, lang }) }).then(r => r.json());
-    if (r.ok) { S = await fetch("/api/state").then(x => x.json()); renderPipeline($("#content")); }
-    else { btn.disabled = false; btn.textContent = "♻️ " + T("regen"); alert("✗ " + (r.error || "")); }
-  } catch (e) { btn.disabled = false; btn.textContent = "♻️ " + T("regen"); }
+    S = await fetch("/api/state").then(x => x.json());
+    renderPipeline($("#content"));
+    if (!r.ok) alert("✗ " + (r.error || ""));
+  } catch (e) { renderPipeline($("#content")); }
 }
 // ── generate a brand-new post (Claude) ────────────────────────────
 async function genNew() {
