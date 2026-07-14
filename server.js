@@ -11,6 +11,7 @@ import * as windsor from "./integrations/windsor.js";
 import * as wa from "./integrations/whatsapp.js";
 import * as claude from "./integrations/claude.js";
 import * as metaPublish from "./integrations/metaPublish.js";
+import { fetchDrive } from "./integrations/driveMedia.js";
 import { managerSystem, demoReply, errReply } from "./data/manager.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -25,7 +26,7 @@ const PORT = process.env.PORT || 8080;
 const PW = process.env.DASHBOARD_PASSWORD || "";
 if (PW) {
   app.use((req, res, next) => {
-    if (req.path.startsWith("/webhook")) return next();
+    if (req.path.startsWith("/webhook") || req.path.startsWith("/media")) return next(); // media must be public for Instagram to pull
     const hdr = req.headers.authorization || "";
     const [, b64] = hdr.split(" ");
     const [, pass] = Buffer.from(b64 || "", "base64").toString().split(":");
@@ -78,6 +79,35 @@ function fullQueue() {
   if (c?.queue?.length) q.push(...c.queue);
   return q;
 }
+
+// Public base URL for building absolute media links Instagram can fetch.
+const FALLBACK_BASE = "https://matjarlink-ops-production.up.railway.app";
+function publicBase(req) { return process.env.PUBLIC_BASE || (req ? `${req.protocol}://${req.get("host")}` : FALLBACK_BASE); }
+
+// Resolve a queue item to publish input. Priority: explicit images[]/mediaUrl,
+// else proxy the Drive design through our public /media/drive/<id> URL.
+function resolveMedia(q, base) {
+  const isReel = (q.ty || "").includes("ريل");
+  const cap = q.cap || q.t || "";
+  if (q.images?.length) return { images: q.images, caption: cap, kind: q.images.length > 1 ? "carousel" : "image" };
+  if (q.mediaUrl) return { mediaUrl: q.mediaUrl, caption: cap, kind: isReel ? "reel" : "image" };
+  if (q.drive) return { mediaUrl: `${base}/media/drive/${q.drive}?type=${isReel ? "video" : "image"}`, caption: cap, kind: isReel ? "reel" : "image" };
+  return null;
+}
+
+// Drive media proxy — streams a public Drive file with a clean content-type.
+app.get("/media/drive/:id", async (req, res) => {
+  const id = (req.params.id || "").replace(/[^A-Za-z0-9_-]/g, "");
+  if (!id) return res.status(400).send("bad id");
+  try {
+    const { buf, contentType } = await fetchDrive(id);
+    const clean = contentType && !contentType.includes("text/html") && contentType !== "application/octet-stream";
+    const type = req.query.type === "video" ? "video/mp4" : clean ? contentType : "image/jpeg";
+    res.setHeader("Content-Type", type);
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.end(buf);
+  } catch (e) { console.error("[media]", e.message); res.status(502).send("media fetch failed"); }
+});
 
 // ── Per-platform analytics ──────────────────────────────────────────
 app.get("/api/analytics", async (req, res) => {
@@ -149,8 +179,8 @@ app.post("/api/publish", async (req, res) => {
   if (store.isPublished(id)) return res.json({ ok: true, already: true, result: store.getPublished()[id] });
   const item = fullQueue().find((q) => q.id === id);
   if (!item) return res.status(404).json({ ok: false, error: "post not found" });
-  const input = metaPublish.fromQueueItem(item);
-  if (!input) return res.status(400).json({ ok: false, error: "no public media URL for this post — add mediaUrl (image/video) or images[] (carousel)" });
+  const input = resolveMedia(item, publicBase(req));
+  if (!input) return res.status(400).json({ ok: false, error: "no media for this post — add a Drive file (shared publicly), mediaUrl, or images[]" });
   try {
     const result = await metaPublish.publish(input);
     store.markPublished(id, result);
@@ -174,7 +204,7 @@ async function autoPublishTick() {
     const approved = notes[q.id]?.status === "معتمد"; // silence-approval handled in UI; require explicit approve for auto-post
     const when = parseWhen(q.date);
     if (!approved || !when || when > new Date()) continue;
-    const input = metaPublish.fromQueueItem(q);
+    const input = resolveMedia(q, publicBase());
     if (!input) continue; // needs public media
     try { const r = await metaPublish.publish(input); store.markPublished(q.id, r); console.log(`[auto-publish] ${q.id} → ${r.permalink || r.id}`); }
     catch (e) { console.error(`[auto-publish] ${q.id}: ${e.message}`); }
