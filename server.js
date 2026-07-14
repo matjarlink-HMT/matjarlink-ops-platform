@@ -148,7 +148,7 @@ function resolveMedia(q, base) {
   const isReel = (q.ty || "").includes("ريل");
   const cap = q.cap || q.t || "";
   if (q.images?.length) return { images: q.images, caption: cap, kind: q.images.length > 1 ? "carousel" : "image" };
-  if (q.mediaUrl) return { mediaUrl: q.mediaUrl, caption: cap, kind: isReel ? "reel" : "image" };
+  if (q.mediaUrl) return { mediaUrl: q.mediaUrl.startsWith("/") ? `${base}${q.mediaUrl}` : q.mediaUrl, caption: cap, kind: isReel ? "reel" : "image" };
   if (q.drive) return { mediaUrl: `${base}/media/drive/${q.drive}?type=${isReel ? "video" : "image"}`, caption: cap, kind: isReel ? "reel" : "image" };
   return null;
 }
@@ -290,7 +290,7 @@ app.post("/api/publish", async (req, res) => {
 // When on: every minute, publishes APPROVED posts whose scheduled time has passed
 // and that have public media, then records them so they never double-post.
 const AUTO = () => (process.env.AUTO_PUBLISH || store.cfgGet("AUTO_PUBLISH")) === "on";
-function parseWhen(date) { const m = (date || "").match(/(\d{4}-\d{2}-\d{2})[^\d]+(\d{2}):(\d{2})/); return m ? new Date(`${m[1]}T${m[2]}:${m[3]}:00`) : null; }
+function parseWhen(date) { const m = (date || "").match(/(\d{4}-\d{2}-\d{2})[^\d]+(\d{2}):(\d{2})/); return m ? new Date(`${m[1]}T${m[2]}:${m[3]}:00+04:00`) : null; } // Oman time (GST)
 const STALE_MS = 24 * 3600 * 1000; // don't auto-post backlog older than a day
 async function autoPublishTick() {
   if (!AUTO() || !metaPublish.publishReady()) return;
