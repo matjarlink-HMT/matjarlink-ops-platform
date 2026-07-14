@@ -38,7 +38,8 @@ export const I18N = {
     mgr_needkey: "🔌 الحوار الذكي غير مفعّل — أضف ANTHROPIC_API_KEY من «الإعدادات ← الربط».",
     mgr_chips: ["ابدأوا النشر", "انشر MJ-001 الآن", "راجعوا الدفعة", "ما خطة اليوم؟", "كيف الأداء؟"],
     set_accounts: "الحسابات المرتبطة", set_integrations: "الربط والتكاملات", set_prefs: "التفضيلات",
-    set_lang: "لغة اللوحة", set_install: "تثبيت كتطبيق", set_pwnote: "لحماية اللوحة بكلمة مرور، أضف DASHBOARD_PASSWORD في متغيّرات Railway."
+    set_lang: "لغة اللوحة", set_install: "تثبيت كتطبيق", set_pwnote: "لحماية اللوحة بكلمة مرور، أضف DASHBOARD_PASSWORD في متغيّرات Railway.",
+    gen: "مُولّد", genBatch: "دفعة مُولّدة تلقائياً", genBy: "أنشأ خطتها وكابشناتها كلاودي — التصاميم على وكيل التصميم", brief: "بريف التصميم"
   },
   en: {
     brand_sub: "AI Ops · Command Center", sub: "AI marketing team operations — MatjarLink",
@@ -71,7 +72,8 @@ export const I18N = {
     mgr_needkey: "🔌 Smart chat is off — add ANTHROPIC_API_KEY in Settings → Connections.",
     mgr_chips: ["Start publishing", "Publish MJ-001 now", "Review the batch", "What's today's plan?", "How's performance?"],
     set_accounts: "Linked accounts", set_integrations: "Connections & integrations", set_prefs: "Preferences",
-    set_lang: "Dashboard language", set_install: "Install as app", set_pwnote: "To password-protect the dashboard, add DASHBOARD_PASSWORD in Railway variables."
+    set_lang: "Dashboard language", set_install: "Install as app", set_pwnote: "To password-protect the dashboard, add DASHBOARD_PASSWORD in Railway variables.",
+    gen: "generated", genBatch: "Auto-generated batch", genBy: "plan & captions by Claude — designs by the design agent", brief: "Design brief"
   },
   fa: {
     brand_sub: "AI Ops · مرکز فرماندهی", sub: "عملیات تیم بازاریابی هوش مصنوعی — متجرلینک",
@@ -104,6 +106,7 @@ export const I18N = {
     mgr_needkey: "🔌 گفتگوی هوشمند غیرفعال است — ANTHROPIC_API_KEY را در تنظیمات ← اتصالات اضافه کن.",
     mgr_chips: ["شروع انتشار", "همین حالا MJ-001 را منتشر کن", "بررسی دسته", "برنامه امروز چیست؟", "عملکرد چطور است؟"],
     set_accounts: "حساب‌های متصل", set_integrations: "اتصالات و یکپارچه‌سازی", set_prefs: "تنظیمات",
-    set_lang: "زبان داشبورد", set_install: "نصب به‌عنوان برنامه", set_pwnote: "برای محافظت با رمز، DASHBOARD_PASSWORD را در متغیرهای Railway اضافه کن."
+    set_lang: "زبان داشبورد", set_install: "نصب به‌عنوان برنامه", set_pwnote: "برای محافظت با رمز، DASHBOARD_PASSWORD را در متغیرهای Railway اضافه کن.",
+    gen: "تولیدشده", genBatch: "دستهٔ خودکار", genBy: "طرح و کپشن‌ها را Claude ساخته — طراحی با ایجنت طراحی", brief: "بریف طراحی"
   }
 };

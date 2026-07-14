@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { baseState } from "./data/seed.js";
 import { getAnalytics } from "./data/analytics.js";
+import { loadContent } from "./data/content.js";
 import * as store from "./store.js";
 import * as meta from "./integrations/meta.js";
 import * as windsor from "./integrations/windsor.js";
@@ -35,6 +36,15 @@ if (PW) {
 // ── Aggregated state ────────────────────────────────────────────────
 app.get("/api/state", async (req, res) => {
   const state = baseState();
+  // Merge Claude-generated content (plan + captions) so new batches appear automatically.
+  const content = loadContent();
+  if (content) {
+    if (content.queue?.length) state.queue = [...state.queue, ...content.queue];
+    if (content.prep?.length) state.prep = [...state.prep, ...content.prep];
+    if (content.plan) state.plan = content.plan;
+    state.contentBatch = content.batch || null;
+    state.contentGeneratedAt = content.generatedAt || null;
+  }
   const conn = { meta: meta.metaReady(), whatsapp: wa.whatsappReady(), windsor: windsor.windsorReady() };
   state.connectivity = conn;
   state.mode = (conn.meta || conn.whatsapp || conn.windsor || MODE === "live") ? "live" : "mock";

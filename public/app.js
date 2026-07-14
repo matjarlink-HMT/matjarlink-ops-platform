@@ -106,7 +106,7 @@ function render(p) {
   if (p === "overview") C.innerHTML = ovv();
   else if (p === "agents") C.innerHTML = `<div class="grid g3">${S.agents.map(agentCard).join("")}</div>`;
   else if (p === "needs") C.innerHTML = `<div class="grid g2">${S.needs.map(needCard).join("")}</div>`;
-  else if (p === "queue") { C.innerHTML = `<div class="qwrap">${S.queue.map((q, i) => qCard(q, i)).join("")}</div>`; document.querySelectorAll(".qcard").forEach(c => c.onclick = () => openReview(+c.dataset.i)); }
+  else if (p === "queue") { C.innerHTML = `${S.contentBatch ? `<div class="note-info">✨ ${T("genBatch")}: <b>${S.contentBatch}</b> — ${T("genBy")}</div>` : ""}<div class="qwrap">${S.queue.map((q, i) => qCard(q, i)).join("")}</div>`; document.querySelectorAll(".qcard").forEach(c => c.onclick = () => openReview(+c.dataset.i)); }
   else if (p === "prep") C.innerHTML = prepTbl();
   else if (p === "analytics") renderAnalytics(C);
   else if (p === "media") { C.innerHTML = mediaGrid(); document.querySelectorAll(".mtile").forEach(t => t.onclick = () => openMedia(+t.dataset.i)); }
@@ -215,8 +215,8 @@ const agentCard = (a) => `<div class="card agent"><div class="hd"><div class="av
   <div class="mut">${a.ev}</div><div class="sug"><b>${T("selfSug")}:</b> ${a.sug}</div></div>`;
 const needCard = (n) => `<div class="card"><div style="display:flex;gap:.4rem;align-items:center;margin-bottom:.35rem">${pill(n.t)} ${pill(n.pr)}<span style="margin-inline-start:auto;font-size:.74rem;color:var(--muted)">${n.f}</span></div>
   <div style="font-weight:800">${n.ti}</div><div class="mut" style="margin-top:.25rem">${n.d}</div></div>`;
-const qCard = (q, i) => { const nt = S.notes && S.notes[q.id]; return `<div class="qcard" data-i="${i}"><div class="thumb" style="background:linear-gradient(160deg,${q.tyc},${q.tyc}cc)"><span class="tp">${q.id}</span>${q.ty.includes("ريل") ? "▶" : ""}<div style="margin-top:.2rem">${q.t.slice(0, 20)}</div></div>
-  <div class="qmeta"><div class="qt">${q.t}</div><div class="qi">${chan(q.ch)} ${q.ty} · ${q.date}</div><div>${nt && nt.status === "معتمد" ? pill([T("approve"), "p-ok"]) : pill(q.st)} ${nt && nt.note ? `<span class="pill p-idle">📝 ${T("noteBadge")}</span>` : ""}</div></div></div>`; };
+const qCard = (q, i) => { const nt = S.notes && S.notes[q.id]; return `<div class="qcard" data-i="${i}"><div class="thumb" style="background:linear-gradient(160deg,${q.tyc},${q.tyc}cc)"><span class="tp">${q.id}</span>${q.ty.includes("ريل") && q.drive ? "▶" : ""}<div style="margin-top:.2rem">${q.t.slice(0, 20)}</div></div>
+  <div class="qmeta"><div class="qt">${q.t}</div><div class="qi">${chan(q.ch)} ${q.ty} · ${q.date}</div><div>${nt && nt.status === "معتمد" ? pill([T("approve"), "p-ok"]) : pill(q.st)} ${q.gen ? `<span class="pill p-new">✨ ${T("gen")}</span>` : ""} ${nt && nt.note ? `<span class="pill p-idle">📝 ${T("noteBadge")}</span>` : ""}</div></div></div>`; };
 const prepTbl = () => `<div class="tbl-wrap"><table><thead><tr><th>${T("cal_start")} ▲</th><th>${lang === "en" ? "Title" : "العنوان"}</th><th></th><th></th><th></th></tr></thead><tbody>
   ${S.prep.slice().sort((a, b) => a.d < b.d ? -1 : 1).map(p => `<tr><td style="font-weight:700">${p.d}</td><td>${p.t}</td><td>${chan(p.ch)} ${p.ch}</td><td style="color:var(--muted)">${p.ag}</td><td>${pill(p.st)}</td></tr>`).join("")}</tbody></table></div>`;
 const campView = () => `<div class="card" style="text-align:center;padding:1.4rem"><div style="font-weight:800;color:var(--plum)">${T("campNone")}</div>
@@ -251,7 +251,7 @@ function compareBars() {
 
 // ── media gallery + player ────────────────────────────────────────
 function mediaGrid() {
-  return `<div class="note-info">${T("mediaShare")}</div><div class="grid g4">${S.queue.map((q, i) => `<div class="mtile" data-i="${i}"><div class="mthumb" style="background:linear-gradient(160deg,${q.tyc},${q.tyc}bb)">${q.ty.includes("ريل") ? '<span class="play">▶</span>' : "🖼"}<span class="tp">${q.id}</span></div><div class="mcap">${q.t}</div></div>`).join("")}</div>`;
+  return `<div class="note-info">${T("mediaShare")}</div><div class="grid g4">${S.queue.map((q, i) => q.drive ? `<div class="mtile" data-i="${i}"><div class="mthumb" style="background:linear-gradient(160deg,${q.tyc},${q.tyc}bb)">${q.ty.includes("ريل") ? '<span class="play">▶</span>' : "🖼"}<span class="tp">${q.id}</span></div><div class="mcap">${q.t}</div></div>` : "").join("")}</div>`;
 }
 function openMedia(i) {
   mediaIdx = i; const q = S.queue[i];
@@ -313,7 +313,9 @@ function openReview(i) {
   $("#mbig").style.background = `linear-gradient(160deg,${q.tyc},${q.tyc}bb)`;
   $("#mbig").innerHTML = `<div><div style="font-size:.8rem;opacity:.85">${q.id}</div><div style="font-size:1.05rem;margin-top:.4rem">${q.t}</div><div style="font-size:.72rem;opacity:.8;margin-top:.6rem">${q.ty.includes("ريل") ? "▶" : "🖼"}</div></div>`;
   $("#mtitle").textContent = q.t; $("#mchan").innerHTML = `${chan(q.ch)} ${q.ch} · ${q.ty} · ${q.date}`;
-  $("#mcap").textContent = q.cap;
+  $("#mcap").innerHTML = escapeHtml(q.cap) + (q.brief ? `<div style="margin-top:.5rem;padding-top:.5rem;border-top:1px dashed var(--line);color:var(--muted)"><b>${T("brief")}:</b> ${escapeHtml(q.brief)}</div>` : "");
+  $("#mplaybtn").style.display = q.drive ? "" : "none";
+  $("#mdrive").style.display = q.drive ? "" : "none";
   $("#mplaybtn").onclick = () => { $("#ov").classList.remove("on"); document.querySelector('#nav button[data-go="media"]').click(); setTimeout(() => openMedia(i), 60); };
   $("#mdrive").href = "https://drive.google.com/file/d/" + q.drive + "/view"; $("#mdrive").textContent = T("openDrive");
   $("#mnote").placeholder = T("note_ph"); $("#mnote").value = nt.note || "";
