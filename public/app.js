@@ -3,7 +3,7 @@ import { LANGS, I18N } from "./i18n.js";
 let S = null, A = null, mediaIdx = 0;
 let lang = localStorage.getItem("ml_lang") || "ar";
 let autoTimer = null;
-let pf = { plat: "all", type: "all", status: "all" }; // pipeline filters
+let pf = { plat: "all", type: "all", status: "all", view: "carousel", focus: 0, cal: "2026-07" }; // pipeline state
 const T = (k) => (I18N[lang] && I18N[lang][k]) || I18N.ar[k] || k;
 const $ = (s) => document.querySelector(s);
 const CH = { IG: "#C13584", FB: "#1877F2", WA: "#25D366", TT: "#111111", LI: "#0A66C2", TH: "#111111", AN: "#7A5A1A", AI: "#6E56CF" };
@@ -270,17 +270,38 @@ function renderPipeline(C) {
     <div class="frow"><span class="flabel">${T("f_type")}</span>${types.map(([v, l]) => chip(pf.type === v, v, l, "type")).join("")}</div>
     <div class="frow"><span class="flabel">${T("f_status")}</span>${stats.map(([v, l]) => chip(pf.status === v, v, l, "status")).join("")}</div>
   </div>`;
+  if (pf.focus >= filtered.length) pf.focus = Math.max(0, filtered.length - 1);
   const batch = S.contentBatch ? `<div class="note-info">✨ ${T("genBatch")}: <b>${S.contentBatch}</b> — ${T("genBy")}</div>` : "";
-  const list = filtered.length ? filtered.map(pipeCard).join("") : `<div class="loading">${T("f_none")}</div>`;
-  C.innerHTML = `${batch}<div class="pipehead"><b>${T("nav_pipeline")}</b><span class="mut">${filtered.length} / ${q.length}</span></div>${bar}<div class="pipefeed">${list}</div>`;
-  bindPipeline();
+  const toggle = `<div class="viewtog"><button class="vtbtn ${pf.view === "carousel" ? "on" : ""}" data-view="carousel">▦ ${T("view_carousel")}</button><button class="vtbtn ${pf.view === "calendar" ? "on" : ""}" data-view="calendar">🗓 ${T("view_calendar")}</button></div>`;
+  const body = pf.view === "calendar" ? pipeCalendar(filtered) : pipeCarousel(filtered);
+  C.innerHTML = `${batch}<div class="pipehead"><b>${T("nav_pipeline")}</b><span class="mut">${filtered.length} / ${q.length}</span>${toggle}</div>${bar}<div id="pipebody">${body}</div>`;
+  bindPipeline(filtered);
 }
-function pipeCard(q) {
+// horizontal image carousel (focused center card + ‹ › nav) + detail panel
+function pipeCarousel(list) {
+  if (!list.length) return `<div class="loading">${T("f_none")}</div>`;
+  const cards = list.map((q, i) => carouselCard(q, i)).join("");
+  return `<div class="carousel" id="carousel">${cards}</div>
+    <div class="carnav"><button class="carbtn" data-nav="-1">‹</button><span class="cardot">${pf.focus + 1} / ${list.length}</span><button class="carbtn" data-nav="1">›</button></div>
+    <div class="cdetail" id="cdetail">${carouselDetail(list[pf.focus])}</div>`;
+}
+function carouselCard(q, i) {
+  const isReel = (q.ty || "").includes("ريل");
+  const grad = `linear-gradient(160deg,${q.tyc},${q.tyc}bb)`;
+  let inner;
+  if (q.drive && !isReel) inner = `<img class="cmedia" loading="lazy" src="/media/drive/${q.drive}" alt="" onerror="this.remove()">`;
+  else if (q.drive && isReel) inner = `<span class="cplay">▶</span>`;
+  else inner = `<span class="cph">✎</span>`;
+  return `<div class="ccard ${i === pf.focus ? "focus" : ""}" data-idx="${i}" style="background:${grad}">
+    ${inner}<span class="ctag">${q.id}${q.gen ? " ✨" : ""}</span>
+    <div class="cclabel"><div class="cct">${escapeHtml(q.t.slice(0, 34))}</div><div class="ccm">${chan(q.ch)} ${q.ty} · ${q.date}</div></div></div>`;
+}
+const carouselDetail = (q) => q ? pdetailMain(q) : "";
+function pdetailMain(q) {
   const nt = (S.notes && S.notes[q.id]) || {};
   const pub = S.publishedLog && S.publishedLog[q.id];
   const approved = nt.status === "معتمد";
   const thread = nt.thread || [];
-  const isReel = (q.ty || "").includes("ريل");
   const badges = [
     pub ? `<span class="pill p-ok">📤 ${T("published_ok")}</span>` : approved ? `<span class="pill p-ok">✓ ${T("approve")}</span>` : pill(q.st),
     q.gen ? `<span class="pill p-new">✨ ${T("gen")}</span>` : ""
@@ -289,32 +310,74 @@ function pipeCard(q) {
   let pubBtn = "";
   if (pub) pubBtn = pub.permalink ? `<a class="link sm" target="_blank" href="${pub.permalink}">${T("published_ok")} ↗</a>` : "";
   else if (S.publishReady && approved) pubBtn = `<button class="btn sm pubbtn" data-pub="${q.id}">📤 ${T("publish_now")}</button>`;
-  return `<div class="pcard" data-id="${q.id}">
-    <div class="pthumb" style="background:linear-gradient(160deg,${q.tyc},${q.tyc}bb)" ${q.drive ? `data-play="${q.drive}"` : ""}>
-      <span class="tp">${q.id}</span>${q.drive ? `<span class="pplay">${isReel ? "▶" : "🖼"}</span>` : `<span class="pplay dim">✎</span>`}
-      <div class="pthumbt">${escapeHtml(q.t.slice(0, 26))}</div></div>
-    <div class="pmain">
+  return `<div class="pcard nofloat" data-id="${q.id}"><div class="pmain">
       <div class="ptitle">${escapeHtml(q.t)}</div>
       <div class="pmeta">${chan(q.ch)} ${q.ty} · <b>${q.date}</b></div>
       <div class="pbadges">${badges}</div>
-      <div class="pcap">${escapeHtml((q.cap || "").slice(0, 170))}${(q.cap || "").length > 170 ? "…" : ""}</div>
+      <div class="pcap">${escapeHtml((q.cap || "").slice(0, 240))}${(q.cap || "").length > 240 ? "…" : ""}</div>
       ${threadHtml}
       <div class="pnotebar"><input class="pnote" data-id="${q.id}" placeholder="${T("note_ask_ph")}" autocomplete="off"><button class="btn sm askbtn" data-ask="${q.id}">${T("note_ask")}</button></div>
       <div class="pactions">
         ${approved || pub ? "" : `<button class="btn ok sm" data-approve="${q.id}">✓ ${T("approve")}</button>`}
         ${pubBtn}
-        ${q.drive ? `<a class="link sm" target="_blank" href="https://drive.google.com/file/d/${q.drive}/view">${T("openDrive")}</a>` : ""}
-      </div>
-    </div></div>`;
+        ${q.drive ? `<button class="btn ghost sm" data-play2="${q.drive}">▶ ${lang === "en" ? "Preview" : lang === "fa" ? "پیش‌نمایش" : "معاينة"}</button><a class="link sm" target="_blank" href="https://drive.google.com/file/d/${q.drive}/view">${T("openDrive")}</a>` : ""}
+      </div></div></div>`;
+}
+function setFocus(i, list) {
+  pf.focus = Math.max(0, Math.min(list.length - 1, i));
+  document.querySelectorAll(".ccard").forEach(c => c.classList.toggle("focus", +c.dataset.idx === pf.focus));
+  const dot = document.querySelector(".cardot"); if (dot) dot.textContent = `${pf.focus + 1} / ${list.length}`;
+  const d = $("#cdetail"); if (d) { d.innerHTML = carouselDetail(list[pf.focus]); bindDetail(list); }
+  centerFocused();
+}
+function centerFocused() { const el = document.querySelector(".ccard.focus"); if (el) el.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" }); }
+// month-grid calendar view of the pipeline
+function pipeCalendar(list) {
+  const [y, m] = pf.cal.split("-").map(Number);
+  const first = new Date(y, m - 1, 1).getDay();
+  const days = new Date(y, m, 0).getDate();
+  const ev = {};
+  list.forEach(q => { if ((q.date || "").startsWith(pf.cal)) { const d = +q.date.slice(8, 10); (ev[d] = ev[d] || []).push(q); } });
+  const wd = lang === "en" ? ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"] : ["أحد", "إثن", "ثلا", "أرب", "خمي", "جمع", "سبت"];
+  const monthName = new Intl.DateTimeFormat(lang === "en" ? "en-US" : lang === "fa" ? "fa-IR" : "ar", { month: "long", year: "numeric" }).format(new Date(y, m - 1, 1));
+  let cells = "";
+  for (let i = 0; i < first; i++) cells += `<div class="ccell empty"></div>`;
+  for (let d = 1; d <= days; d++) {
+    const e = ev[d] || [];
+    cells += `<div class="ccell ${e.length ? "has" : ""}"><span class="cd">${d}</span>${e.map(q => { const ok = (S.publishedLog && S.publishedLog[q.id]) || ((S.notes && S.notes[q.id]) || {}).status === "معتمد"; return `<span class="cev ${ok ? "ok" : ""}" title="${q.id} · ${escapeHtml(q.t)}">${chan(q.ch)} ${q.id.replace("MJ-", "")}</span>`; }).join("")}</div>`;
+  }
+  return `<div class="card pcal"><div class="calhead"><button class="carbtn" data-mon="-1">‹</button><b>${monthName}</b><button class="carbtn" data-mon="1">›</button></div>
+    <div class="cgrid head">${wd.map(w => `<div class="cwd">${w}</div>`).join("")}</div><div class="cgrid">${cells}</div></div>`;
 }
 const bubble = (m) => `<div class="pbub ${m.role}">${m.role === "manager" ? '<span class="pba">CA</span>' : ""}<span>${escapeHtml(m.text)}</span></div>`;
-function bindPipeline() {
-  document.querySelectorAll(".fchip").forEach(b => b.onclick = () => { pf[b.dataset.f] = b.dataset.v; renderPipeline($("#content")); });
-  document.querySelectorAll(".pthumb[data-play]").forEach(t => t.onclick = () => openDrivePlay(t.dataset.play, t.closest(".pcard").querySelector(".ptitle").textContent));
-  document.querySelectorAll("[data-ask]").forEach(b => b.onclick = () => askManager(b.dataset.ask));
-  document.querySelectorAll(".pnote").forEach(i => i.onkeydown = e => { if (e.key === "Enter") askManager(i.dataset.id); });
-  document.querySelectorAll("[data-approve]").forEach(b => b.onclick = async () => { b.disabled = true; await postNote(b.dataset.approve, { id: b.dataset.approve, action: "approve" }); renderPipeline($("#content")); });
-  document.querySelectorAll("[data-pub]").forEach(b => b.onclick = () => publishPost(b.dataset.pub, b));
+function bindPipeline(list) {
+  document.querySelectorAll(".fchip").forEach(b => b.onclick = () => { pf[b.dataset.f] = b.dataset.v; pf.focus = 0; renderPipeline($("#content")); });
+  document.querySelectorAll(".vtbtn").forEach(b => b.onclick = () => { pf.view = b.dataset.view; renderPipeline($("#content")); });
+  if (pf.view === "calendar") { bindCalendar(list); return; }
+  if (!list || !list.length) return;
+  document.querySelectorAll(".ccard").forEach(c => c.onclick = () => {
+    const idx = +c.dataset.idx;
+    if (idx === pf.focus) { const q = list[idx]; if (q.drive) openDrivePlay(q.drive, q.t); }
+    else setFocus(idx, list);
+  });
+  document.querySelectorAll("[data-nav]").forEach(b => b.onclick = () => setFocus(pf.focus + (+b.dataset.nav), list));
+  bindDetail(list);
+  centerFocused();
+}
+function bindDetail(list) {
+  const host = $("#cdetail") || document;
+  host.querySelectorAll("[data-ask]").forEach(b => b.onclick = () => askManager(b.dataset.ask));
+  host.querySelectorAll(".pnote").forEach(i => i.onkeydown = e => { if (e.key === "Enter") askManager(i.dataset.id); });
+  host.querySelectorAll("[data-approve]").forEach(b => b.onclick = async () => { b.disabled = true; await postNote(b.dataset.approve, { id: b.dataset.approve, action: "approve" }); renderPipeline($("#content")); });
+  host.querySelectorAll("[data-pub]").forEach(b => b.onclick = () => publishPost(b.dataset.pub, b));
+  host.querySelectorAll("[data-play2]").forEach(b => b.onclick = () => openDrivePlay(b.dataset.play2, host.querySelector(".ptitle")?.textContent || ""));
+}
+function bindCalendar() {
+  document.querySelectorAll("[data-mon]").forEach(b => b.onclick = () => {
+    let [y, m] = pf.cal.split("-").map(Number); m += +b.dataset.mon;
+    if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; }
+    pf.cal = `${y}-${String(m).padStart(2, "0")}`; renderPipeline($("#content"));
+  });
 }
 async function askManager(id) {
   const inp = document.querySelector(`.pnote[data-id="${id}"]`); if (!inp) return;

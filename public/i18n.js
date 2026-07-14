@@ -48,7 +48,8 @@ export const I18N = {
     note_ask: "أرسل للمدير", note_ask_ph: "أضف ملاحظة على المنشور… والمدير يردّ",
     agent_improve_hint: "اعتمِد الاقتراح الذاتي لأي وكيل (✓) ليقوم CAIMO بتطبيقه ورفع مستوى الوكيل.",
     agent_approve: "اعتمِد الاقتراح — يطبّقه المدير ويرفع المستوى", agent_improved: "حُسّن بواسطة المدير",
-    dash_pipeline: "صحة قائمة النشر", dash_posts: "منشور", dash_trend: "اتجاه الأداء", dash_upcoming: "النشر القادم"
+    dash_pipeline: "صحة قائمة النشر", dash_posts: "منشور", dash_trend: "اتجاه الأداء", dash_upcoming: "النشر القادم",
+    view_carousel: "المعرض", view_calendar: "التقويم"
   },
   en: {
     brand_sub: "AI Ops · Command Center", sub: "AI marketing team operations — MatjarLink",
@@ -91,7 +92,8 @@ export const I18N = {
     note_ask: "Ask manager", note_ask_ph: "Add a note on this post… the manager replies",
     agent_improve_hint: "Approve any agent's self-suggestion (✓) and CAIMO applies it and raises the agent's level.",
     agent_approve: "Approve suggestion — the manager applies it and levels up the agent", agent_improved: "Improved by the manager",
-    dash_pipeline: "Pipeline health", dash_posts: "posts", dash_trend: "Performance trend", dash_upcoming: "Upcoming posts"
+    dash_pipeline: "Pipeline health", dash_posts: "posts", dash_trend: "Performance trend", dash_upcoming: "Upcoming posts",
+    view_carousel: "Carousel", view_calendar: "Calendar"
   },
   fa: {
     brand_sub: "AI Ops · مرکز فرماندهی", sub: "عملیات تیم بازاریابی هوش مصنوعی — متجرلینک",
@@ -134,6 +136,7 @@ export const I18N = {
     note_ask: "به مدیر بگو", note_ask_ph: "یادداشتی روی این پست بنویس… مدیر پاسخ می‌دهد",
     agent_improve_hint: "پیشنهاد خودکار هر ایجنت را تأیید کن (✓) تا CAIMO آن را اجرا و سطح ایجنت را بالا ببرد.",
     agent_approve: "تأیید پیشنهاد — مدیر آن را اجرا و ایجنت را ارتقا می‌دهد", agent_improved: "توسط مدیر بهبود یافت",
-    dash_pipeline: "سلامت صف انتشار", dash_posts: "پست", dash_trend: "روند عملکرد", dash_upcoming: "انتشارهای بعدی"
+    dash_pipeline: "سلامت صف انتشار", dash_posts: "پست", dash_trend: "روند عملکرد", dash_upcoming: "انتشارهای بعدی",
+    view_carousel: "گالری", view_calendar: "تقویم"
   }
 };
