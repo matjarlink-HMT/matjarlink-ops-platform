@@ -4,7 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { baseState } from "./data/seed.js";
 import { getAnalytics } from "./data/analytics.js";
-import { loadContent } from "./data/content.js";
+import { loadContent, saveContent, appendPost, nextIdNum } from "./data/content.js";
+import * as generator from "./data/generator.js";
 import * as store from "./store.js";
 import * as meta from "./integrations/meta.js";
 import * as windsor from "./integrations/windsor.js";
@@ -76,7 +77,57 @@ app.get("/api/state", async (req, res) => {
   state.publishReady = metaPublish.publishReady();
   state.autoPublish = (process.env.AUTO_PUBLISH || store.cfgGet("AUTO_PUBLISH")) === "on";
   state.publishedLog = store.getPublished();
+  // Apply Claude-regenerated content overrides onto the queue.
+  const ov = store.getOverrides();
+  state.queue = state.queue.map((q) => {
+    const o = ov[q.id]; if (!o) return q;
+    return { ...q, t: o.t ?? q.t, cap: o.cap ?? q.cap, brief: o.brief ?? q.brief, ty: o.ty ?? q.ty, regenerated: true, regens: o.regens };
+  });
+  state.plan = (loadContent() || {}).plan || state.plan || null;
+  // Live KPIs computed from real state (no static/fake numbers).
+  const followers = state.insights?.followers ?? 558;
+  const pending = state.queue.filter((q) => !state.publishedLog[q.id] && state.notes[q.id]?.status !== "معتمد").length;
+  const publishedCount = Object.keys(state.publishedLog).length;
+  state.kpis = [
+    [String(state.agents.length), "", state.mode === "live" ? "حيّ" : "—", "p-new"],
+    [String(pending), "", "بانتظار الاعتماد", "p-warn"],
+    [String(publishedCount), "", "منذ الإطلاق", publishedCount ? "p-ok" : "p-idle"],
+    [String(followers), "", "إنستغرام", "p-info"]
+  ];
   res.json(state);
+});
+
+// ── Content generation (Claude) ─────────────────────────────────────
+// Regenerate one post from the owner's notes; persists an override.
+app.post("/api/regenerate", async (req, res) => {
+  const { id, lang } = req.body || {};
+  if (!id) return res.status(400).json({ ok: false, error: "id required" });
+  if (!generator.claudeReady()) return res.status(400).json({ ok: false, error: "add ANTHROPIC_API_KEY to enable generation" });
+  const item = fullQueue().find((q) => q.id === id);
+  if (!item) return res.status(404).json({ ok: false, error: "post not found" });
+  const notes = store.getPostThread(id);
+  let out;
+  try { out = await generator.regeneratePost({ ...item, ...(store.getOverrides()[id] || {}) }, notes, lang || "ar"); }
+  catch (e) { console.error("[regenerate]", e.message); return res.status(500).json({ ok: false, error: e.message }); }
+  if (!out) return res.status(502).json({ ok: false, error: "generation failed" });
+  const saved = store.setOverride(id, out);
+  // Record CAIMO's action in the post thread so the owner sees it happened.
+  store.addPostNote(id, "manager", `♻️ أعدتُ توليد المنشور حسب ملاحظتك: «${out.t}». حدّثتُ الكابشن والبريف — بانتظار التصميم الجديد.`);
+  res.json({ ok: true, override: saved, thread: store.getPostThread(id) });
+});
+
+// Generate a brand-new post from an optional free-form prompt.
+app.post("/api/generate-post", async (req, res) => {
+  const { prompt, date, lang } = req.body || {};
+  if (!generator.claudeReady()) return res.status(400).json({ ok: false, error: "add ANTHROPIC_API_KEY to enable generation" });
+  const idNum = nextIdNum(baseState().queue);
+  const when = date || defaultNextSlot();
+  let post;
+  try { post = await generator.generatePost({ idNum, date: when, prompt: prompt || "" }, lang || "ar"); }
+  catch (e) { console.error("[generate-post]", e.message); return res.status(500).json({ ok: false, error: e.message }); }
+  if (!post) return res.status(502).json({ ok: false, error: "generation failed" });
+  appendPost(post);
+  res.json({ ok: true, post });
 });
 
 // Full queue = seed (July) + Claude-generated content (Aug+). Used for publishing.
@@ -260,6 +311,51 @@ async function autoPublishTick() {
   }
 }
 setInterval(() => { autoPublishTick().catch(() => {}); }, 60000);
+
+// ── Content automation ── plan next month on the 20th; generate each post ~1 week
+// before its date. Runs server-side so it works even when the Mac is off. Needs
+// ANTHROPIC_API_KEY, and a Railway Volume (CONTENT_FILE) for durable storage.
+function defaultNextSlot() {
+  const d = new Date(Date.now() + 7 * 86400000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} · 20:00`;
+}
+const ARMONTHS = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+async function automationTick() {
+  if (!generator.claudeReady()) return;
+  const now = new Date();
+  const doc = loadContent() || { batch: null, plan: null, queue: [] };
+  doc.queue = doc.queue || [];
+  const nm = now.getMonth() === 11 ? 0 : now.getMonth() + 1;
+  const ny = now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear();
+  const nextKey = `${ny}-${String(nm + 1).padStart(2, "0")}`;
+  // 1) Monthly plan for next month, on/after the 20th (once per month).
+  if (now.getDate() >= 20 && (!doc.plan || doc.plan.forMonth !== nextKey)) {
+    try {
+      const plan = await generator.generatePlan(`${ARMONTHS[nm]} ${ny}`, ny, nm + 1);
+      if (plan) { plan.forMonth = nextKey; doc.plan = plan; doc.generatedBy = "server-scheduler"; saveContent(doc); console.log(`[plan] generated ${nextKey}`); }
+    } catch (e) { console.error("[plan]", e.message); }
+    return; // one heavy op per tick
+  }
+  // 2) Daily post generation — concepts due within 7 days, not yet generated.
+  const plan = doc.plan;
+  if (!plan || !Array.isArray(plan.concepts)) return;
+  const [py, pmo] = (plan.forMonth || nextKey).split("-").map(Number);
+  const existing = new Set([...(baseState().queue || []).map((q) => q.id), ...doc.queue.map((q) => q.id)]);
+  for (const c of plan.concepts) {
+    if (c.generatedId && existing.has(c.generatedId)) continue;
+    const when = new Date(py, pmo - 1, c.day || 1, 20, 0, 0);
+    const daysAhead = (when - now) / 86400000;
+    if (daysAhead < 0 || daysAhead > 7) continue;
+    const idNum = nextIdNum(baseState().queue);
+    const dateStr = `${py}-${String(pmo).padStart(2, "0")}-${String(c.day || 1).padStart(2, "0")} · 20:00`;
+    try {
+      const post = await generator.generatePost({ idNum, date: dateStr, pillar: c.pillar || "", prompt: c.t || "" });
+      if (post) { post.ty = c.ty || post.ty; c.generatedId = post.id; doc.queue.push(post); saveContent(doc); console.log(`[postgen] ${post.id} for ${dateStr}`); }
+    } catch (e) { console.error("[postgen]", e.message); }
+    break; // one per tick
+  }
+}
+setInterval(() => { automationTick().catch(() => {}); }, 6 * 3600 * 1000);
 
 // ── Reply router ────────────────────────────────────────────────────
 app.post("/api/reply", async (req, res) => {

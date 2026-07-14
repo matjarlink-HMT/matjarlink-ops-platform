@@ -15,7 +15,7 @@ export const I18N = {
     nav_accounts: "الحسابات", nav_calendar: "تقويم النشر",
     updated: "آخر تحديث", mode_mock: "وضع تجريبي — بيانات نموذجية", mode_live: "وضع حيّ — بيانات حقيقية",
     mode_mock_hint: "أضف المفاتيح وحوّل MODE=live لتفعيل السحب الحيّ.",
-    kpi_agents: "وكيلًا في الفريق", kpi_queue: "تصميمًا بانتظار المراجعة", kpi_assets: "إجمالي أصول الدفعة", kpi_followers: "متابع على إنستغرام",
+    kpi_agents: "وكيلًا في الفريق", kpi_queue: "تصميمًا بانتظار المراجعة", kpi_assets: "منشور تم نشره", kpi_followers: "متابع على إنستغرام",
     perf: "الأداء", notConnected: "غير مربوط — أضف WINDSOR_API_KEY", today_title: "أولويات اليوم", alerts_title: "تنبيهات تحتاج قراراً",
     reply: "رد", sent: "أُرسل الرد", sent_sim: "محاكاة (فعّل MODE=live للإرسال الحقيقي)", save: "حفظ ملاحظة", approve: "اعتماد", next: "التالي",
     note_ph: "اكتب ملاحظتك… (بلا ملاحظة = اعتماد تلقائي عند المهلة)", noteSaved: "حُفظت الملاحظة — الحالة: قيد التعديل", approvedMsg: "اعتُمد — سيُنشر في موعده",
@@ -49,7 +49,10 @@ export const I18N = {
     agent_improve_hint: "اعتمِد الاقتراح الذاتي لأي وكيل (✓) ليقوم CAIMO بتطبيقه ورفع مستوى الوكيل.",
     agent_approve: "اعتمِد الاقتراح — يطبّقه المدير ويرفع المستوى", agent_improved: "حُسّن بواسطة المدير",
     dash_pipeline: "صحة قائمة النشر", dash_posts: "منشور", dash_trend: "اتجاه الأداء", dash_upcoming: "النشر القادم",
-    view_carousel: "المعرض", view_calendar: "التقويم"
+    view_carousel: "المعرض", view_calendar: "التقويم",
+    regen: "أعد التوليد", regen_confirm: "يعيد كلاودي توليد هذا المنشور حسب ملاحظاتك المكتوبة. متابعة؟", regenerating: "يولّد…",
+    gennew: "بوست جديد", gennew_prompt: "توجيه للبوست الجديد (اتركه فارغاً ليقرّر كلاودي):", generating: "يولّد…",
+    cd_in: "خلال", cd_d: "ي", cd_h: "س", cd_m: "د", cd_passed: "فات الموعد — يحتاج إعادة جدولة"
   },
   en: {
     brand_sub: "AI Ops · Command Center", sub: "AI marketing team operations — MatjarLink",
@@ -59,7 +62,7 @@ export const I18N = {
     nav_accounts: "Accounts", nav_calendar: "Calendar",
     updated: "Updated", mode_mock: "Demo mode — sample data", mode_live: "Live mode — real data",
     mode_mock_hint: "Add keys and set MODE=live to pull real data.",
-    kpi_agents: "team agents", kpi_queue: "designs pending review", kpi_assets: "total batch assets", kpi_followers: "Instagram followers",
+    kpi_agents: "team agents", kpi_queue: "designs pending review", kpi_assets: "posts published", kpi_followers: "Instagram followers",
     perf: "Performance", notConnected: "Not connected — add WINDSOR_API_KEY", today_title: "Today's priorities", alerts_title: "Alerts needing action",
     reply: "Reply", sent: "Reply sent", sent_sim: "Simulated (set MODE=live to send)", save: "Save note", approve: "Approve", next: "Next",
     note_ph: "Write your note… (no note = auto-approved at deadline)", noteSaved: "Note saved — status: editing", approvedMsg: "Approved — will publish on schedule",
@@ -93,7 +96,10 @@ export const I18N = {
     agent_improve_hint: "Approve any agent's self-suggestion (✓) and CAIMO applies it and raises the agent's level.",
     agent_approve: "Approve suggestion — the manager applies it and levels up the agent", agent_improved: "Improved by the manager",
     dash_pipeline: "Pipeline health", dash_posts: "posts", dash_trend: "Performance trend", dash_upcoming: "Upcoming posts",
-    view_carousel: "Carousel", view_calendar: "Calendar"
+    view_carousel: "Carousel", view_calendar: "Calendar",
+    regen: "Regenerate", regen_confirm: "Claude will regenerate this post based on your written note. Continue?", regenerating: "Generating…",
+    gennew: "New post", gennew_prompt: "Direction for the new post (leave blank to let Claude decide):", generating: "Generating…",
+    cd_in: "in", cd_d: "d", cd_h: "h", cd_m: "m", cd_passed: "overdue — needs rescheduling"
   },
   fa: {
     brand_sub: "AI Ops · مرکز فرماندهی", sub: "عملیات تیم بازاریابی هوش مصنوعی — متجرلینک",
@@ -103,7 +109,7 @@ export const I18N = {
     nav_accounts: "حساب‌ها", nav_calendar: "تقویم انتشار",
     updated: "آخرین بروزرسانی", mode_mock: "حالت آزمایشی — داده نمونه", mode_live: "حالت زنده — داده واقعی",
     mode_mock_hint: "کلیدها را اضافه و MODE=live کنید تا داده واقعی بیاید.",
-    kpi_agents: "ایجنت تیم", kpi_queue: "طرح در انتظار بررسی", kpi_assets: "کل دارایی‌های دسته", kpi_followers: "دنبال‌کننده اینستاگرام",
+    kpi_agents: "ایجنت تیم", kpi_queue: "طرح در انتظار بررسی", kpi_assets: "پست منتشرشده", kpi_followers: "دنبال‌کننده اینستاگرام",
     perf: "عملکرد", notConnected: "متصل نیست — WINDSOR_API_KEY را اضافه کنید", today_title: "اولویت‌های امروز", alerts_title: "هشدارهای نیازمند اقدام",
     reply: "پاسخ", sent: "پاسخ ارسال شد", sent_sim: "شبیه‌سازی (برای ارسال MODE=live کنید)", save: "ذخیره یادداشت", approve: "تأیید", next: "بعدی",
     note_ph: "یادداشت خود را بنویسید… (بدون یادداشت = تأیید خودکار)", noteSaved: "یادداشت ذخیره شد — وضعیت: در حال ویرایش", approvedMsg: "تأیید شد — طبق برنامه منتشر می‌شود",
@@ -137,6 +143,9 @@ export const I18N = {
     agent_improve_hint: "پیشنهاد خودکار هر ایجنت را تأیید کن (✓) تا CAIMO آن را اجرا و سطح ایجنت را بالا ببرد.",
     agent_approve: "تأیید پیشنهاد — مدیر آن را اجرا و ایجنت را ارتقا می‌دهد", agent_improved: "توسط مدیر بهبود یافت",
     dash_pipeline: "سلامت صف انتشار", dash_posts: "پست", dash_trend: "روند عملکرد", dash_upcoming: "انتشارهای بعدی",
-    view_carousel: "گالری", view_calendar: "تقویم"
+    view_carousel: "گالری", view_calendar: "تقویم",
+    regen: "بازتولید", regen_confirm: "کلود این پست را بر اساس یادداشت شما بازتولید می‌کند. ادامه؟", regenerating: "در حال تولید…",
+    gennew: "پست جدید", gennew_prompt: "راهنما برای پست جدید (خالی بگذارید تا کلود تصمیم بگیرد):", generating: "در حال تولید…",
+    cd_in: "تا", cd_d: "ر", cd_h: "س", cd_m: "د", cd_passed: "زمانش گذشت — نیاز به زمان‌بندی مجدد"
   }
 };

@@ -274,7 +274,7 @@ function renderPipeline(C) {
   const batch = S.contentBatch ? `<div class="note-info">✨ ${T("genBatch")}: <b>${S.contentBatch}</b> — ${T("genBy")}</div>` : "";
   const toggle = `<div class="viewtog"><button class="vtbtn ${pf.view === "carousel" ? "on" : ""}" data-view="carousel">▦ ${T("view_carousel")}</button><button class="vtbtn ${pf.view === "calendar" ? "on" : ""}" data-view="calendar">🗓 ${T("view_calendar")}</button></div>`;
   const body = pf.view === "calendar" ? pipeCalendar(filtered) : pipeCarousel(filtered);
-  C.innerHTML = `${batch}<div class="pipehead"><b>${T("nav_pipeline")}</b><span class="mut">${filtered.length} / ${q.length}</span>${toggle}</div>${bar}<div id="pipebody">${body}</div>`;
+  C.innerHTML = `${batch}<div class="pipehead"><b>${T("nav_pipeline")}</b><span class="mut">${filtered.length} / ${q.length}</span><button class="btn sm" id="gennew">➕ ${T("gennew")}</button>${toggle}</div>${bar}<div id="pipebody">${body}</div>`;
   bindPipeline(filtered);
 }
 // horizontal image carousel (focused center card + ‹ › nav) + detail panel
@@ -307,17 +307,21 @@ function pdetailMain(q) {
     q.gen ? `<span class="pill p-new">✨ ${T("gen")}</span>` : ""
   ].filter(Boolean).join(" ");
   const threadHtml = thread.length ? `<div class="pthread">${thread.map(bubble).join("")}</div>` : "";
+  const when = parseWhenClient(q.date);
+  const cdHtml = pub ? `<span class="cd done">✓ ${T("published_ok")}</span>` : (when ? `<span class="cd" data-when="${when.getTime()}">${fmtCountdown(when)}</span>` : "");
+  const hasNote = thread.some(m => m.role === "user");
   let pubBtn = "";
   if (pub) pubBtn = pub.permalink ? `<a class="link sm" target="_blank" href="${pub.permalink}">${T("published_ok")} ↗</a>` : "";
   else if (S.publishReady && approved) pubBtn = `<button class="btn sm pubbtn" data-pub="${q.id}">📤 ${T("publish_now")}</button>`;
   return `<div class="pcard nofloat" data-id="${q.id}"><div class="pmain">
       <div class="ptitle">${escapeHtml(q.t)}</div>
       <div class="pmeta">${chan(q.ch)} ${q.ty} · <b>${q.date}</b></div>
-      <div class="pbadges">${badges}</div>
+      <div class="pcdrow">${cdHtml}<div class="pbadges">${badges}${q.regens ? `<span class="pill p-idle">♻️ ${q.regens}</span>` : ""}</div></div>
       <div class="pcap">${escapeHtml((q.cap || "").slice(0, 240))}${(q.cap || "").length > 240 ? "…" : ""}</div>
       ${threadHtml}
       <div class="pnotebar"><input class="pnote" data-id="${q.id}" placeholder="${T("note_ask_ph")}" autocomplete="off"><button class="btn sm askbtn" data-ask="${q.id}">${T("note_ask")}</button></div>
       <div class="pactions">
+        ${pub ? "" : `<button class="btn ghost sm regenbtn ${hasNote ? "hot" : ""}" data-regen="${q.id}">♻️ ${T("regen")}</button>`}
         ${approved || pub ? "" : `<button class="btn ok sm" data-approve="${q.id}">✓ ${T("approve")}</button>`}
         ${pubBtn}
         ${q.drive ? `<button class="btn ghost sm" data-play2="${q.drive}">▶ ${lang === "en" ? "Preview" : lang === "fa" ? "پیش‌نمایش" : "معاينة"}</button><a class="link sm" target="_blank" href="https://drive.google.com/file/d/${q.drive}/view">${T("openDrive")}</a>` : ""}
@@ -353,6 +357,7 @@ const bubble = (m) => `<div class="pbub ${m.role}">${m.role === "manager" ? '<sp
 function bindPipeline(list) {
   document.querySelectorAll(".fchip").forEach(b => b.onclick = () => { pf[b.dataset.f] = b.dataset.v; pf.focus = 0; renderPipeline($("#content")); });
   document.querySelectorAll(".vtbtn").forEach(b => b.onclick = () => { pf.view = b.dataset.view; renderPipeline($("#content")); });
+  const gn = document.getElementById("gennew"); if (gn) gn.onclick = genNew;
   if (pf.view === "calendar") { bindCalendar(list); return; }
   if (!list || !list.length) return;
   document.querySelectorAll(".ccard").forEach(c => c.onclick = () => {
@@ -371,6 +376,49 @@ function bindDetail(list) {
   host.querySelectorAll("[data-approve]").forEach(b => b.onclick = async () => { b.disabled = true; await postNote(b.dataset.approve, { id: b.dataset.approve, action: "approve" }); renderPipeline($("#content")); });
   host.querySelectorAll("[data-pub]").forEach(b => b.onclick = () => publishPost(b.dataset.pub, b));
   host.querySelectorAll("[data-play2]").forEach(b => b.onclick = () => openDrivePlay(b.dataset.play2, host.querySelector(".ptitle")?.textContent || ""));
+  host.querySelectorAll("[data-regen]").forEach(b => b.onclick = () => regenPost(b.dataset.regen, b));
+}
+// ── live publish countdown ────────────────────────────────────────
+function parseWhenClient(date) { const m = (date || "").match(/(\d{4})-(\d{2})-(\d{2})[^\d]+(\d{2}):(\d{2})/); return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : null; }
+function fmtCountdown(when) {
+  let ms = when.getTime() - Date.now();
+  if (ms <= 0) return "⚠️ " + T("cd_passed");
+  const d = Math.floor(ms / 86400000); ms -= d * 86400000;
+  const h = Math.floor(ms / 3600000); ms -= h * 3600000;
+  const mi = Math.floor(ms / 60000);
+  const parts = [];
+  if (d) parts.push(d + T("cd_d"));
+  if (d || h) parts.push(h + T("cd_h"));
+  parts.push(mi + T("cd_m"));
+  return "⏳ " + T("cd_in") + " " + parts.join(" ");
+}
+setInterval(() => {
+  document.querySelectorAll(".cd[data-when]").forEach(el => {
+    const w = +el.dataset.when, ms = w - Date.now();
+    el.textContent = fmtCountdown(new Date(w));
+    el.classList.toggle("urgent", ms > 0 && ms < 86400000);
+  });
+}, 1000);
+// ── regenerate a post from its note (Claude) ──────────────────────
+async function regenPost(id, btn) {
+  if (!confirm(T("regen_confirm"))) return;
+  btn.disabled = true; btn.textContent = "⏳ " + T("regenerating");
+  try {
+    const r = await fetch("/api/regenerate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, lang }) }).then(r => r.json());
+    if (r.ok) { S = await fetch("/api/state").then(x => x.json()); renderPipeline($("#content")); }
+    else { btn.disabled = false; btn.textContent = "♻️ " + T("regen"); alert("✗ " + (r.error || "")); }
+  } catch (e) { btn.disabled = false; btn.textContent = "♻️ " + T("regen"); }
+}
+// ── generate a brand-new post (Claude) ────────────────────────────
+async function genNew() {
+  const prompt = window.prompt(T("gennew_prompt"), "");
+  if (prompt === null) return;
+  const gn = document.getElementById("gennew"); if (gn) { gn.disabled = true; gn.textContent = "⏳ " + T("generating"); }
+  try {
+    const r = await fetch("/api/generate-post", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, lang }) }).then(r => r.json());
+    if (r.ok) { pf.plat = "all"; pf.type = "all"; pf.status = "all"; S = await fetch("/api/state").then(x => x.json()); const idx = (S.queue || []).findIndex(q => q.id === r.post.id); pf.focus = idx < 0 ? 0 : idx; renderPipeline($("#content")); }
+    else { if (gn) { gn.disabled = false; gn.textContent = "➕ " + T("gennew"); } alert("✗ " + (r.error || "")); }
+  } catch (e) { if (gn) { gn.disabled = false; gn.textContent = "➕ " + T("gennew"); } }
 }
 function bindCalendar() {
   document.querySelectorAll("[data-mon]").forEach(b => b.onclick = () => {

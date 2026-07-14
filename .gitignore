@@ -8,5 +8,6 @@ data/config.json
 data/chat.json
 data/published.json
 data/agents_state.json
+data/overrides.json
 
 .claude/

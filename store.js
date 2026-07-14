@@ -71,6 +71,19 @@ export function addPostNote(id, role, text) {
   return cur.thread;
 }
 
+// ── Post content overrides ── Claude-regenerated title/caption/brief per post
+// (applies to seed July posts too, which aren't in content.json). Volume-ready.
+const OV_FILE = process.env.OVERRIDES_FILE || new URL("./data/overrides.json", import.meta.url).pathname;
+let ov = {};
+try { ov = JSON.parse(fs.readFileSync(OV_FILE, "utf8")); } catch (e) { ov = {}; }
+function persistOv() { try { fs.writeFileSync(OV_FILE, JSON.stringify(ov)); } catch (e) {} }
+export function getOverrides() { return ov; }
+export function setOverride(id, patch) {
+  ov[id] = { ...(ov[id] || {}), ...patch, at: new Date().toISOString(), regens: ((ov[id] || {}).regens || 0) + 1 };
+  persistOv();
+  return ov[id];
+}
+
 // ── Agent self-improvement state ── approved suggestions raise the agent's level.
 const AG_FILE = process.env.AGENTS_FILE || new URL("./data/agents_state.json", import.meta.url).pathname;
 let ag = {};
