@@ -52,7 +52,8 @@ export const I18N = {
     view_carousel: "المعرض", view_calendar: "التقويم",
     regen: "أعد التوليد", regen_confirm: "يعيد كلاودي توليد هذا المنشور حسب ملاحظاتك المكتوبة. متابعة؟", regenerating: "يولّد…",
     gennew: "بوست جديد", gennew_prompt: "توجيه للبوست الجديد (اتركه فارغاً ليقرّر كلاودي):", generating: "يولّد…",
-    cd_in: "خلال", cd_d: "ي", cd_h: "س", cd_m: "د", cd_passed: "فات الموعد — يحتاج إعادة جدولة"
+    cd_in: "خلال", cd_d: "ي", cd_h: "س", cd_m: "د", cd_passed: "فات الموعد — يحتاج إعادة جدولة",
+    silent_ok: "صمت = موافقة · نشر تلقائي", held: "معلّق — ملاحظتك"
   },
   en: {
     brand_sub: "AI Ops · Command Center", sub: "AI marketing team operations — MatjarLink",
@@ -99,7 +100,8 @@ export const I18N = {
     view_carousel: "Carousel", view_calendar: "Calendar",
     regen: "Regenerate", regen_confirm: "Claude will regenerate this post based on your written note. Continue?", regenerating: "Generating…",
     gennew: "New post", gennew_prompt: "Direction for the new post (leave blank to let Claude decide):", generating: "Generating…",
-    cd_in: "in", cd_d: "d", cd_h: "h", cd_m: "m", cd_passed: "overdue — needs rescheduling"
+    cd_in: "in", cd_d: "d", cd_h: "h", cd_m: "m", cd_passed: "overdue — needs rescheduling",
+    silent_ok: "silence = auto-publish", held: "held — your note"
   },
   fa: {
     brand_sub: "AI Ops · مرکز فرماندهی", sub: "عملیات تیم بازاریابی هوش مصنوعی — متجرلینک",
@@ -146,6 +148,7 @@ export const I18N = {
     view_carousel: "گالری", view_calendar: "تقویم",
     regen: "بازتولید", regen_confirm: "کلود این پست را بر اساس یادداشت شما بازتولید می‌کند. ادامه؟", regenerating: "در حال تولید…",
     gennew: "پست جدید", gennew_prompt: "راهنما برای پست جدید (خالی بگذارید تا کلود تصمیم بگیرد):", generating: "در حال تولید…",
-    cd_in: "تا", cd_d: "ر", cd_h: "س", cd_m: "د", cd_passed: "زمانش گذشت — نیاز به زمان‌بندی مجدد"
+    cd_in: "تا", cd_d: "ر", cd_h: "س", cd_m: "د", cd_passed: "زمانش گذشت — نیاز به زمان‌بندی مجدد",
+    silent_ok: "سکوت = انتشار خودکار", held: "معلق — یادداشت شما"
   }
 };

@@ -298,9 +298,12 @@ async function autoPublishTick() {
   const now = Date.now();
   for (const q of fullQueue()) {
     if (store.isPublished(q.id)) continue;
-    const approved = notes[q.id]?.status === "معتمد"; // explicit approval required for auto-post
+    // Silence = approval: publish at the scheduled time UNLESS there's an unresolved
+    // objection (a note left without approval). Explicit approval also passes.
+    const nt = notes[q.id] || {};
+    const held = nt.status !== "معتمد" && !!(nt.note && nt.note.trim());
     const when = parseWhen(q.date);
-    if (!approved || !when) continue;
+    if (held || !when) continue;
     const dueAgo = now - when.getTime();
     if (dueAgo < 0 || dueAgo > STALE_MS) continue; // not due yet, or too stale (publish manually)
     const input = resolveMedia(q, publicBase());

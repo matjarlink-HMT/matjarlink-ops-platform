@@ -290,7 +290,8 @@ function carouselCard(q, i) {
   const grad = `linear-gradient(160deg,${q.tyc},${q.tyc}bb)`;
   let inner;
   if (q.drive && !isReel) inner = `<img class="cmedia" loading="lazy" src="/media/drive/${q.drive}" alt="" onerror="this.remove()">`;
-  else if (q.drive && isReel) inner = `<span class="cplay">▶</span>`;
+  else if (q.mediaUrl && !isReel) inner = `<img class="cmedia" loading="lazy" src="${q.mediaUrl}" alt="" onerror="this.remove()">`;
+  else if ((q.drive || q.mediaUrl) && isReel) inner = `<span class="cplay">▶</span>`;
   else inner = `<span class="cph">✎</span>`;
   return `<div class="ccard ${i === pf.focus ? "focus" : ""}" data-idx="${i}" style="background:${grad}">
     ${inner}<span class="ctag">${q.id}${q.gen ? " ✨" : ""}</span>
@@ -301,9 +302,10 @@ function pdetailMain(q) {
   const nt = (S.notes && S.notes[q.id]) || {};
   const pub = S.publishedLog && S.publishedLog[q.id];
   const approved = nt.status === "معتمد";
+  const held = !approved && !!(nt.note && nt.note.trim()); // an unresolved note = objection → won't auto-publish
   const thread = nt.thread || [];
   const badges = [
-    pub ? `<span class="pill p-ok">📤 ${T("published_ok")}</span>` : approved ? `<span class="pill p-ok">✓ ${T("approve")}</span>` : pill(q.st),
+    pub ? `<span class="pill p-ok">📤 ${T("published_ok")}</span>` : approved ? `<span class="pill p-ok">✓ ${T("approve")}</span>` : held ? `<span class="pill p-warn">✎ ${T("held")}</span>` : `<span class="pill p-info">🔕 ${T("silent_ok")}</span>`,
     q.gen ? `<span class="pill p-new">✨ ${T("gen")}</span>` : ""
   ].filter(Boolean).join(" ");
   const threadHtml = thread.length ? `<div class="pthread">${thread.map(bubble).join("")}</div>` : "";
@@ -312,7 +314,7 @@ function pdetailMain(q) {
   const hasNote = thread.some(m => m.role === "user");
   let pubBtn = "";
   if (pub) pubBtn = pub.permalink ? `<a class="link sm" target="_blank" href="${pub.permalink}">${T("published_ok")} ↗</a>` : "";
-  else if (S.publishReady && approved) pubBtn = `<button class="btn sm pubbtn" data-pub="${q.id}">📤 ${T("publish_now")}</button>`;
+  else if (S.publishReady && !held) pubBtn = `<button class="btn sm pubbtn" data-pub="${q.id}">📤 ${T("publish_now")}</button>`;
   return `<div class="pcard nofloat" data-id="${q.id}"><div class="pmain">
       <div class="ptitle">${escapeHtml(q.t)}</div>
       <div class="pmeta">${chan(q.ch)} ${q.ty} · <b>${q.date}</b></div>
@@ -445,7 +447,6 @@ async function askManager(id) {
   inp.disabled = false; inp.focus();
 }
 async function publishPost(id, btn) {
-  if (!confirm(T("publish_confirm"))) return;
   btn.disabled = true; btn.textContent = T("publishing");
   try {
     const r = await fetch("/api/publish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).then(r => r.json());
