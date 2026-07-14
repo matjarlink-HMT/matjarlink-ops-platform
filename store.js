@@ -38,6 +38,7 @@ function persistPub() { try { fs.writeFileSync(PUB_FILE, JSON.stringify(pub)); }
 export function getPublished() { return pub; }
 export function isPublished(id) { return Boolean(pub[id]); }
 export function markPublished(id, result) { pub[id] = { ...result, id, at: result?.at || new Date().toISOString() }; persistPub(); return pub; }
+export function unpublish(id) { delete pub[id]; persistPub(); return pub; } // clear the published flag so a post can be re-published
 
 export function getNotes() { return mem; }
 export function setNote(id, value, status) {

@@ -286,6 +286,14 @@ app.post("/api/publish", async (req, res) => {
   }
 });
 
+// ── Re-publish ── clear a post's published flag so it can publish again ──
+app.post("/api/republish", (req, res) => {
+  const { id } = req.body || {};
+  if (!id) return res.status(400).json({ ok: false, error: "id required" });
+  store.unpublish(id);
+  res.json({ ok: true, published: store.getPublished() });
+});
+
 // ── Auto-publish scheduler ── OFF by default (AUTO_PUBLISH=on to enable). ──
 // When on: every minute, publishes APPROVED posts whose scheduled time has passed
 // and that have public media, then records them so they never double-post.
