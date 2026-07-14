@@ -196,18 +196,23 @@ app.post("/api/publish", async (req, res) => {
 // and that have public media, then records them so they never double-post.
 const AUTO = () => (process.env.AUTO_PUBLISH || store.cfgGet("AUTO_PUBLISH")) === "on";
 function parseWhen(date) { const m = (date || "").match(/(\d{4}-\d{2}-\d{2})[^\d]+(\d{2}):(\d{2})/); return m ? new Date(`${m[1]}T${m[2]}:${m[3]}:00`) : null; }
+const STALE_MS = 24 * 3600 * 1000; // don't auto-post backlog older than a day
 async function autoPublishTick() {
   if (!AUTO() || !metaPublish.publishReady()) return;
   const notes = store.getNotes();
+  const now = Date.now();
   for (const q of fullQueue()) {
     if (store.isPublished(q.id)) continue;
-    const approved = notes[q.id]?.status === "معتمد"; // silence-approval handled in UI; require explicit approve for auto-post
+    const approved = notes[q.id]?.status === "معتمد"; // explicit approval required for auto-post
     const when = parseWhen(q.date);
-    if (!approved || !when || when > new Date()) continue;
+    if (!approved || !when) continue;
+    const dueAgo = now - when.getTime();
+    if (dueAgo < 0 || dueAgo > STALE_MS) continue; // not due yet, or too stale (publish manually)
     const input = resolveMedia(q, publicBase());
-    if (!input) continue; // needs public media
+    if (!input) continue; // needs media
     try { const r = await metaPublish.publish(input); store.markPublished(q.id, r); console.log(`[auto-publish] ${q.id} → ${r.permalink || r.id}`); }
     catch (e) { console.error(`[auto-publish] ${q.id}: ${e.message}`); }
+    break; // at most one publish per tick — avoids simultaneous bursts
   }
 }
 setInterval(() => { autoPublishTick().catch(() => {}); }, 60000);
