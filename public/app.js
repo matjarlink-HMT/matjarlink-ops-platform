@@ -216,7 +216,7 @@ const agentCard = (a) => `<div class="card agent"><div class="hd"><div class="av
 const needCard = (n) => `<div class="card"><div style="display:flex;gap:.4rem;align-items:center;margin-bottom:.35rem">${pill(n.t)} ${pill(n.pr)}<span style="margin-inline-start:auto;font-size:.74rem;color:var(--muted)">${n.f}</span></div>
   <div style="font-weight:800">${n.ti}</div><div class="mut" style="margin-top:.25rem">${n.d}</div></div>`;
 const qCard = (q, i) => { const nt = S.notes && S.notes[q.id]; return `<div class="qcard" data-i="${i}"><div class="thumb" style="background:linear-gradient(160deg,${q.tyc},${q.tyc}cc)"><span class="tp">${q.id}</span>${q.ty.includes("ريل") && q.drive ? "▶" : ""}<div style="margin-top:.2rem">${q.t.slice(0, 20)}</div></div>
-  <div class="qmeta"><div class="qt">${q.t}</div><div class="qi">${chan(q.ch)} ${q.ty} · ${q.date}</div><div>${nt && nt.status === "معتمد" ? pill([T("approve"), "p-ok"]) : pill(q.st)} ${q.gen ? `<span class="pill p-new">✨ ${T("gen")}</span>` : ""} ${nt && nt.note ? `<span class="pill p-idle">📝 ${T("noteBadge")}</span>` : ""}</div></div></div>`; };
+  <div class="qmeta"><div class="qt">${q.t}</div><div class="qi">${chan(q.ch)} ${q.ty} · ${q.date}</div><div>${S.publishedLog && S.publishedLog[q.id] ? `<span class="pill p-ok">${T("published_ok")}</span>` : nt && nt.status === "معتمد" ? pill([T("approve"), "p-ok"]) : pill(q.st)} ${q.gen ? `<span class="pill p-new">✨ ${T("gen")}</span>` : ""} ${nt && nt.note ? `<span class="pill p-idle">📝 ${T("noteBadge")}</span>` : ""}</div></div></div>`; };
 const prepTbl = () => `<div class="tbl-wrap"><table><thead><tr><th>${T("cal_start")} ▲</th><th>${lang === "en" ? "Title" : "العنوان"}</th><th></th><th></th><th></th></tr></thead><tbody>
   ${S.prep.slice().sort((a, b) => a.d < b.d ? -1 : 1).map(p => `<tr><td style="font-weight:700">${p.d}</td><td>${p.t}</td><td>${chan(p.ch)} ${p.ch}</td><td style="color:var(--muted)">${p.ag}</td><td>${pill(p.st)}</td></tr>`).join("")}</tbody></table></div>`;
 const campView = () => `<div class="card" style="text-align:center;padding:1.4rem"><div style="font-weight:800;color:var(--plum)">${T("campNone")}</div>
@@ -321,8 +321,24 @@ function openReview(i) {
   $("#mnote").placeholder = T("note_ph"); $("#mnote").value = nt.note || "";
   $("#msave").textContent = T("save"); $("#mapprove").textContent = "✓ " + T("approve"); $("#mnext").textContent = T("next") + " ↩";
   $("#msaved").textContent = nt.status === "معتمد" ? "✓ " + T("approvedMsg") : nt.note ? "📝 " + nt.note : "";
+  // publish control
+  const pub = S.publishedLog && S.publishedLog[q.id];
+  const approved = nt.status === "معتمد";
+  const pb = $("#mpublish");
+  if (pub) { pb.style.display = ""; pb.disabled = true; pb.textContent = T("published_ok"); if (pub.permalink) $("#msaved").innerHTML = `✓ <a class="link" target="_blank" href="${pub.permalink}">${T("published_ok")}</a>`; }
+  else if (S.publishReady && approved) { pb.style.display = ""; pb.disabled = false; pb.textContent = "📤 " + T("publish_now"); }
+  else { pb.style.display = "none"; }
   $("#ov").classList.add("on");
 }
+$("#mpublish").onclick = async () => {
+  const q = S.queue[cur]; if (!confirm(T("publish_confirm"))) return;
+  const pb = $("#mpublish"); pb.disabled = true; pb.textContent = T("publishing");
+  try {
+    const r = await fetch("/api/publish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: q.id }) }).then(r => r.json());
+    if (r.ok) { $("#msaved").innerHTML = r.result?.permalink ? `✓ <a class="link" target="_blank" href="${r.result.permalink}">${T("published_ok")}</a>` : "✓ " + T("published_ok"); pb.textContent = T("published_ok"); S = await fetch("/api/state").then(x => x.json()); }
+    else { $("#msaved").textContent = "✗ " + (r.error || ""); pb.disabled = false; pb.textContent = "📤 " + T("publish_now"); }
+  } catch (e) { $("#msaved").textContent = "✗"; pb.disabled = false; pb.textContent = "📤 " + T("publish_now"); }
+};
 async function postNote(id, body) { const r = await fetch("/api/notes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(r => r.json()); if (r.notes) S.notes = r.notes; return r; }
 $("#mx").onclick = () => $("#ov").classList.remove("on");
 $("#ov").onclick = (e) => { if (e.target.id === "ov") $("#ov").classList.remove("on"); };

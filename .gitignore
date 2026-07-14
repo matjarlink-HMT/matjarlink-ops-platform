@@ -6,5 +6,6 @@ node_modules/
 data/notes.json
 data/config.json
 data/chat.json
+data/published.json
 
 .claude/

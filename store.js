@@ -30,6 +30,15 @@ export function getChat() { return chat; }
 export function addChat(role, text) { chat.push({ role, text, at: new Date().toISOString() }); if (chat.length > 60) chat = chat.slice(-60); persistChat(); return chat; }
 export function resetChat() { chat = []; persistChat(); return chat; }
 
+// ── Published log ── which queue ids were pushed to Instagram (avoid double-post).
+const PUB_FILE = process.env.PUBLISHED_FILE || new URL("./data/published.json", import.meta.url).pathname;
+let pub = {};
+try { pub = JSON.parse(fs.readFileSync(PUB_FILE, "utf8")); } catch (e) { pub = {}; }
+function persistPub() { try { fs.writeFileSync(PUB_FILE, JSON.stringify(pub)); } catch (e) {} }
+export function getPublished() { return pub; }
+export function isPublished(id) { return Boolean(pub[id]); }
+export function markPublished(id, result) { pub[id] = { ...result, id, at: result?.at || new Date().toISOString() }; persistPub(); return pub; }
+
 export function getNotes() { return mem; }
 export function setNote(id, value, status) {
   if (value && value.trim()) mem[id] = { note: value.trim(), status: status || "قيد التعديل", at: new Date().toISOString() };

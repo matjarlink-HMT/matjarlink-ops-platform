@@ -10,6 +10,7 @@ import * as meta from "./integrations/meta.js";
 import * as windsor from "./integrations/windsor.js";
 import * as wa from "./integrations/whatsapp.js";
 import * as claude from "./integrations/claude.js";
+import * as metaPublish from "./integrations/metaPublish.js";
 import { managerSystem, demoReply, errReply } from "./data/manager.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -64,8 +65,19 @@ app.get("/api/state", async (req, res) => {
   if (published.length) state.published = published;
   if (insights) state.insights = insights;
   state.notes = store.getNotes();
+  state.publishReady = metaPublish.publishReady();
+  state.autoPublish = (process.env.AUTO_PUBLISH || store.cfgGet("AUTO_PUBLISH")) === "on";
+  state.publishedLog = store.getPublished();
   res.json(state);
 });
+
+// Full queue = seed (July) + Claude-generated content (Aug+). Used for publishing.
+function fullQueue() {
+  const q = [...baseState().queue];
+  const c = loadContent();
+  if (c?.queue?.length) q.push(...c.queue);
+  return q;
+}
 
 // ── Per-platform analytics ──────────────────────────────────────────
 app.get("/api/analytics", async (req, res) => {
@@ -113,7 +125,7 @@ app.get("/api/connections", (req, res) => {
   ]});
 });
 app.post("/api/connections", (req, res) => {
-  const allowed = ["META_ACCESS_TOKEN", "META_IG_USER_ID", "META_PAGE_ID", "WINDSOR_API_KEY", "WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL"];
+  const allowed = ["META_ACCESS_TOKEN", "META_IG_USER_ID", "META_PAGE_ID", "WINDSOR_API_KEY", "WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "META_GRAPH_VERSION", "AUTO_PUBLISH"];
   const clean = {}; for (const k of allowed) if (k in (req.body || {})) clean[k] = req.body[k];
   store.cfgSet(clean);
   res.json({ ok: true, connectivity: { meta: meta.metaReady(), whatsapp: wa.whatsappReady(), windsor: windsor.windsorReady() } });
@@ -128,11 +140,55 @@ app.post("/api/notes", (req, res) => {
   res.json({ ok: true, notes: store.setNote(id, note || "") });
 });
 
+// ── Publishing (Instagram) ──────────────────────────────────────────
+// Explicit, per-post trigger. Publishes one queued post now. Requires the post
+// to carry a public mediaUrl/images (Instagram pulls media from a URL).
+app.post("/api/publish", async (req, res) => {
+  const { id } = req.body || {};
+  if (!metaPublish.publishReady()) return res.status(400).json({ ok: false, error: "Meta publishing not configured (add META_ACCESS_TOKEN + META_IG_USER_ID)" });
+  if (store.isPublished(id)) return res.json({ ok: true, already: true, result: store.getPublished()[id] });
+  const item = fullQueue().find((q) => q.id === id);
+  if (!item) return res.status(404).json({ ok: false, error: "post not found" });
+  const input = metaPublish.fromQueueItem(item);
+  if (!input) return res.status(400).json({ ok: false, error: "no public media URL for this post — add mediaUrl (image/video) or images[] (carousel)" });
+  try {
+    const result = await metaPublish.publish(input);
+    store.markPublished(id, result);
+    res.json({ ok: true, result });
+  } catch (e) {
+    console.error("[publish]", e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ── Auto-publish scheduler ── OFF by default (AUTO_PUBLISH=on to enable). ──
+// When on: every minute, publishes APPROVED posts whose scheduled time has passed
+// and that have public media, then records them so they never double-post.
+const AUTO = () => (process.env.AUTO_PUBLISH || store.cfgGet("AUTO_PUBLISH")) === "on";
+function parseWhen(date) { const m = (date || "").match(/(\d{4}-\d{2}-\d{2})[^\d]+(\d{2}):(\d{2})/); return m ? new Date(`${m[1]}T${m[2]}:${m[3]}:00`) : null; }
+async function autoPublishTick() {
+  if (!AUTO() || !metaPublish.publishReady()) return;
+  const notes = store.getNotes();
+  for (const q of fullQueue()) {
+    if (store.isPublished(q.id)) continue;
+    const approved = notes[q.id]?.status === "معتمد"; // silence-approval handled in UI; require explicit approve for auto-post
+    const when = parseWhen(q.date);
+    if (!approved || !when || when > new Date()) continue;
+    const input = metaPublish.fromQueueItem(q);
+    if (!input) continue; // needs public media
+    try { const r = await metaPublish.publish(input); store.markPublished(q.id, r); console.log(`[auto-publish] ${q.id} → ${r.permalink || r.id}`); }
+    catch (e) { console.error(`[auto-publish] ${q.id}: ${e.message}`); }
+  }
+}
+setInterval(() => { autoPublishTick().catch(() => {}); }, 60000);
+
 // ── Reply router ────────────────────────────────────────────────────
 app.post("/api/reply", async (req, res) => {
   const { channel, target, message, kind } = req.body || {};
   if (!message || !target) return res.status(400).json({ ok: false, error: "target & message required" });
-  if (MODE !== "live") return res.json({ ok: true, simulated: true });
+  // Send for real when the channel is connected; otherwise simulate.
+  const ready = channel === "WA" ? wa.whatsappReady() : meta.metaReady();
+  if (!ready) return res.json({ ok: true, simulated: true });
   try {
     let result;
     if (channel === "WA") result = await wa.sendMessage(target, message);
@@ -152,6 +208,9 @@ app.get("/webhook/whatsapp", (req, res) => {
 });
 app.post("/webhook/whatsapp", (req, res) => { wa.ingestWebhook(req.body); res.sendStatus(200); });
 
+// ── Public media (Instagram pulls post media from these URLs) ───────
+app.use("/media", express.static(path.join(__dirname, "public", "media")));
+
 // ── Static dashboard ────────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, "public")));
 app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
@@ -161,5 +220,6 @@ app.listen(PORT, () => {
   console.log(`  ▸ http://localhost:${PORT}   (MODE=${MODE})`);
   console.log(`  ▸ Meta: ${meta.metaReady() ? "✓ ready" : "— add META_ACCESS_TOKEN"}`);
   console.log(`  ▸ WhatsApp: ${wa.whatsappReady() ? "✓ ready" : "— add WHATSAPP_TOKEN"}`);
-  console.log(`  ▸ Windsor: ${windsor.windsorReady() ? "✓ ready" : "— add WINDSOR_API_KEY"}\n`);
+  console.log(`  ▸ Windsor: ${windsor.windsorReady() ? "✓ ready" : "— add WINDSOR_API_KEY"}`);
+  console.log(`  ▸ Publish: ${metaPublish.publishReady() ? `✓ ready (auto-publish ${AUTO() ? "ON" : "off"})` : "— needs Meta token"}\n`);
 });

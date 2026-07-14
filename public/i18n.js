@@ -39,7 +39,8 @@ export const I18N = {
     mgr_chips: ["ابدأوا النشر", "انشر MJ-001 الآن", "راجعوا الدفعة", "ما خطة اليوم؟", "كيف الأداء؟"],
     set_accounts: "الحسابات المرتبطة", set_integrations: "الربط والتكاملات", set_prefs: "التفضيلات",
     set_lang: "لغة اللوحة", set_install: "تثبيت كتطبيق", set_pwnote: "لحماية اللوحة بكلمة مرور، أضف DASHBOARD_PASSWORD في متغيّرات Railway.",
-    gen: "مُولّد", genBatch: "دفعة مُولّدة تلقائياً", genBy: "أنشأ خطتها وكابشناتها كلاودي — التصاميم على وكيل التصميم", brief: "بريف التصميم"
+    gen: "مُولّد", genBatch: "دفعة مُولّدة تلقائياً", genBy: "أنشأ خطتها وكابشناتها كلاودي — التصاميم على وكيل التصميم", brief: "بريف التصميم",
+    publish_now: "انشر الآن على إنستغرام", publish_confirm: "تأكيد: نشر هذا المنشور على إنستغرام الآن؟", published_ok: "نُشر ✓", publishing: "جارٍ النشر…", publish_need_media: "يحتاج رابط وسائط عام (mediaUrl) — يُضاف من التصميم", publish_not_ready: "فعّل ربط Meta أولاً"
   },
   en: {
     brand_sub: "AI Ops · Command Center", sub: "AI marketing team operations — MatjarLink",
@@ -73,7 +74,8 @@ export const I18N = {
     mgr_chips: ["Start publishing", "Publish MJ-001 now", "Review the batch", "What's today's plan?", "How's performance?"],
     set_accounts: "Linked accounts", set_integrations: "Connections & integrations", set_prefs: "Preferences",
     set_lang: "Dashboard language", set_install: "Install as app", set_pwnote: "To password-protect the dashboard, add DASHBOARD_PASSWORD in Railway variables.",
-    gen: "generated", genBatch: "Auto-generated batch", genBy: "plan & captions by Claude — designs by the design agent", brief: "Design brief"
+    gen: "generated", genBatch: "Auto-generated batch", genBy: "plan & captions by Claude — designs by the design agent", brief: "Design brief",
+    publish_now: "Publish to Instagram now", publish_confirm: "Confirm: publish this post to Instagram now?", published_ok: "Published ✓", publishing: "Publishing…", publish_need_media: "Needs a public media URL (mediaUrl) — added from the design", publish_not_ready: "Connect Meta first"
   },
   fa: {
     brand_sub: "AI Ops · مرکز فرماندهی", sub: "عملیات تیم بازاریابی هوش مصنوعی — متجرلینک",
@@ -107,6 +109,7 @@ export const I18N = {
     mgr_chips: ["شروع انتشار", "همین حالا MJ-001 را منتشر کن", "بررسی دسته", "برنامه امروز چیست؟", "عملکرد چطور است؟"],
     set_accounts: "حساب‌های متصل", set_integrations: "اتصالات و یکپارچه‌سازی", set_prefs: "تنظیمات",
     set_lang: "زبان داشبورد", set_install: "نصب به‌عنوان برنامه", set_pwnote: "برای محافظت با رمز، DASHBOARD_PASSWORD را در متغیرهای Railway اضافه کن.",
-    gen: "تولیدشده", genBatch: "دستهٔ خودکار", genBy: "طرح و کپشن‌ها را Claude ساخته — طراحی با ایجنت طراحی", brief: "بریف طراحی"
+    gen: "تولیدشده", genBatch: "دستهٔ خودکار", genBy: "طرح و کپشن‌ها را Claude ساخته — طراحی با ایجنت طراحی", brief: "بریف طراحی",
+    publish_now: "اکنون در اینستاگرام منتشر کن", publish_confirm: "تأیید: این پست اکنون در اینستاگرام منتشر شود؟", published_ok: "منتشر شد ✓", publishing: "در حال انتشار…", publish_need_media: "به URL عمومی رسانه (mediaUrl) نیاز دارد", publish_not_ready: "ابتدا Meta را متصل کن"
   }
 };
