@@ -89,6 +89,24 @@ table{width:100%;border-collapse:collapse;font-size:.83rem}th,td{text-align:star
 #mvframe.imgfit img{position:static;inset:auto;width:auto;height:auto;max-width:100%;max-height:86vh;display:block}
 .galnav{position:absolute;top:50%;transform:translateY(-50%);width:2.7rem;height:2.7rem;border-radius:50%;background:rgba(0,0,0,.5);color:#fff;border:none;font-size:1.6rem;font-weight:700;cursor:pointer;display:grid;place-items:center;z-index:4}
 .galnav.gprev{left:.6rem}.galnav.gnext{right:.6rem}.galnav:hover{background:rgba(0,0,0,.8)}
+/* content plan (خطة المحتوى) */
+.planhead{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;margin-bottom:1rem}
+.planacts{display:flex;gap:.5rem;flex-wrap:wrap}
+.pillars{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.6rem}
+.tablewrap{overflow-x:auto;background:#fff;border-radius:1rem;box-shadow:0 1px 8px rgba(78,14,48,.06)}
+.plantable{width:100%;border-collapse:collapse;min-width:56rem}
+.plantable th{font-size:.78rem;color:#8a7280;text-align:start;padding:.7rem .8rem;border-bottom:1px solid #f0e2ea;white-space:nowrap}
+.plantable td{padding:.5rem .6rem;border-bottom:1px solid #f7eef4;vertical-align:middle}
+.plantable tr.applied{opacity:.62}
+.plantable tbody tr:hover{background:#fdf7fa}
+.pinput,.psel{width:100%;border:1px solid #eadfe6;border-radius:.55rem;padding:.42rem .55rem;font:inherit;background:#fff;color:inherit}
+.pinput:focus,.psel:focus{outline:2px solid #E8890F55;border-color:#E8890F}
+.pinput.pday{width:4.2rem;text-align:center}
+.psel.ptime{width:6.4rem}
+.psel.pty{min-width:10rem}
+.pinput.ppl{min-width:8rem}
+.pstat{white-space:nowrap}
+.planempty{text-align:center;padding:2.4rem 1.4rem}
 .mvbar{padding:.6rem .8rem;color:#fff;font-size:.82rem;background:#160a1b}.mvbar .h{font-weight:800;margin-bottom:.15rem}
 .navgroup{font-size:.6rem;letter-spacing:.07em;text-transform:uppercase;color:rgba(255,255,255,.42);font-weight:800;padding:.75rem .65rem .25rem}
 .chatwrap{display:flex;flex-direction:column;height:calc(100vh - 11rem);min-height:23rem}

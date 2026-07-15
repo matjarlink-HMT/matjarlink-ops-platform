@@ -147,9 +147,70 @@ app.post("/api/generate-post", async (req, res) => {
   try { post = await generator.generatePost({ idNum, date: when, prompt: prompt || "" }, lang || "ar"); }
   catch (e) { console.error("[generate-post]", e.message); return res.status(500).json({ ok: false, error: e.message }); }
   if (!post) return res.status(502).json({ ok: false, error: "generation failed" });
-  try { const d = await renderAndSaveDesign(post, post); post.mediaUrl = d.mediaUrl; if (d.images?.length) post.images = d.images; } catch (e) { console.error("[design]", e.message); }
+  try {
+    if ((post.ty || "").includes("ريل")) { const r = await renderAndSaveReel(post, post); post.mediaUrl = r.mediaUrl; }
+    else { const d = await renderAndSaveDesign(post, post); post.mediaUrl = d.mediaUrl; if (d.images?.length) post.images = d.images; }
+  } catch (e) { console.error("[design]", e.message); }
   appendPost(post);
   res.json({ ok: true, post });
+});
+
+// ── Content plan (خطة المحتوى) ── editable monthly plan → one-click apply ──
+app.get("/api/plan", (req, res) => res.json({ ok: true, plan: store.getPlan() }));
+
+// Generate a fresh draft plan for the next month (or a given year/month).
+app.post("/api/plan/generate", async (req, res) => {
+  if (!generator.claudeReady()) return res.status(400).json({ ok: false, error: "add ANTHROPIC_API_KEY to enable generation" });
+  const now = new Date();
+  let { year, month } = req.body || {}; // month: 1-12
+  if (!year || !month) { const nm = (now.getMonth() + 1) % 12; year = now.getFullYear() + (nm === 0 ? 1 : 0); month = nm + 1; }
+  const label = `${ARMONTHS[month - 1]} ${year}`;
+  let out;
+  try { out = await generator.generatePlan(label, year, month); }
+  catch (e) { console.error("[plan]", e.message); return res.status(500).json({ ok: false, error: e.message }); }
+  if (!out) return res.status(502).json({ ok: false, error: "plan generation failed" });
+  const items = (out.concepts || []).slice(0, 16).map((c, i) => {
+    const day = Math.min(Math.max(parseInt(c.day, 10) || (2 + i * 2), 1), 28);
+    return { key: `${year}-${month}-${i}`, day, time: i % 2 ? "20:30" : "20:00", t: String(c.t || ""), ty: String(c.ty || "منشور علامة"), pillar: String(c.pillar || ""), status: "draft", id: null };
+  });
+  const plan = store.setPlan({ label, year, month, goal: String(out.goal || ""), pillars: (out.pillars || []).map(String).slice(0, 6), items, generatedAt: new Date().toISOString() });
+  res.json({ ok: true, plan });
+});
+
+// Save owner edits to the draft plan (titles, types, days, pillars).
+app.put("/api/plan", (req, res) => {
+  const p = (req.body || {}).plan;
+  if (!p || !Array.isArray(p.items)) return res.status(400).json({ ok: false, error: "plan.items required" });
+  const cur = store.getPlan() || {};
+  // keep applied ids/status authoritative from the server side
+  const byKey = Object.fromEntries((cur.items || []).map((i) => [i.key, i]));
+  p.items = p.items.map((i) => ({ ...i, status: byKey[i.key]?.status === "applied" ? "applied" : "draft", id: byKey[i.key]?.id || null }));
+  res.json({ ok: true, plan: store.setPlan({ ...cur, ...p }) });
+});
+
+// Apply ONE plan item → generate the full post (copy + design/reel) into the queue.
+app.post("/api/plan/apply-item", async (req, res) => {
+  const { key } = req.body || {};
+  if (!generator.claudeReady()) return res.status(400).json({ ok: false, error: "add ANTHROPIC_API_KEY to enable generation" });
+  const plan = store.getPlan();
+  const item = plan?.items?.find((i) => i.key === key);
+  if (!item) return res.status(404).json({ ok: false, error: "plan item not found" });
+  if (item.status === "applied" && item.id) return res.json({ ok: true, plan, post: null, already: true });
+  const idNum = nextIdNum(baseState().queue);
+  const date = `${plan.year}-${String(plan.month).padStart(2, "0")}-${String(item.day).padStart(2, "0")} · ${item.time || "20:00"}`;
+  let post;
+  try { post = await generator.generatePost({ idNum, date, pillar: item.pillar, prompt: `نفّذ فكرة الخطة: «${item.t}» — النوع المطلوب حصراً: ${item.ty}` }, "ar"); }
+  catch (e) { console.error("[plan-apply]", e.message); return res.status(500).json({ ok: false, error: e.message }); }
+  if (!post) return res.status(502).json({ ok: false, error: "generation failed" });
+  post.ty = item.ty; // the plan's type is authoritative
+  try {
+    if ((post.ty || "").includes("ريل")) { const r = await renderAndSaveReel(post, post); post.mediaUrl = r.mediaUrl; }
+    else { const d = await renderAndSaveDesign(post, post); post.mediaUrl = d.mediaUrl; if (d.images?.length) post.images = d.images; }
+  } catch (e) { console.error("[plan-apply design]", e.message); }
+  appendPost(post);
+  item.status = "applied"; item.id = post.id;
+  store.setPlan(plan);
+  res.json({ ok: true, plan, post });
 });
 
 // Delete (hide) a post from the queue.

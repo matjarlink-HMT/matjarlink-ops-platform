@@ -66,11 +66,11 @@ export async function generatePost({ idNum = 0, date = "", pillar = "", prompt =
 
 أنت وكيل المحتوى في متجرلينك. أنشئ منشور إنستغرام واحداً جديداً${pillar ? ` ضمن عمود المحتوى: «${pillar}»` : ""}${prompt ? ` وفق توجيه المالك: «${prompt}»` : ""}.
 أعد **JSON فقط** بلا أي نص خارج الأقواس بهذا الشكل:
-{"t":"<عنوان قصير قوي>","ty":"<نوع من: ريل تشويقي/كاروسيل توعوي/منشور علامة/تفاعلي + استطلاع/مجتمعي/كاروسيل فاخر>","cap":"<الكابشن كاملاً باللهجة العُمانية>","brief":"<بريف تصميم: الصيغة + هوك قوي + ألوان خمري/برتقالي + طاقة بصرية عالية + Stop-the-Scroll>","photo":"<٢-٤ كلمات إنجليزية لصورة خلفية موضوعية تناسب المنشور — مثل: omani merchant store / online shopping delivery / retail cashier — أو اتركها فارغة \"\" إن كانت بطاقة نصية أنسب>","slides":[<إن كان النوع «كاروسيل» اجعلها ٤-٦ شرائح محتوى (بعد الغلاف)، كل عنصر {"t":"عنوان قصير للشريحة","body":"سطر أو سطران موجزان"}؛ وإلا اتركها []>]}`;
+{"t":"<عنوان قصير قوي>","ty":"<نوع من: ريل تشويقي/كاروسيل توعوي/منشور علامة/تفاعلي + استطلاع/مجتمعي/كاروسيل فاخر>","cap":"<الكابشن كاملاً باللهجة العُمانية>","brief":"<بريف تصميم: الصيغة + هوك قوي + ألوان خمري/برتقالي + طاقة بصرية عالية + Stop-the-Scroll>","photo":"<٢-٤ كلمات إنجليزية لصورة خلفية موضوعية تناسب المنشور — مثل: omani merchant store / online shopping delivery / retail cashier — أو اتركها فارغة \"\" إن كانت بطاقة نصية أنسب>","slides":[<إن كان النوع «كاروسيل» اجعلها ٤-٦ شرائح محتوى (بعد الغلاف)، كل عنصر {"t":"عنوان قصير للشريحة","body":"سطر أو سطران موجزان"}؛ وإلا اتركها []>],"scenes":[<إن كان النوع «ريل» اجعلها ٣ مشاهد فيديو متتابعة: هوك صادم ثم القيمة ثم ختام «قريبًا» — كل عنصر {"t":"سطر المشهد (٦ كلمات أو أقل)","body":"سطر داعم موجز أو \"\"","kicker":"سطر تمهيدي صغير أو \"\"}؛ وإلا اتركها []>]}`;
   const out = parseJSON(await chat([{ role: "user", text: "ولّد المنشور الآن. JSON فقط." }], system));
   if (!out || !out.cap) return null;
   const id = "MJ-" + String(idNum).padStart(3, "0");
-  return { id, t: String(out.t || "منشور جديد"), ch: "IG", ty: String(out.ty || "منشور علامة"), tyc: pickColor(idNum), date, st: ["مسودة — بانتظار التصميم", "p-idle"], drive: "", gen: true, cap: String(out.cap), brief: String(out.brief || ""), photoQuery: out.photo ? String(out.photo) : "", slides: cleanSlides(out.slides) };
+  return { id, t: String(out.t || "منشور جديد"), ch: "IG", ty: String(out.ty || "منشور علامة"), tyc: pickColor(idNum), date, st: ["مسودة — بانتظار التصميم", "p-idle"], drive: "", gen: true, cap: String(out.cap), brief: String(out.brief || ""), photoQuery: out.photo ? String(out.photo) : "", slides: cleanSlides(out.slides), scenes: cleanScenes(out.scenes) };
 }
 
 // Generate next month's plan: goal + pillars + 12 dated concepts (no full captions yet).

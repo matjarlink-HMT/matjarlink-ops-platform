@@ -104,6 +104,13 @@ export function setOverride(id, patch) {
   return ov[id];
 }
 
+// ── Content plan ── the editable monthly plan (خطة المحتوى page). Volume-backed.
+const PLAN_FILE = sp("plan.json");
+let plan = null;
+try { plan = JSON.parse(fs.readFileSync(PLAN_FILE, "utf8")); } catch (e) { plan = null; }
+export function getPlan() { return plan; }
+export function setPlan(p) { plan = p; try { writeDurable(PLAN_FILE, JSON.stringify(plan)); } catch (e) {} return plan; }
+
 // ── Removed posts ── ids hidden from the queue (delete button). Volume-backed.
 const RM_FILE = sp("removed.json");
 let rm = [];

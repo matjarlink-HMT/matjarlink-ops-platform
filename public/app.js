@@ -23,7 +23,7 @@ const STMAP = { online: "p-ok", working: "p-info", scheduled: "p-info", idle: "p
 const GROUPS = [
   { items: ["overview"] },
   { label: "g_manage", items: ["manager", "agents", "needs"] },
-  { label: "g_content", items: ["pipeline"] },
+  { label: "g_content", items: ["pipeline", "plan"] },
   { label: "g_engage", items: ["comments", "messages", "leads"] },
   { label: "g_perf", items: ["analytics", "camp"] },
   { label: "g_settings", items: ["settings"] }
@@ -111,6 +111,7 @@ function render(p) {
   else if (p === "agents") { C.innerHTML = `<div class="note-info">🚀 ${T("agent_improve_hint")}</div><div class="grid g3">${S.agents.map((a, i) => agentCard(a, i)).join("")}</div>`; bindAgents(); }
   else if (p === "needs") C.innerHTML = `<div class="grid g2">${S.needs.map(needCard).join("")}</div>`;
   else if (p === "pipeline") renderPipeline(C);
+  else if (p === "plan") renderPlan(C);
   else if (p === "analytics") renderAnalytics(C);
   else if (p === "camp") C.innerHTML = campView();
   else if (p === "comments") { C.innerHTML = feed(S.comments, "c", "comment"); bindReply(); }
@@ -118,6 +119,99 @@ function render(p) {
   else if (p === "leads") C.innerHTML = leadsView();
   else if (p === "manager") renderManager(C);
   else if (p === "settings") renderSettings(C);
+}
+
+// ── content plan (خطة المحتوى) ── editable monthly table → one-click apply ──
+const PLAN_TYPES = ["ريل تشويقي", "كاروسيل توعوي", "منشور علامة", "تفاعلي + استطلاع", "مجتمعي", "كاروسيل فاخر"];
+async function renderPlan(C) {
+  C.innerHTML = `<div class="loading">…</div>`;
+  let plan = null;
+  try { plan = (await fetch("/api/plan").then(r => r.json())).plan; } catch (e) {}
+  if (!plan) {
+    C.innerHTML = `<div class="pcard nofloat planempty"><div class="ptitle">🗓 ${T("plan_empty_t")}</div>
+      <div class="mut" style="margin:.5rem 0 1rem">${T("plan_empty_d")}</div>
+      <button class="btn" id="plangen">✨ ${T("plan_gen")}</button></div>`;
+    $("#plangen").onclick = async () => {
+      const b = $("#plangen"); b.disabled = true; b.innerHTML = `${T("plan_gen_loading")} <span class="dots"><i></i><i></i><i></i></span>`;
+      try {
+        const r = await fetch("/api/plan/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).then(x => x.json());
+        if (r.ok) renderPlan(C); else { alert(r.error || "!"); b.disabled = false; b.textContent = "✨ " + T("plan_gen"); }
+      } catch (e) { b.disabled = false; b.textContent = "✨ " + T("plan_gen"); }
+    };
+    return;
+  }
+  const applied = plan.items.filter(i => i.status === "applied").length;
+  const rows = plan.items.map((it, idx) => `<tr data-key="${escapeHtml(it.key)}" class="${it.status === "applied" ? "applied" : ""}">
+      <td><input class="pinput pday" type="number" min="1" max="28" value="${it.day}" ${it.status === "applied" ? "disabled" : ""}></td>
+      <td><select class="psel ptime" ${it.status === "applied" ? "disabled" : ""}>${["19:30", "20:00", "20:30", "21:00"].map(t => `<option ${t === (it.time || "20:00") ? "selected" : ""}>${t}</option>`).join("")}</select></td>
+      <td><input class="pinput pt" value="${escapeHtml(it.t).replace(/"/g, "&quot;")}" ${it.status === "applied" ? "disabled" : ""}></td>
+      <td><select class="psel pty" ${it.status === "applied" ? "disabled" : ""}>${PLAN_TYPES.map(t => `<option ${t === it.ty ? "selected" : ""}>${t}</option>`).join("")}</select></td>
+      <td><input class="pinput ppl" value="${escapeHtml(it.pillar).replace(/"/g, "&quot;")}" ${it.status === "applied" ? "disabled" : ""}></td>
+      <td class="pstat">${it.status === "applied" ? `<span class="pill p-ok">✓ ${escapeHtml(it.id || "")}</span>` : `<span class="pill p-idle">${T("plan_draft")}</span>`}</td>
+      <td>${it.status === "applied" ? "" : `<button class="btn ghost sm applyone" data-key="${escapeHtml(it.key)}">⬆ ${T("plan_apply")}</button>`}</td>
+    </tr>`).join("");
+  C.innerHTML = `<div class="planwrap">
+    <div class="pcard nofloat planhead"><div>
+        <div class="ptitle">🗓 ${T("plan_title_h")} — ${escapeHtml(plan.label)}</div>
+        <div class="mut" style="margin-top:.35rem">🎯 ${escapeHtml(plan.goal || "")}</div>
+        <div class="pillars">${(plan.pillars || []).map(p => `<span class="pill p-info">${escapeHtml(p)}</span>`).join(" ")}</div></div>
+      <div class="planacts">
+        <button class="btn ghost sm" id="plannew">♻️ ${T("plan_new")}</button>
+        <button class="btn ghost sm" id="plansave">💾 ${T("plan_save")}</button>
+        <button class="btn sm" id="planall">🚀 ${T("plan_apply_all")} (${plan.items.length - applied})</button></div></div>
+    <div class="tablewrap"><table class="plantable"><thead><tr>
+      <th>${T("plan_day")}</th><th>${T("plan_time")}</th><th>${T("plan_title")}</th><th>${T("plan_type")}</th><th>${T("plan_pillar")}</th><th>${T("plan_status")}</th><th></th>
+    </tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="mut" id="planmsg" style="margin-top:.6rem"></div></div>`;
+
+  const collect = () => ({ ...plan, items: [...C.querySelectorAll("tbody tr")].map(tr => {
+    const key = tr.dataset.key, old = plan.items.find(i => i.key === key) || {};
+    return { ...old, key, day: Math.min(Math.max(parseInt(tr.querySelector(".pday").value, 10) || old.day || 1, 1), 28),
+      time: tr.querySelector(".ptime").value, t: tr.querySelector(".pt").value.trim(),
+      ty: tr.querySelector(".pty").value, pillar: tr.querySelector(".ppl").value.trim() };
+  }) });
+  const save = async () => {
+    const r = await fetch("/api/plan", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan: collect() }) }).then(x => x.json());
+    if (r.ok) { plan = r.plan; $("#planmsg").textContent = "✓ " + T("plan_saved"); setTimeout(() => { const m = $("#planmsg"); if (m) m.textContent = ""; }, 2500); }
+    return r.ok;
+  };
+  $("#plansave").onclick = save;
+  $("#plannew").onclick = async () => {
+    if (!confirm(T("plan_new_confirm"))) return;
+    const b = $("#plannew"); b.disabled = true; b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
+    const r = await fetch("/api/plan/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).then(x => x.json()).catch(() => null);
+    if (r && r.ok) renderPlan(C); else { b.disabled = false; b.textContent = "♻️ " + T("plan_new"); }
+  };
+  const applyOne = async (key) => {
+    const r = await fetch("/api/plan/apply-item", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key }) }).then(x => x.json());
+    if (r.ok && r.plan) plan = r.plan;
+    return r;
+  };
+  C.querySelectorAll(".applyone").forEach(b => b.onclick = async () => {
+    b.disabled = true; b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
+    await save();
+    const r = await applyOne(b.dataset.key);
+    if (!r.ok) { alert(r.error || "!"); }
+    try { S = await fetch("/api/state").then(x => x.json()); } catch (e) {}
+    renderPlan(C);
+  });
+  $("#planall").onclick = async () => {
+    const pending = plan.items.filter(i => i.status !== "applied");
+    if (!pending.length) return;
+    if (!confirm(T("plan_all_confirm").replace("{n}", pending.length))) return;
+    const b = $("#planall"); b.disabled = true; $("#plansave").disabled = true;
+    await save();
+    let done = 0, fail = 0;
+    for (const it of pending) {
+      b.innerHTML = `🚀 ${T("plan_applying")} ${done + fail + 1}/${pending.length} <span class="dots"><i></i><i></i><i></i></span>`;
+      const r = await applyOne(it.key).catch(() => null);
+      if (r && r.ok) done++; else fail++;
+    }
+    try { S = await fetch("/api/state").then(x => x.json()); } catch (e) {}
+    buildChrome();
+    await renderPlan(C);
+    const m = $("#planmsg"); if (m) m.textContent = `✓ ${T("plan_done")}: ${done}` + (fail ? ` · ✗ ${fail}` : "");
+  };
 }
 
 // ── manager chat (CAIMO) ──────────────────────────────────────────
