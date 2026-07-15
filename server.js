@@ -82,7 +82,7 @@ app.get("/api/state", async (req, res) => {
   const ov = store.getOverrides();
   state.queue = state.queue.map((q) => {
     const o = ov[q.id]; if (!o) return q;
-    return { ...q, t: o.t ?? q.t, cap: o.cap ?? q.cap, brief: o.brief ?? q.brief, ty: o.ty ?? q.ty, regenerated: true, regens: o.regens };
+    return { ...q, t: o.t ?? q.t, cap: o.cap ?? q.cap, brief: o.brief ?? q.brief, ty: o.ty ?? q.ty, mediaUrl: o.mediaUrl ?? q.mediaUrl, regenerated: true, regens: o.regens };
   });
   // Hide deleted posts.
   const removed = new Set(store.getRemoved());
