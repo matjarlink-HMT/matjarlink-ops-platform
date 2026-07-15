@@ -28,7 +28,7 @@ const PORT = process.env.PORT || 8080;
 const PW = process.env.DASHBOARD_PASSWORD || "";
 if (PW) {
   app.use((req, res, next) => {
-    if (req.path.startsWith("/webhook") || req.path.startsWith("/media")) return next(); // media must be public for Instagram to pull
+    if (req.path.startsWith("/webhook") || req.path.startsWith("/media") || req.path === "/api/pubcheck") return next(); // media must be public for Instagram to pull; pubcheck is a read-only publish audit
     const hdr = req.headers.authorization || "";
     const [, b64] = hdr.split(" ");
     const [, pass] = Buffer.from(b64 || "", "base64").toString().split(":");
@@ -207,6 +207,20 @@ app.get("/media/drive/:id", async (req, res) => {
     res.setHeader("Cache-Control", "public, max-age=3600");
     res.end(buf);
   } catch (e) { console.error("[media]", e.message); res.status(502).send("media fetch failed"); }
+});
+
+// ── Publish audit (public, read-only) ── verify each post published once ──
+app.get("/api/pubcheck", async (req, res) => {
+  const log = store.getPublished();
+  const record = Object.fromEntries(Object.entries(log).map(([k, v]) => [k, { at: v.at, permalink: v.permalink || null }]));
+  let ig = [];
+  try { ig = await meta.getPublished(); } catch (e) { /* not connected */ }
+  res.json({
+    now: new Date().toISOString(),
+    published: record,                       // our internal log (one entry per post id)
+    instagramCount: ig.length,               // real posts on the account
+    instagramRecent: ig.slice(0, 10).map((m) => ({ title: m.t, when: m.d, url: m.url }))
+  });
 });
 
 // ── Per-platform analytics ──────────────────────────────────────────
