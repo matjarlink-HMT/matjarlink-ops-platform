@@ -327,6 +327,7 @@ function pdetailMain(q) {
         ${approved || pub ? "" : `<button class="btn ok sm" data-approve="${q.id}">✓ ${T("approve")}</button>`}
         ${pubBtn}
         ${q.drive ? `<button class="btn ghost sm" data-play2="${q.drive}">▶ ${lang === "en" ? "Preview" : lang === "fa" ? "پیش‌نمایش" : "معاينة"}</button><a class="link sm" target="_blank" href="https://drive.google.com/file/d/${q.drive}/view">${T("openDrive")}</a>` : ""}
+        <button class="btn ghost sm delbtn" data-del="${q.id}" title="${T("del")}" style="margin-inline-start:auto">🗑</button>
       </div></div></div>`;
 }
 function setFocus(i, list) {
@@ -379,6 +380,15 @@ function bindDetail(list) {
   host.querySelectorAll("[data-pub]").forEach(b => b.onclick = () => publishPost(b.dataset.pub, b));
   host.querySelectorAll("[data-play2]").forEach(b => b.onclick = () => openDrivePlay(b.dataset.play2, host.querySelector(".ptitle")?.textContent || ""));
   host.querySelectorAll("[data-regen]").forEach(b => b.onclick = () => regenPost(b.dataset.regen, b));
+  host.querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
+    if (b.dataset.armed) return delPost(b.dataset.del);
+    b.dataset.armed = "1"; b.textContent = "🗑 " + T("del_confirm"); b.classList.add("danger");
+    setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = "🗑"; b.classList.remove("danger"); } }, 3000);
+  });
+}
+async function delPost(id) {
+  try { await fetch("/api/delete-post", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }); } catch (e) {}
+  S = await fetch("/api/state").then(x => x.json()); pf.focus = 0; renderPipeline($("#content"));
 }
 // ── live publish countdown ────────────────────────────────────────
 function parseWhenClient(date) { const m = (date || "").match(/(\d{4})-(\d{2})-(\d{2})[^\d]+(\d{2}):(\d{2})/); return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : null; }

@@ -84,6 +84,9 @@ app.get("/api/state", async (req, res) => {
     const o = ov[q.id]; if (!o) return q;
     return { ...q, t: o.t ?? q.t, cap: o.cap ?? q.cap, brief: o.brief ?? q.brief, ty: o.ty ?? q.ty, regenerated: true, regens: o.regens };
   });
+  // Hide deleted posts.
+  const removed = new Set(store.getRemoved());
+  if (removed.size) state.queue = state.queue.filter((q) => !removed.has(q.id));
   state.plan = (loadContent() || {}).plan || state.plan || null;
   // Live KPIs computed from real state (no static/fake numbers).
   const followers = state.insights?.followers ?? 558;
@@ -111,11 +114,13 @@ app.post("/api/regenerate", async (req, res) => {
   try { out = await generator.regeneratePost({ ...item, ...(store.getOverrides()[id] || {}) }, notes, lang || "ar"); }
   catch (e) { console.error("[regenerate]", e.message); return res.status(500).json({ ok: false, error: e.message }); }
   if (!out) return res.status(502).json({ ok: false, error: "generation failed" });
-  // Render a fresh on-brand design from the new headline (live).
+  // Render a fresh on-brand design (with a topic photo when relevant) from the new content.
   let mediaUrl;
   try { mediaUrl = await renderAndSaveDesign(item, out); }
   catch (e) { console.error("[design]", e.message); }
-  const saved = store.setOverride(id, mediaUrl ? { ...out, mediaUrl } : out);
+  const patch = { t: out.t, cap: out.cap, brief: out.brief, photoQuery: out.photo || "" };
+  if (mediaUrl) patch.mediaUrl = mediaUrl;
+  const saved = store.setOverride(id, patch);
   // Record CAIMO's action in the post thread so the owner sees it happened.
   store.addPostNote(id, "manager", `♻️ أعدتُ توليد المنشور حسب ملاحظتك: «${out.t}»${mediaUrl ? " — وصمّمتُ صورة جديدة بهوية العلامة" : ""}.`);
   res.json({ ok: true, override: saved, thread: store.getPostThread(id) });
@@ -134,6 +139,14 @@ app.post("/api/generate-post", async (req, res) => {
   try { post.mediaUrl = await renderAndSaveDesign(post, post); } catch (e) { console.error("[design]", e.message); }
   appendPost(post);
   res.json({ ok: true, post });
+});
+
+// Delete (hide) a post from the queue.
+app.post("/api/delete-post", (req, res) => {
+  const { id } = req.body || {};
+  if (!id) return res.status(400).json({ ok: false, error: "id required" });
+  store.removePost(id);
+  res.json({ ok: true, removed: store.getRemoved() });
 });
 
 // Full queue = seed (July) + Claude-generated content (Aug+). Used for publishing.
@@ -163,7 +176,11 @@ function resolveMedia(q, base) {
 function designsDir() { return process.env.DESIGNS_DIR || (fs.existsSync("/data") ? "/data/designs" : path.join(__dirname, "data", "designs")); }
 async function renderAndSaveDesign(item, content = {}) {
   const { renderDesign } = await import("./data/designEngine.js");
-  const png = await renderDesign({ headline: content.t || item.t || "", tag: item.ty || "قريبًا", accent: item.tyc || "#E8890F" });
+  const { fetchPhoto } = await import("./data/stockPhoto.js");
+  const query = content.photo || content.photoQuery || item.photoQuery || "";
+  let photo = null;
+  if (query) { try { photo = await fetchPhoto(query); } catch (e) { console.error("[pexels]", e.message); } }
+  const png = await renderDesign({ headline: content.t || item.t || "", tag: item.ty || "قريبًا", accent: item.tyc || "#E8890F", photo });
   const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, item.id + ".png"), png);
   return `/media/design/${item.id}?v=${Date.now()}`;

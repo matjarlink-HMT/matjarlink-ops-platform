@@ -34,14 +34,14 @@ export async function regeneratePost(item = {}, notes = [], lang = "ar") {
   const noteText = (notes || []).filter(n => n && n.role === "user").map(n => n.text).join(" | ") || "(بدون ملاحظة محددة — حسّن الجودة والهوك)";
   const system = `${BRAND}
 
-أنت وكيل المحتوى في متجرلينك. أعِد صياغة المنشور التالي بناءً على ملاحظات المالك، مع الحفاظ على هدفه ونوعه.
+أنت «CAIMO»، مدير التسويق في متجرلينك — لست منفّذاً حرفياً. طبّق ملاحظة المالك **بحكمك المهني**: إن كانت في مصلحة الحساب نفّذها، وإن رأيتها تُضعف المنشور (عنوان طويل أو وصفي، هوك ضعيف) فحسّنها مع احترام نيّتها. اجعل العنوان (t) قصيراً قوياً يوقف السكرول (٦ كلمات أو أقل إن أمكن).
 المنشور الحالي: العنوان «${item.t || ""}» — النوع «${item.ty || ""}» — الكابشن «${(item.cap || "").slice(0, 400)}».
 ملاحظات المالك: ${noteText}
 أعد **JSON فقط** بلا أي نص خارج الأقواس بهذا الشكل:
-{"t":"<عنوان قصير محدّث>","cap":"<كابشن محدّث يطبّق الملاحظات>","brief":"<بريف تصميم محدّث: الصيغة (ريل ٩:١٦ / كاروسيل N شرائح / منشور مربّع) + هوك + ألوان + طاقة بصرية عالية>"}`;
+{"t":"<عنوان قصير قوي>","cap":"<كابشن محدّث>","brief":"<بريف تصميم>","photo":"<٢-٤ كلمات إنجليزية تصف صورة خلفية موضوعية مناسبة إن طلب المالك صورة أو كانت تناسب الموضوع — مثل: perfume shop retail / omani small business / online store packaging / cashier point of sale — أو اتركها فارغة \"\" إن كانت بطاقة نصية أنسب>"}`;
   const out = parseJSON(await chat([{ role: "user", text: "أعِد التوليد الآن. JSON فقط." }], system));
   if (!out || !out.cap) return null;
-  return { t: String(out.t || item.t), cap: String(out.cap), brief: String(out.brief || item.brief || "") };
+  return { t: String(out.t || item.t), cap: String(out.cap), brief: String(out.brief || item.brief || ""), photo: out.photo ? String(out.photo) : "" };
 }
 
 // Generate a brand-new post. `prompt` is optional free-form direction from the owner.
@@ -51,11 +51,11 @@ export async function generatePost({ idNum = 0, date = "", pillar = "", prompt =
 
 أنت وكيل المحتوى في متجرلينك. أنشئ منشور إنستغرام واحداً جديداً${pillar ? ` ضمن عمود المحتوى: «${pillar}»` : ""}${prompt ? ` وفق توجيه المالك: «${prompt}»` : ""}.
 أعد **JSON فقط** بلا أي نص خارج الأقواس بهذا الشكل:
-{"t":"<عنوان قصير>","ty":"<نوع من: ريل تشويقي/كاروسيل توعوي/منشور علامة/تفاعلي + استطلاع/مجتمعي/كاروسيل فاخر>","cap":"<الكابشن كاملاً باللهجة العُمانية>","brief":"<بريف تصميم: الصيغة + هوك قوي + ألوان خمري/برتقالي + طاقة بصرية عالية + Stop-the-Scroll>"}`;
+{"t":"<عنوان قصير قوي>","ty":"<نوع من: ريل تشويقي/كاروسيل توعوي/منشور علامة/تفاعلي + استطلاع/مجتمعي/كاروسيل فاخر>","cap":"<الكابشن كاملاً باللهجة العُمانية>","brief":"<بريف تصميم: الصيغة + هوك قوي + ألوان خمري/برتقالي + طاقة بصرية عالية + Stop-the-Scroll>","photo":"<٢-٤ كلمات إنجليزية لصورة خلفية موضوعية تناسب المنشور — مثل: omani merchant store / online shopping delivery / retail cashier — أو اتركها فارغة \"\" إن كانت بطاقة نصية أنسب>"}`;
   const out = parseJSON(await chat([{ role: "user", text: "ولّد المنشور الآن. JSON فقط." }], system));
   if (!out || !out.cap) return null;
   const id = "MJ-" + String(idNum).padStart(3, "0");
-  return { id, t: String(out.t || "منشور جديد"), ch: "IG", ty: String(out.ty || "منشور علامة"), tyc: pickColor(idNum), date, st: ["مسودة — بانتظار التصميم", "p-idle"], drive: "", gen: true, cap: String(out.cap), brief: String(out.brief || "") };
+  return { id, t: String(out.t || "منشور جديد"), ch: "IG", ty: String(out.ty || "منشور علامة"), tyc: pickColor(idNum), date, st: ["مسودة — بانتظار التصميم", "p-idle"], drive: "", gen: true, cap: String(out.cap), brief: String(out.brief || ""), photoQuery: out.photo ? String(out.photo) : "" };
 }
 
 // Generate next month's plan: goal + pillars + 12 dated concepts (no full captions yet).

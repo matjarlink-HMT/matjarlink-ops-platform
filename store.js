@@ -94,6 +94,15 @@ export function setOverride(id, patch) {
   return ov[id];
 }
 
+// ── Removed posts ── ids hidden from the queue (delete button). Volume-backed.
+const RM_FILE = sp("removed.json");
+let rm = [];
+try { rm = JSON.parse(fs.readFileSync(RM_FILE, "utf8")); } catch (e) { rm = []; }
+function persistRm() { try { fs.writeFileSync(RM_FILE, JSON.stringify(rm)); } catch (e) {} }
+export function getRemoved() { return rm; }
+export function removePost(id) { if (id && !rm.includes(id)) rm.push(id); persistRm(); return rm; }
+export function restorePost(id) { rm = rm.filter((x) => x !== id); persistRm(); return rm; }
+
 // ── Agent self-improvement state ── approved suggestions raise the agent's level.
 const AG_FILE = sp("agents_state.json");
 let ag = {};
