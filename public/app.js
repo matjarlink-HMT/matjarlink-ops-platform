@@ -327,7 +327,7 @@ function pdetailMain(q) {
         ${pub ? "" : `<button class="btn ghost sm regenbtn ${hasNote ? "hot" : ""}" data-regen="${q.id}">♻️ ${T("regen")}</button>`}
         ${approved || pub ? "" : `<button class="btn ok sm" data-approve="${q.id}">✓ ${T("approve")}</button>`}
         ${pubBtn}
-        ${q.drive ? `<button class="btn ghost sm" data-play2="${q.drive}">▶ ${lang === "en" ? "Preview" : lang === "fa" ? "پیش‌نمایش" : "معاينة"}</button><a class="link sm" target="_blank" href="https://drive.google.com/file/d/${q.drive}/view">${T("openDrive")}</a>` : ""}
+        ${q.drive ? `<button class="btn ghost sm" data-play2="${q.drive}" data-reel="${(q.ty || "").includes("ريل") ? "1" : "0"}">▶ ${lang === "en" ? "Preview" : lang === "fa" ? "پیش‌نمایش" : "معاينة"}</button><a class="link sm" target="_blank" href="https://drive.google.com/file/d/${q.drive}/view">${T("openDrive")}</a>` : ""}
         <button class="btn ghost sm delbtn" data-del="${q.id}" title="${T("del")}" style="margin-inline-start:auto">🗑</button>
       </div></div></div>`;
 }
@@ -366,7 +366,7 @@ function bindPipeline(list) {
   if (!list || !list.length) return;
   document.querySelectorAll(".ccard").forEach(c => c.onclick = () => {
     const idx = +c.dataset.idx;
-    if (idx === pf.focus) { const q = list[idx]; if (q.drive) openDrivePlay(q.drive, q.t); }
+    if (idx === pf.focus) { const q = list[idx]; if (q.drive) openDrivePlay(q.drive, q.t, (q.ty || "").includes("ريل")); }
     else setFocus(idx, list);
   });
   document.querySelectorAll("[data-nav]").forEach(b => b.onclick = () => setFocus(pf.focus + (+b.dataset.nav), list));
@@ -379,7 +379,7 @@ function bindDetail(list) {
   host.querySelectorAll(".pnote").forEach(i => i.onkeydown = e => { if (e.key === "Enter") askManager(i.dataset.id); });
   host.querySelectorAll("[data-approve]").forEach(b => b.onclick = async () => { b.disabled = true; await postNote(b.dataset.approve, { id: b.dataset.approve, action: "approve" }); renderPipeline($("#content")); });
   host.querySelectorAll("[data-pub]").forEach(b => b.onclick = () => publishPost(b.dataset.pub, b));
-  host.querySelectorAll("[data-play2]").forEach(b => b.onclick = () => openDrivePlay(b.dataset.play2, host.querySelector(".ptitle")?.textContent || ""));
+  host.querySelectorAll("[data-play2]").forEach(b => b.onclick = () => openDrivePlay(b.dataset.play2, host.querySelector(".ptitle")?.textContent || "", b.dataset.reel === "1"));
   host.querySelectorAll("[data-img]").forEach(b => b.onclick = () => openImage(b.dataset.img, b.dataset.t));
   host.querySelectorAll("[data-regen]").forEach(b => b.onclick = () => regenPost(b.dataset.regen, b));
   host.querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
@@ -497,18 +497,21 @@ function compareBars() {
 }
 
 // ── media player (Drive preview) ──────────────────────────────────
-function openDrivePlay(driveId, title) {
+function openDrivePlay(driveId, title, isReel) {
   $("#mvtitle").textContent = title || "";
-  $("#mvframe").innerHTML = `<iframe src="https://drive.google.com/file/d/${driveId}/preview" allow="autoplay" allowfullscreen></iframe>`;
+  const f = $("#mvframe"); f.classList.remove("imgfit"); f.style.aspectRatio = isReel ? "9 / 16" : "4 / 5";
+  f.innerHTML = `<iframe src="https://drive.google.com/file/d/${driveId}/preview" allow="autoplay" allowfullscreen></iframe>`;
   $("#mvhint").innerHTML = `<a class="link" target="_blank" href="https://drive.google.com/file/d/${driveId}/view">${T("openDrive")}</a>`;
   $("#mv").classList.add("on");
 }
 function openImage(url, title) {
   $("#mvtitle").textContent = title || "";
-  $("#mvframe").innerHTML = `<img src="${url}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#160a1b">`;
+  const f = $("#mvframe"); f.style.aspectRatio = ""; f.classList.add("imgfit"); // natural aspect, no 9:16 letterbox
+  f.innerHTML = `<img src="${url}">`;
   $("#mvhint").innerHTML = "";
   $("#mv").classList.add("on");
 }
+function closeMv() { $("#mv").classList.remove("on"); const f = $("#mvframe"); f.innerHTML = ""; f.classList.remove("imgfit"); f.style.aspectRatio = ""; }
 
 // ── campaigns ─────────────────────────────────────────────────────
 const campView = () => `<div class="card" style="text-align:center;padding:1.4rem"><div style="font-weight:800;color:var(--plum)">${T("campNone")}</div>
@@ -545,8 +548,8 @@ function bindReply() {
 async function postNote(id, body) { const r = await fetch("/api/notes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(r => r.json()); if (r.notes) S.notes = r.notes; return r; }
 
 // ── media player close ────────────────────────────────────────────
-$("#mvx").onclick = () => { $("#mv").classList.remove("on"); $("#mvframe").innerHTML = ""; };
-$("#mv").onclick = (e) => { if (e.target.id === "mv") { $("#mv").classList.remove("on"); $("#mvframe").innerHTML = ""; } };
+$("#mvx").onclick = () => closeMv();
+$("#mv").onclick = (e) => { if (e.target.id === "mv") closeMv(); };
 
 // ── notifications ─────────────────────────────────────────────────
 function updateNotif() {
