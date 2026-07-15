@@ -166,6 +166,9 @@ async function renderPlan(C) {
         <button class="btn ghost sm" id="planslots" title="${T("plan_slots_hint")}">🪄 ${T("plan_slots")}</button>
         <button class="btn ghost sm" id="plansave">💾 ${T("plan_save")}</button>
         <button class="btn sm" id="planall">🚀 ${T("plan_apply_all")} (${plan.items.length - applied})</button></div></div>
+    <div class="pcard nofloat" style="margin-bottom:1rem;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+      <span>💡</span><input class="pinput" id="ideain" placeholder="${T("idea_ph")}" style="flex:1;min-width:14rem" autocomplete="off">
+      <button class="btn sm" id="ideago">${T("idea_add")}</button></div>
     <div class="tablewrap"><table class="plantable"><thead><tr>
       <th>${T("plan_day")}</th><th>${T("plan_time")}</th><th>${T("plan_title")}</th><th>${T("plan_type")}</th><th>${T("plan_pillar")}</th><th>${T("plan_status")}</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table></div>
@@ -183,6 +186,15 @@ async function renderPlan(C) {
     return r.ok;
   };
   $("#plansave").onclick = save;
+  // 💡 idea inbox: raw thought → CAIMO expands it into a draft row
+  const addIdea = async () => {
+    const inp = $("#ideain"), text = inp.value.trim(); if (!text) return;
+    const b = $("#ideago"); b.disabled = true; b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
+    const r = await fetch("/api/plan/idea", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) }).then(x => x.json()).catch(() => null);
+    if (r && r.ok) renderPlan(C); else { alert((r && r.error) || "!"); b.disabled = false; b.textContent = T("idea_add"); }
+  };
+  $("#ideago").onclick = addIdea;
+  $("#ideain").onkeydown = (e) => { if (e.key === "Enter") addIdea(); };
   // 🪄 smart slots: evening window by type, ≥2-day gaps, skip occupied days
   $("#planslots").onclick = () => {
     const TIME_BY_TYPE = { "ريل": "21:00", "كاروسيل": "20:30", "استطلاع": "19:30", "تفاعلي": "19:30", "مجتمعي": "19:30" };

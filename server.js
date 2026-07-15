@@ -187,6 +187,24 @@ app.put("/api/plan", (req, res) => {
   res.json({ ok: true, plan: store.setPlan({ ...cur, ...p }) });
 });
 
+// 💡 Idea inbox: expand a raw owner idea into a draft plan row (first free day).
+app.post("/api/plan/idea", async (req, res) => {
+  const text = ((req.body || {}).text || "").trim();
+  if (!text) return res.status(400).json({ ok: false, error: "text required" });
+  if (!generator.claudeReady()) return res.status(400).json({ ok: false, error: "add ANTHROPIC_API_KEY to enable generation" });
+  const plan = store.getPlan();
+  if (!plan) return res.status(400).json({ ok: false, error: "no plan yet — generate one first" });
+  let c;
+  try { c = await generator.expandIdea(text); }
+  catch (e) { return res.status(500).json({ ok: false, error: e.message }); }
+  if (!c) return res.status(502).json({ ok: false, error: "expansion failed" });
+  const taken = new Set(plan.items.map((i) => +i.day));
+  let day = 2; while (taken.has(day) && day < 28) day++;
+  plan.items.push({ key: `idea-${Date.now()}`, day, time: "20:00", t: c.t, ty: c.ty, pillar: c.pillar, status: "draft", id: null, fromIdea: text.slice(0, 120) });
+  store.setPlan(plan);
+  res.json({ ok: true, plan });
+});
+
 // Apply ONE plan item → generate the full post (copy + design/reel) into the queue.
 app.post("/api/plan/apply-item", async (req, res) => {
   const { key } = req.body || {};

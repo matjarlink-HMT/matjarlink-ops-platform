@@ -74,6 +74,19 @@ export async function generatePost({ idNum = 0, date = "", pillar = "", prompt =
   return { id, t: String(out.t || "منشور جديد"), t2: out.t2 ? String(out.t2) : "", cta: out.cta ? String(out.cta) : "", ch: "IG", ty: String(out.ty || "منشور علامة"), tyc: pickColor(idNum), date, st: ["مسودة — بانتظار التصميم", "p-idle"], drive: "", gen: true, cap: String(out.cap), brief: String(out.brief || ""), photoQuery: out.photo ? String(out.photo) : "", slides: cleanSlides(out.slides), scenes: cleanScenes(out.scenes) };
 }
 
+// Expand a raw owner idea («فكرة: …») into a plan-row concept.
+export async function expandIdea(text = "") {
+  if (!claudeReady()) return null;
+  const system = `${BRAND}
+
+أنت وكيل التخطيط. حوّل فكرة المالك الخام إلى مفهوم منشور واحد للخطة.
+فكرة المالك: «${text.slice(0, 300)}»
+أعد **JSON فقط**: {"t":"<عنوان مصقول قصير>","ty":"<النوع الأنسب من الأنواع الستة>","pillar":"<العمود الأنسب>"}`;
+  const out = parseJSON(await chat([{ role: "user", text: "حوّلها الآن. JSON فقط." }], system));
+  if (!out || !out.t) return null;
+  return { t: String(out.t), ty: String(out.ty || "منشور علامة"), pillar: String(out.pillar || "") };
+}
+
 // Generate next month's plan: goal + pillars + 12 dated concepts (no full captions yet).
 export async function generatePlan(monthLabel = "", year = 2026, month = 1, lang = "ar") {
   if (!claudeReady()) return null;
