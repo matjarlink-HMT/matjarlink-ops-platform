@@ -292,12 +292,14 @@ function slidesOf(q) {
   if (q.images && q.images.length) return q.images;
   return [];
 }
+const isVideoUrl = (u) => typeof u === "string" && u.split("?")[0].endsWith(".mp4");
 function carouselCard(q, i) {
   const isReel = (q.ty || "").includes("ريل");
   const grad = `linear-gradient(160deg,${q.tyc},${q.tyc}bb)`;
   const slides = slidesOf(q);
   let inner;
   if (slides.length) inner = `<img class="cmedia" loading="lazy" src="${slides[0]}" alt="" onerror="this.remove()">`;
+  else if (isVideoUrl(q.mediaUrl)) inner = `<video class="cmedia" src="${q.mediaUrl}" muted loop autoplay playsinline></video><span class="cplay">▶</span>`;
   else if (q.mediaUrl) inner = `<img class="cmedia" loading="lazy" src="${q.mediaUrl}" alt="" onerror="this.remove()">`;
   else if (q.drive && !isReel) inner = `<img class="cmedia" loading="lazy" src="/media/drive/${q.drive}" alt="" onerror="this.remove()">`;
   else if (q.drive && isReel) inner = `<span class="cplay">▶</span>`;
@@ -336,7 +338,7 @@ function pdetailMain(q) {
         ${pub ? "" : `<button class="btn ghost sm regenbtn ${hasNote ? "hot" : ""}" data-regen="${q.id}">♻️ ${T("regen")}</button>`}
         ${approved || pub ? "" : `<button class="btn ok sm" data-approve="${q.id}">✓ ${T("approve")}</button>`}
         ${pubBtn}
-        ${q.drive ? `<button class="btn ghost sm" data-play2="${q.drive}" data-reel="${(q.ty || "").includes("ريل") ? "1" : "0"}">▶ ${lang === "en" ? "Preview" : lang === "fa" ? "پیش‌نمایش" : "معاينة"}</button><a class="link sm" target="_blank" href="https://drive.google.com/file/d/${q.drive}/view">${T("openDrive")}</a>` : ""}
+        ${isVideoUrl(q.mediaUrl) ? `<button class="btn ghost sm" data-playvid="${q.mediaUrl}">▶ ${lang === "en" ? "Preview" : lang === "fa" ? "پیش‌نمایش" : "معاينة"}</button>` : q.drive ? `<button class="btn ghost sm" data-play2="${q.drive}" data-reel="${(q.ty || "").includes("ريل") ? "1" : "0"}">▶ ${lang === "en" ? "Preview" : lang === "fa" ? "پیش‌نمایش" : "معاينة"}</button>` : ""}${q.drive ? `<a class="link sm" target="_blank" href="https://drive.google.com/file/d/${q.drive}/view">${T("openDrive")}</a>` : ""}
         <button class="btn ghost sm delbtn" data-del="${q.id}" title="${T("del")}" style="margin-inline-start:auto">🗑</button>
       </div></div></div>`;
 }
@@ -377,9 +379,10 @@ function bindPipeline(list) {
     const idx = +c.dataset.idx;
     if (idx === pf.focus) {
       const q = list[idx];
-      // open the SAME design shown on the card (carousel gallery / image / Drive)
+      // open the SAME design shown on the card (carousel gallery / video / image / Drive)
       const slides = slidesOf(q);
       if (slides.length) openGallery(slides, 0, q.t);
+      else if (isVideoUrl(q.mediaUrl)) openVideo(q.mediaUrl, q.t);
       else if (q.mediaUrl) openImage(q.mediaUrl, q.t);
       else if (q.drive) openDrivePlay(q.drive, q.t, (q.ty || "").includes("ريل"));
     } else setFocus(idx, list);
@@ -395,6 +398,7 @@ function bindDetail(list) {
   host.querySelectorAll("[data-approve]").forEach(b => b.onclick = async () => { b.disabled = true; await postNote(b.dataset.approve, { id: b.dataset.approve, action: "approve" }); renderPipeline($("#content")); });
   host.querySelectorAll("[data-pub]").forEach(b => b.onclick = () => publishPost(b.dataset.pub, b));
   host.querySelectorAll("[data-play2]").forEach(b => b.onclick = () => openDrivePlay(b.dataset.play2, host.querySelector(".ptitle")?.textContent || "", b.dataset.reel === "1"));
+  host.querySelectorAll("[data-playvid]").forEach(b => b.onclick = () => openVideo(b.dataset.playvid, host.querySelector(".ptitle")?.textContent || ""));
   host.querySelectorAll(".slidethumb").forEach((b, i) => b.onclick = () => {
     const imgs = [...host.querySelectorAll(".slidethumb")].map(x => x.dataset.img);
     openGallery(imgs, i, host.querySelector(".ptitle")?.textContent || "");
@@ -542,6 +546,14 @@ function renderGallery() {
   }
 }
 function galStep(d) { galIdx = (galIdx + d + galImgs.length) % galImgs.length; renderGallery(); }
+// Generated reel player (9:16 MP4 served from /media/design/)
+function openVideo(url, title) {
+  $("#mvtitle").textContent = title || "";
+  const f = $("#mvframe"); f.classList.remove("imgfit"); f.style.aspectRatio = "9 / 16";
+  f.innerHTML = `<video src="${url}" controls autoplay playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000"></video>`;
+  $("#mvhint").innerHTML = "";
+  $("#mv").classList.add("on");
+}
 function closeMv() { $("#mv").classList.remove("on"); const f = $("#mvframe"); f.innerHTML = ""; f.classList.remove("imgfit"); f.style.aspectRatio = ""; galImgs = []; }
 document.addEventListener("keydown", (e) => {
   if (!$("#mv").classList.contains("on")) return;

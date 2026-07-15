@@ -114,20 +114,26 @@ app.post("/api/regenerate", async (req, res) => {
   try { out = await generator.regeneratePost({ ...item, ...(store.getOverrides()[id] || {}) }, notes, lang || "ar"); }
   catch (e) { console.error("[regenerate]", e.message); return res.status(500).json({ ok: false, error: e.message }); }
   if (!out) return res.status(502).json({ ok: false, error: "generation failed" });
-  // Reels stay videos: regenerate the copy only — never replace the video with a still.
+  // Reels get a REAL new video (motion reel); other posts get a fresh design image.
   const isReel = (item.ty || "").includes("ريل");
-  let design = null;
-  if (!isReel) {
+  let design = null, reelFailed = false;
+  if (isReel) {
+    try { design = await renderAndSaveReel(item, out); }
+    catch (e) { console.error("[reel]", e.message); reelFailed = true; }
+  } else {
     try { design = await renderAndSaveDesign(item, out); }
     catch (e) { console.error("[design]", e.message); }
   }
   const patch = { t: out.t, cap: out.cap, brief: out.brief, photoQuery: out.photo || "", slides: out.slides || [] };
-  if (isReel) { patch.mediaUrl = null; patch.images = []; } // revert any earlier still back to the reel video
-  else if (design) { patch.mediaUrl = design.mediaUrl; patch.images = design.images || []; }
+  if (design) { patch.mediaUrl = design.mediaUrl; patch.images = design.images || []; }
+  else if (isReel) { patch.mediaUrl = null; patch.images = []; } // fall back to the original Drive video
   const saved = store.setOverride(id, patch);
   // Record CAIMO's action in the post thread so the owner sees it happened.
   const madeDesign = !!(design && design.mediaUrl);
-  store.addPostNote(id, "manager", `♻️ أعدتُ توليد ${isReel ? "نص الريل" : "المنشور"} حسب ملاحظتك: «${out.t}»${madeDesign ? " — وصمّمتُ صورة جديدة بهوية العلامة" : ""}.`);
+  const what = isReel
+    ? (madeDesign ? " — وصنعتُ فيديو ريل جديداً بهوية العلامة" : (reelFailed ? " — تعذّر توليد فيديو جديد فأبقيتُ الفيديو الأصلي" : ""))
+    : (madeDesign ? " — وصمّمتُ صورة جديدة بهوية العلامة" : "");
+  store.addPostNote(id, "manager", `♻️ أعدتُ توليد ${isReel ? "الريل" : "المنشور"} حسب ملاحظتك: «${out.t}»${what}.`);
   res.json({ ok: true, override: saved, thread: store.getPostThread(id) });
 });
 
@@ -174,7 +180,7 @@ function resolveMedia(q, base) {
   // Original professional Drive carousels win — publish the real slides in order.
   if (q.driveSlides?.length) return { images: q.driveSlides.map((id) => `${base}/media/drive/${id}`), caption: cap, kind: q.driveSlides.length > 1 ? "carousel" : "image" };
   if (q.images?.length) return { images: q.images.map((u) => (u.startsWith("/") ? `${base}${u}` : u)), caption: cap, kind: q.images.length > 1 ? "carousel" : "image" };
-  if (q.mediaUrl) { const url = q.mediaUrl.startsWith("/") ? `${base}${q.mediaUrl}` : q.mediaUrl; const isDesign = q.mediaUrl.includes("/media/design/"); return { mediaUrl: url, caption: cap, kind: (isReel && !isDesign) ? "reel" : "image" }; }
+  if (q.mediaUrl) { const url = q.mediaUrl.startsWith("/") ? `${base}${q.mediaUrl}` : q.mediaUrl; const isVideo = q.mediaUrl.includes(".mp4"); const isDesign = q.mediaUrl.includes("/media/design/"); return { mediaUrl: url, caption: cap, kind: (isReel && (isVideo || !isDesign)) ? "reel" : "image" }; }
   if (q.drive) return { mediaUrl: `${base}/media/drive/${q.drive}?type=${isReel ? "video" : "image"}`, caption: cap, kind: isReel ? "reel" : "image" };
   return null;
 }
@@ -188,25 +194,71 @@ async function renderAndSaveDesign(item, content = {}) {
   const headline = content.t || item.t || "", kicker = content.kicker || "";
   const ts = Date.now();
   const save = (name, buf) => { const fd = fs.openSync(path.join(dir, name + ".png"), "w"); try { fs.writeSync(fd, buf); fs.fsyncSync(fd); } finally { fs.closeSync(fd); } };
+  // Topical photo (Pexels) — used when the owner asks for one or CAIMO deems it fitting.
+  const query = content.photo || content.photoQuery || item.photoQuery || "";
+  let photo = null;
+  if (query) {
+    try { const { fetchPhoto } = await import("./data/stockPhoto.js"); photo = await fetchPhoto(query); }
+    catch (e) { console.error("[pexels]", e.message); }
+  }
   const slides = content.slides || item.slides || [];
   const isCarousel = (item.ty || "").includes("كاروسيل") && slides.length;
   if (isCarousel) {
     const n = slides.length;
-    const bufs = [await renderDesign({ role: "cover", headline, kicker, carousel: true })]; // cover
+    const bufs = [await renderDesign({ role: "cover", headline, kicker, carousel: true, photo })]; // cover
     for (let i = 0; i < n; i++) bufs.push(await renderDesign({ role: "slide", headline: slides[i].t, body: slides[i].body, index: i + 1, carousel: true, last: i === n - 1 }));
     const images = [];
     for (let i = 0; i < bufs.length; i++) { save(`${item.id}-${i}`, bufs[i]); images.push(`/media/design/${item.id}-${i}?v=${ts}`); }
     return { mediaUrl: images[0], images };
   }
-  save(item.id, await renderDesign({ role: "single", headline, kicker }));
+  save(item.id, await renderDesign({ role: "single", headline, kicker, photo }));
   return { mediaUrl: `/media/design/${item.id}?v=${ts}`, images: [] };
 }
+
+// Generate a REAL new reel video (1080x1920 MP4) from CAIMO's scenes.
+async function renderAndSaveReel(item, content = {}) {
+  const { renderReel } = await import("./data/reelEngine.js");
+  const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
+  let scenes = content.scenes || [];
+  if (scenes.length < 2) {
+    // fallback: derive hook → value → CTA from the regenerated copy
+    scenes = [
+      { kind: "hook", kicker: item.ty || "", headline: content.t || item.t || "" },
+      { kind: "body", headline: "", body: (content.cap || item.cap || "").slice(0, 160) },
+      { kind: "cta", headline: "قريبًا" }
+    ];
+  }
+  const out = path.join(dir, `${item.id}.mp4`);
+  await renderReel(scenes, out);
+  return { mediaUrl: `/media/design/${item.id}.mp4?v=${Date.now()}`, images: [] };
+}
 app.get("/media/design/:id", (req, res) => {
-  const id = (req.params.id || "").replace(/[^A-Za-z0-9_-]/g, "");
-  const f = path.join(designsDir(), id + ".png");
+  const id = (req.params.id || "").replace(/[^A-Za-z0-9._-]/g, "").replace(/\.\.+/g, ".");
+  const isVideo = id.endsWith(".mp4");
+  const f = path.join(designsDir(), isVideo ? id : id + ".png");
   if (!id || !fs.existsSync(f)) return res.status(404).send("no design");
-  res.setHeader("Content-Type", "image/png");
   res.setHeader("Cache-Control", "public, max-age=60");
+  if (!isVideo) {
+    res.setHeader("Content-Type", "image/png");
+    return fs.createReadStream(f).pipe(res);
+  }
+  // MP4 with HTTP Range support (required by Safari + Instagram's fetcher)
+  const size = fs.statSync(f).size;
+  res.setHeader("Content-Type", "video/mp4");
+  res.setHeader("Accept-Ranges", "bytes");
+  const range = req.headers.range;
+  if (range) {
+    const m = /bytes=(\d*)-(\d*)/.exec(range);
+    let start = m && m[1] ? parseInt(m[1], 10) : 0;
+    let end = m && m[2] ? parseInt(m[2], 10) : size - 1;
+    if (isNaN(start) || start >= size) start = 0;
+    if (isNaN(end) || end >= size) end = size - 1;
+    res.status(206);
+    res.setHeader("Content-Range", `bytes ${start}-${end}/${size}`);
+    res.setHeader("Content-Length", end - start + 1);
+    return fs.createReadStream(f, { start, end }).pipe(res);
+  }
+  res.setHeader("Content-Length", size);
   fs.createReadStream(f).pipe(res);
 });
 

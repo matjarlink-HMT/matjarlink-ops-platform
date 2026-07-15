@@ -130,8 +130,19 @@ function wrapLines(ctx, text, maxW) {
   return lines;
 }
 
-// role: "single" | "cover" | "slide". index/total drive the number circle + swipe.
-export async function renderDesign({ headline = "", body = "", kicker = "", accent = ORANGE, role = "single", index = 0, carousel = false, last = false } = {}) {
+// Cover-fit an image inside a rounded-rect window (the MJ-003/MJ-011 photo style).
+function drawPhotoWindow(ctx, img, x, y, w, h, r = 40) {
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.clip();
+  const ir = img.width / img.height, cr = w / h;
+  let dw, dh, dx, dy;
+  if (ir > cr) { dh = h; dw = h * ir; dx = x + (w - dw) / 2; dy = y; } else { dw = w; dh = w / ir; dx = x; dy = y + (h - dh) / 2; }
+  ctx.drawImage(img, dx, dy, dw, dh);
+  ctx.restore();
+}
+
+// role: "single" | "cover" | "slide". index/carousel/last drive the number circle + swipe.
+export async function renderDesign({ headline = "", body = "", kicker = "", accent = ORANGE, role = "single", index = 0, carousel = false, last = false, photo = null } = {}) {
   const W = 1080, H = 1350, CX = W / 2;
   const cv = createCanvas(W, H);
   const ctx = cv.getContext("2d");
@@ -141,6 +152,8 @@ export async function renderDesign({ headline = "", body = "", kicker = "", acce
   ctx.textAlign = "center"; ctx.direction = "rtl";
 
   const isSlide = role === "slide";
+  let photoImg = null;
+  if (photo && !isSlide) { try { photoImg = await loadImage(photo); } catch (e) { console.error("[design] photo:", e.message); } }
   let y;
 
   if (isSlide && index) {
@@ -154,16 +167,18 @@ export async function renderDesign({ headline = "", body = "", kicker = "", acce
     ctx.fillText(String(index), ncx, ncy + 38); ctx.direction = "rtl";
     y = 660;
   } else {
-    if (kicker) { ctx.fillStyle = GRAY; ctx.font = "38px TajawalB"; ctx.fillText(kicker, CX, 470); }
-    y = 560;
+    const kickY = photoImg ? 396 : 470;
+    if (kicker) { ctx.fillStyle = GRAY; ctx.font = "38px TajawalB"; ctx.fillText(kicker, CX, kickY); }
+    y = photoImg ? 440 : 560;
   }
 
-  // headline (plum, adaptive) — centered, wrapped
-  let size = isSlide ? 62 : 86;
+  // headline (plum, adaptive) — centered, wrapped (tighter when a photo needs room)
+  let size = isSlide ? 62 : photoImg ? 72 : 86;
   const maxW = W - 240;
+  const maxLines = isSlide ? 3 : photoImg ? 2 : 4;
   let lines = wrapLines((ctx.font = size + "px TajawalXB", ctx), headline, maxW);
-  while (lines.length > (isSlide ? 3 : 4) && size > 46) { size -= 6; lines = wrapLines((ctx.font = size + "px TajawalXB", ctx), headline, maxW); }
-  lines = lines.slice(0, isSlide ? 3 : 5);
+  while (lines.length > maxLines && size > 46) { size -= 6; lines = wrapLines((ctx.font = size + "px TajawalXB", ctx), headline, maxW); }
+  lines = lines.slice(0, isSlide ? 3 : photoImg ? 3 : 5);
   const lh = size * 1.28;
   ctx.fillStyle = PLUM; ctx.font = size + "px TajawalXB";
   y += size;
@@ -173,8 +188,16 @@ export async function renderDesign({ headline = "", body = "", kicker = "", acce
   ctx.fillStyle = accent; ctx.beginPath(); ctx.roundRect(CX - 70, y - lh + size + 18, 140, 10, 5); ctx.fill();
   y += 24;
 
+  // topical photo in a rounded window (the professional MJ-003/MJ-011 layout)
+  if (photoImg) {
+    const px = 120, pw = W - 240, pTop = y + 26;
+    const pBottom = H - (carousel && !last ? 260 : 190); // keep clear of swipe hint / footer
+    if (pBottom - pTop > 260) drawPhotoWindow(ctx, photoImg, px, pTop, pw, pBottom - pTop, 44);
+    y = pBottom;
+  }
+
   // body (carousel slide detail), centered, regular weight
-  if (body) {
+  if (body && !photoImg) {
     ctx.fillStyle = INK; ctx.font = "40px Tajawal";
     const blines = wrapLines(ctx, body, W - 220).slice(0, 4); const blh = 40 * 1.5;
     y += 22;
@@ -183,6 +206,60 @@ export async function renderDesign({ headline = "", body = "", kicker = "", acce
 
   // swipe hint for carousels (not on the final slide)
   if (carousel && !last) drawSwipe(ctx, W, H - 210);
+  drawFooter(ctx, W, H);
+  return cv.toBuffer("image/png");
+}
+
+// ── Reel frames ── 1080x1920 (9:16) scenes for the generated motion reel ─────
+// kind: "hook" (kicker + big headline) | "body" (headline + supporting line)
+//       | "cta" (big logo + قريبًا + handle)
+export async function renderReelFrame({ kind = "hook", headline = "", body = "", kicker = "" } = {}) {
+  const W = 1080, H = 1920, CX = W / 2;
+  const cv = createCanvas(W, H);
+  const ctx = cv.getContext("2d");
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, W, H);
+  // brand frame, spread for the taller canvas
+  pill(ctx, 892, 66, 560, 82, -33, PLUM);
+  pill(ctx, 1016, 198, 250, 82, -33, ORANGE);
+  pill(ctx, 60, 828, 340, 60, -33, CREAM);
+  pill(ctx, 40, 932, 300, 60, -33, ORANGE);
+  pill(ctx, 92, 1036, 322, 60, -33, PINK);
+  pill(ctx, 1020, 1520, 320, 66, -33, CREAM);
+  sparkle(ctx, 190, 512, 26, ORANGE);
+  sparkle(ctx, 905, 795, 18, PINK);
+  sparkle(ctx, 170, 1330, 16, PINK);
+  const logo = await getLogo();
+  ctx.textAlign = "center"; ctx.direction = "rtl";
+
+  if (kind === "cta") {
+    if (logo) ctx.drawImage(logo, CX - 290, 470, 580, 580);
+    ctx.fillStyle = PLUM; ctx.font = "104px TajawalXB";
+    ctx.fillText(headline || "قريبًا", CX, 1180);
+    ctx.fillStyle = ORANGE; ctx.beginPath(); ctx.roundRect(CX - 80, 1216, 160, 12, 6); ctx.fill();
+    if (body) {
+      ctx.fillStyle = INK; ctx.font = "44px Tajawal";
+      const bl = wrapLines(ctx, body, W - 240).slice(0, 2);
+      let yy = 1330; for (const ln of bl) { ctx.fillText(ln, CX, yy); yy += 66; }
+    }
+  } else {
+    drawLogo(ctx, logo);
+    if (kicker) { ctx.fillStyle = GRAY; ctx.font = "44px TajawalB"; ctx.fillText(kicker, CX, 700); }
+    let size = kind === "hook" ? 104 : 84;
+    const maxW = W - 200;
+    let lines = wrapLines((ctx.font = size + "px TajawalXB", ctx), headline, maxW);
+    while (lines.length > 3 && size > 56) { size -= 8; lines = wrapLines((ctx.font = size + "px TajawalXB", ctx), headline, maxW); }
+    lines = lines.slice(0, 4);
+    const lh = size * 1.3;
+    let y = 800 + size;
+    ctx.fillStyle = PLUM; ctx.font = size + "px TajawalXB";
+    for (const ln of lines) { ctx.fillText(ln, CX, y); y += lh; }
+    ctx.fillStyle = ORANGE; ctx.beginPath(); ctx.roundRect(CX - 80, y - lh + size + 20, 160, 12, 6); ctx.fill();
+    if (body) {
+      y += 60; ctx.fillStyle = INK; ctx.font = "46px Tajawal";
+      const bl = wrapLines(ctx, body, W - 220).slice(0, 4); const blh = 46 * 1.5;
+      for (const ln of bl) { ctx.fillText(ln, CX, y); y += blh; }
+    }
+  }
   drawFooter(ctx, W, H);
   return cv.toBuffer("image/png");
 }

@@ -26,6 +26,15 @@ function cleanSlides(arr) {
   return arr.filter((s) => s && (s.t || s.body)).slice(0, 8).map((s) => ({ t: String(s.t || ""), body: String(s.body || "") }));
 }
 
+// Normalize reel scenes (hook → value → CTA) for the motion-reel engine.
+function cleanScenes(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr.filter((s) => s && (s.t || s.body)).slice(0, 4).map((s, i, all) => ({
+    kind: i === 0 ? "hook" : i === all.length - 1 ? "cta" : "body",
+    headline: String(s.t || ""), body: String(s.body || ""), kicker: String(s.kicker || "")
+  }));
+}
+
 // Extract the first JSON object/array from a model reply.
 function parseJSON(raw) {
   if (!raw) return null;
@@ -44,10 +53,10 @@ export async function regeneratePost(item = {}, notes = [], lang = "ar") {
 المنشور الحالي: العنوان «${item.t || ""}» — النوع «${item.ty || ""}» — الكابشن «${(item.cap || "").slice(0, 400)}».
 ملاحظات المالك: ${noteText}
 أعد **JSON فقط** بلا أي نص خارج الأقواس بهذا الشكل:
-{"t":"<عنوان قصير قوي>","cap":"<كابشن محدّث>","brief":"<بريف تصميم>","photo":"<٢-٤ كلمات إنجليزية تصف صورة خلفية موضوعية مناسبة إن طلب المالك صورة أو كانت تناسب الموضوع — مثل: perfume shop retail / omani small business / online store packaging / cashier point of sale — أو اتركها فارغة \"\" إن كانت بطاقة نصية أنسب>","slides":[<إن كان نوع المنشور «كاروسيل» اجعلها ٤-٦ شرائح محتوى (بعد الغلاف)، كل عنصر {"t":"عنوان الشريحة","body":"سطر أو سطران"}؛ وإلا اتركها []>]}`;
+{"t":"<عنوان قصير قوي>","cap":"<كابشن محدّث>","brief":"<بريف تصميم>","photo":"<٢-٤ كلمات إنجليزية تصف صورة خلفية موضوعية مناسبة إن طلب المالك صورة أو كانت تناسب الموضوع — مثل: perfume shop retail / omani small business / online store packaging / cashier point of sale — أو اتركها فارغة \"\" إن كانت بطاقة نصية أنسب>","slides":[<إن كان نوع المنشور «كاروسيل» اجعلها ٤-٦ شرائح محتوى (بعد الغلاف)، كل عنصر {"t":"عنوان الشريحة","body":"سطر أو سطران"}؛ وإلا اتركها []>],"scenes":[<إن كان النوع «ريل» اجعلها ٣ مشاهد فيديو متتابعة: المشهد ١ هوك قصير صادم، المشهد ٢ القيمة/التشويق، المشهد ٣ ختام «قريبًا» — كل عنصر {"t":"سطر المشهد (٦ كلمات أو أقل)","body":"سطر داعم موجز أو \"\"","kicker":"سطر تمهيدي صغير أو \"\"}؛ وإلا اتركها []>]}`;
   const out = parseJSON(await chat([{ role: "user", text: "أعِد التوليد الآن. JSON فقط." }], system));
   if (!out || !out.cap) return null;
-  return { t: String(out.t || item.t), cap: String(out.cap), brief: String(out.brief || item.brief || ""), photo: out.photo ? String(out.photo) : "", slides: cleanSlides(out.slides) };
+  return { t: String(out.t || item.t), cap: String(out.cap), brief: String(out.brief || item.brief || ""), photo: out.photo ? String(out.photo) : "", slides: cleanSlides(out.slides), scenes: cleanScenes(out.scenes) };
 }
 
 // Generate a brand-new post. `prompt` is optional free-form direction from the owner.
