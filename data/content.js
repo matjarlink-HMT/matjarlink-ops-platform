@@ -11,8 +11,9 @@ import fs from "node:fs";
 import path from "node:path";
 
 const REPO_FILE = new URL("./content.json", import.meta.url).pathname;
-// On Railway, write to a SUBDIRECTORY of the Volume (root-level writes can fail).
-const FILE = fs.existsSync("/data") ? "/data/store/content.json" : REPO_FILE;
+// Store under the Railway Volume (its real mount path), in a subdirectory.
+const VOL = process.env.RAILWAY_VOLUME_MOUNT_PATH || (fs.existsSync("/data") ? "/data" : "");
+const FILE = VOL ? path.join(VOL, "store", "content.json") : REPO_FILE;
 try { fs.mkdirSync(path.dirname(FILE), { recursive: true }); } catch (e) {}
 
 function readFrom(p) { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch (e) { return null; } }

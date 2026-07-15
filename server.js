@@ -28,7 +28,7 @@ const PORT = process.env.PORT || 8080;
 const PW = process.env.DASHBOARD_PASSWORD || "";
 if (PW) {
   app.use((req, res, next) => {
-    if (req.path.startsWith("/webhook") || req.path.startsWith("/media") || req.path === "/api/pubcheck") return next(); // media must be public for Instagram to pull; pubcheck is a read-only publish audit
+    if (req.path.startsWith("/webhook") || req.path.startsWith("/media") || req.path === "/api/pubcheck" || req.path === "/api/debug") return next(); // media must be public for Instagram to pull; pubcheck/debug are read-only audits
     const hdr = req.headers.authorization || "";
     const [, b64] = hdr.split(" ");
     const [, pass] = Buffer.from(b64 || "", "base64").toString().split(":");
@@ -173,7 +173,7 @@ function resolveMedia(q, base) {
 }
 
 // ── Live design engine ── render + serve on-brand post images (Volume-backed) ──
-function designsDir() { return process.env.DESIGNS_DIR || (fs.existsSync("/data") ? "/data/designs" : path.join(__dirname, "data", "designs")); }
+function designsDir() { const v = process.env.RAILWAY_VOLUME_MOUNT_PATH || (fs.existsSync("/data") ? "/data" : ""); return v ? path.join(v, "designs") : path.join(__dirname, "data", "designs"); }
 const arDigits = (n) => String(n).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[d]);
 async function renderAndSaveDesign(item, content = {}) {
   const { renderDesign } = await import("./data/designEngine.js");
@@ -219,6 +219,20 @@ app.get("/media/drive/:id", async (req, res) => {
     res.setHeader("Cache-Control", "public, max-age=3600");
     res.end(buf);
   } catch (e) { console.error("[media]", e.message); res.status(502).send("media fetch failed"); }
+});
+
+// ── Persistence audit (public, read-only) ── diagnose Volume durability ──
+app.get("/api/debug", (req, res) => {
+  let mounts = "";
+  try { mounts = fs.readFileSync("/proc/mounts", "utf8").split("\n").filter((l) => /data|volume|mnt|store/i.test(l)).join("\n"); } catch (e) {}
+  res.json({
+    uptimeSec: Math.round(process.uptime()),
+    railwayVolumeMountPath: process.env.RAILWAY_VOLUME_MOUNT_PATH || null,
+    dataExists: fs.existsSync("/data"),
+    designsDir: designsDir(),
+    volumeMounts: mounts,
+    store: store.debug()
+  });
 });
 
 // ── Publish audit (public, read-only) ── verify each post published once ──

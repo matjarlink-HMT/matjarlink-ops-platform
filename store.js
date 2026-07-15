@@ -6,10 +6,12 @@
 import fs from "node:fs";
 import path from "node:path";
 
-// All persistent stores live in one dir. On Railway use a SUBDIRECTORY of the
-// Volume (/data/store) — direct file writes at the volume-mount root (/data/x)
-// can silently fail, while subdirectories are reliably writable. mkdir ensures it.
-const STORE_DIR = fs.existsSync("/data") ? "/data/store" : new URL("./data", import.meta.url).pathname;
+// All persistent stores live in one dir, under the Railway Volume. Railway sets
+// RAILWAY_VOLUME_MOUNT_PATH to where the volume is actually mounted — use it
+// verbatim (a hardcoded /data can be the wrong path, making writes ephemeral).
+// Write to a SUBDIRECTORY (…/store) since some mounts reject root-level files.
+export const VOL_BASE = process.env.RAILWAY_VOLUME_MOUNT_PATH || (fs.existsSync("/data") ? "/data" : "");
+const STORE_DIR = VOL_BASE ? path.join(VOL_BASE, "store") : new URL("./data", import.meta.url).pathname;
 try { fs.mkdirSync(STORE_DIR, { recursive: true }); } catch (e) {}
 const sp = (name) => path.join(STORE_DIR, name);
 
@@ -122,4 +124,12 @@ export function applyAgentImprovement(name, patch) {
   ag[name] = { ...cur, ...patch, improvements: (cur.improvements || 0) + 1, at: new Date().toISOString() };
   persistAg();
   return ag[name];
+}
+
+// Diagnostics for the persistence audit endpoint.
+export function debug() {
+  let files = [];
+  try { files = fs.readdirSync(STORE_DIR).map((f) => { const st = fs.statSync(path.join(STORE_DIR, f)); return `${f} · ${st.size}b · ${st.mtime.toISOString().slice(5, 19)}`; }); }
+  catch (e) { files = ["<readdir failed: " + e.message + ">"]; }
+  return { storeDir: STORE_DIR, files, counts: { notes: Object.keys(mem).length, overrides: Object.keys(ov).length, published: Object.keys(pub).length, removed: rm.length } };
 }
