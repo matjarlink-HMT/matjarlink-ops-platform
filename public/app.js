@@ -163,6 +163,7 @@ async function renderPlan(C) {
         <div class="pillars">${(plan.pillars || []).map(p => `<span class="pill p-info">${escapeHtml(p)}</span>`).join(" ")}</div></div>
       <div class="planacts">
         <button class="btn ghost sm" id="plannew">♻️ ${T("plan_new")}</button>
+        <button class="btn ghost sm" id="planslots" title="${T("plan_slots_hint")}">🪄 ${T("plan_slots")}</button>
         <button class="btn ghost sm" id="plansave">💾 ${T("plan_save")}</button>
         <button class="btn sm" id="planall">🚀 ${T("plan_apply_all")} (${plan.items.length - applied})</button></div></div>
     <div class="tablewrap"><table class="plantable"><thead><tr>
@@ -182,6 +183,25 @@ async function renderPlan(C) {
     return r.ok;
   };
   $("#plansave").onclick = save;
+  // 🪄 smart slots: evening window by type, ≥2-day gaps, skip occupied days
+  $("#planslots").onclick = () => {
+    const TIME_BY_TYPE = { "ريل": "21:00", "كاروسيل": "20:30", "استطلاع": "19:30", "تفاعلي": "19:30", "مجتمعي": "19:30" };
+    const mm = String(plan.month).padStart(2, "0");
+    const taken = new Set();
+    (S.queue || []).forEach(p => { const m = (p.date || "").match(new RegExp(`^${plan.year}-${mm}-(\\d{2})`)); if (m) taken.add(+m[1]); });
+    plan.items.filter(i => i.status === "applied").forEach(i => taken.add(+i.day));
+    let day = 2;
+    C.querySelectorAll("tbody tr").forEach(tr => {
+      if (tr.classList.contains("applied")) return;
+      while (taken.has(day) && day < 28) day += 1;
+      tr.querySelector(".pday").value = Math.min(day, 28);
+      taken.add(day); day += 2; // breathing gap between posts
+      const ty = tr.querySelector(".pty").value;
+      const t = Object.entries(TIME_BY_TYPE).find(([k]) => ty.includes(k));
+      tr.querySelector(".ptime").value = t ? t[1] : "20:00";
+    });
+    $("#planmsg").textContent = "🪄 " + T("plan_slots_done");
+  };
   $("#plannew").onclick = async () => {
     if (!confirm(T("plan_new_confirm"))) return;
     const b = $("#plannew"); b.disabled = true; b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
