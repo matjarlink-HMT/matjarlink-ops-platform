@@ -82,7 +82,7 @@ app.get("/api/state", async (req, res) => {
   const ov = store.getOverrides();
   state.queue = state.queue.map((q) => {
     const o = ov[q.id]; if (!o) return q;
-    return { ...q, t: o.t ?? q.t, cap: o.cap ?? q.cap, brief: o.brief ?? q.brief, ty: o.ty ?? q.ty, mediaUrl: o.mediaUrl ?? q.mediaUrl, images: (o.images && o.images.length) ? o.images : q.images, regenerated: true, regens: o.regens };
+    return { ...q, t: o.t ?? q.t, t2: o.t2 ?? q.t2, cta: o.cta ?? q.cta, cap: o.cap ?? q.cap, brief: o.brief ?? q.brief, ty: o.ty ?? q.ty, mediaUrl: o.mediaUrl ?? q.mediaUrl, images: (o.images && o.images.length) ? o.images : q.images, regenerated: true, regens: o.regens };
   });
   // Hide deleted posts.
   const removed = new Set(store.getRemoved());
@@ -124,7 +124,7 @@ app.post("/api/regenerate", async (req, res) => {
     try { design = await renderAndSaveDesign(item, out); }
     catch (e) { console.error("[design]", e.message); }
   }
-  const patch = { t: out.t, cap: out.cap, brief: out.brief, photoQuery: out.photo || "", slides: out.slides || [] };
+  const patch = { t: out.t, t2: out.t2 || "", cta: out.cta || "", cap: out.cap, brief: out.brief, photoQuery: out.photo || "", slides: out.slides || [] };
   if (design) { patch.mediaUrl = design.mediaUrl; patch.images = design.images || []; }
   else if (isReel) { patch.mediaUrl = null; patch.images = []; } // fall back to the original Drive video
   const saved = store.setOverride(id, patch);
@@ -253,6 +253,7 @@ async function renderAndSaveDesign(item, content = {}) {
   const { renderDesign } = await import("./data/designEngine.js");
   const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
   const headline = content.t || item.t || "", kicker = content.kicker || "";
+  const headline2 = content.t2 || item.t2 || "", cta = content.cta || item.cta || "";
   const ts = Date.now();
   const save = (name, buf) => { const fd = fs.openSync(path.join(dir, name + ".png"), "w"); try { fs.writeSync(fd, buf); fs.fsyncSync(fd); } finally { fs.closeSync(fd); } };
   // Topical photo (Pexels) — used when the owner asks for one or CAIMO deems it fitting.
@@ -266,13 +267,13 @@ async function renderAndSaveDesign(item, content = {}) {
   const isCarousel = (item.ty || "").includes("كاروسيل") && slides.length;
   if (isCarousel) {
     const n = slides.length;
-    const bufs = [await renderDesign({ role: "cover", headline, kicker, carousel: true, photo })]; // cover
+    const bufs = [await renderDesign({ role: "cover", headline, headline2, cta, kicker, carousel: true, photo })]; // cover
     for (let i = 0; i < n; i++) bufs.push(await renderDesign({ role: "slide", headline: slides[i].t, body: slides[i].body, index: i + 1, carousel: true, last: i === n - 1 }));
     const images = [];
     for (let i = 0; i < bufs.length; i++) { save(`${item.id}-${i}`, bufs[i]); images.push(`/media/design/${item.id}-${i}?v=${ts}`); }
     return { mediaUrl: images[0], images };
   }
-  save(item.id, await renderDesign({ role: "single", headline, kicker, photo }));
+  save(item.id, await renderDesign({ role: "single", headline, headline2, cta, kicker, photo }));
   return { mediaUrl: `/media/design/${item.id}?v=${ts}`, images: [] };
 }
 

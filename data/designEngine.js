@@ -142,7 +142,9 @@ function drawPhotoWindow(ctx, img, x, y, w, h, r = 40) {
 }
 
 // role: "single" | "cover" | "slide". index/carousel/last drive the number circle + swipe.
-export async function renderDesign({ headline = "", body = "", kicker = "", accent = ORANGE, role = "single", index = 0, carousel = false, last = false, photo = null } = {}) {
+// headline2: second line rendered in ORANGE (the original two-tone style,
+// e.g. "٥ أخطاء" plum + "تقتل مبيعاتك" orange). cta: rotated plum pill text.
+export async function renderDesign({ headline = "", headline2 = "", cta = "", body = "", kicker = "", accent = ORANGE, role = "single", index = 0, carousel = false, last = false, photo = null } = {}) {
   const W = 1080, H = 1350, CX = W / 2;
   const cv = createCanvas(W, H);
   const ctx = cv.getContext("2d");
@@ -184,9 +186,30 @@ export async function renderDesign({ headline = "", body = "", kicker = "", acce
   y += size;
   for (const ln of lines) { ctx.fillText(ln, CX, y); y += lh; }
 
-  // accent underline (short orange bar, centered)
-  ctx.fillStyle = accent; ctx.beginPath(); ctx.roundRect(CX - 70, y - lh + size + 18, 140, 10, 5); ctx.fill();
+  // second headline line in orange (the original two-tone hierarchy)
+  if (headline2 && !isSlide) {
+    const s2 = Math.round(size * 0.86);
+    ctx.fillStyle = ORANGE; ctx.font = s2 + "px TajawalXB";
+    const l2 = wrapLines(ctx, headline2, maxW).slice(0, 2);
+    y += 8;
+    for (const ln of l2) { ctx.fillText(ln, CX, y); y += s2 * 1.3; }
+    // big orange "!" mark beside the orange line (cover energy, like the originals)
+    if (role === "cover") { ctx.save(); ctx.translate(CX + Math.min(ctx.measureText(l2[0] || "").width / 2 + 90, 430), y - s2 * 1.5); ctx.rotate(0.13); ctx.font = Math.round(s2 * 1.7) + "px TajawalXB"; ctx.fillText("!", 0, 0); ctx.restore(); }
+  } else {
+    // accent underline (short orange bar, centered) — only without an orange line
+    ctx.fillStyle = accent; ctx.beginPath(); ctx.roundRect(CX - 70, y - lh + size + 18, 140, 10, 5); ctx.fill();
+  }
   y += 24;
+
+  // rotated plum CTA pill (e.g. «احفظها قبل لا تبدأ») — the original save-hook style
+  if (cta && !isSlide) {
+    ctx.font = "44px TajawalXB";
+    const tw = ctx.measureText(cta).width, pw = tw + 96, ph = 84;
+    ctx.save(); ctx.translate(CX, y + ph / 2 + 10); ctx.rotate(-0.045);
+    ctx.fillStyle = MAGENTA; ctx.beginPath(); ctx.roundRect(-pw / 2, -ph / 2, pw, ph, ph / 2); ctx.fill();
+    ctx.fillStyle = "#fff"; ctx.fillText(cta, 0, 15); ctx.restore();
+    y += ph + 26;
+  }
 
   // topical photo in a rounded window (the professional MJ-003/MJ-011 layout)
   if (photoImg) {
