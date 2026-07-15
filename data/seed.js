@@ -32,7 +32,9 @@ export const needs = [
 // July launch batch — designs ready. Relaunch officially Jul 15, spaced ~2 days,
 // evening slots. (MJ-000 logo test post was published then retired.)
 export const queue = [
-  { id: "MJ-001", t: "كم نظام تستخدم عشان تدير تجارتك؟", ch: "IG", ty: "ريل تشويقي", tyc: "#6E1444", date: "2026-07-15 · 20:00", st: ["جاهز للمراجعة", "p-warn"], drive: "1Wy1U6OL_LSSzpRD3Vmsp2ebRO0lC2VHL", cap: "لكل تاجر في عُمان… كم نظام تستخدم عشان تدير تجارتك؟ قريبًا، شيء يجمعها كلها في مكان واحد." },
+  // Already published (over-published due to the ephemeral-storage bug). Dated in
+  // the past so the 24h-stale backstop permanently skips it — no re-publish. Reschedule forward to run it cleanly again.
+  { id: "MJ-001", t: "كم نظام تستخدم عشان تدير تجارتك؟", ch: "IG", ty: "ريل تشويقي", tyc: "#6E1444", date: "2026-07-13 · 20:00", st: ["نُشر مسبقاً", "p-ok"], drive: "1Wy1U6OL_LSSzpRD3Vmsp2ebRO0lC2VHL", cap: "لكل تاجر في عُمان… كم نظام تستخدم عشان تدير تجارتك؟ قريبًا، شيء يجمعها كلها في مكان واحد." },
   { id: "MJ-002", t: "٥ أخطاء تقتل مبيعاتك", ch: "IG", ty: "كاروسيل توعوي", tyc: "#E8890F", date: "2026-07-17 · 20:30", st: ["جاهز للمراجعة", "p-warn"], drive: "1-LPc8wDO-SBRwD2hI-u-ZEyn5AmJmbqV", cap: "٥ أخطاء تخلي متجرك يفشل قبل ما يبدأ. احفظها." },
   { id: "MJ-003", t: "قصتنا بدأت من نفس مكانك", ch: "IG", ty: "منشور علامة", tyc: "#9D1F60", date: "2026-07-19 · 20:00", st: ["جاهز للمراجعة", "p-warn"], drive: "1dyU4jEXNHxdeqGIOCasXnG0Bze7IYwOv", cap: "فريق عُماني عاش نفس تحديات التاجر. قصتنا بدأت من نفس مكانك." },
   { id: "MJ-004", t: "متجرك موجود.. بس المبيعات صفر؟", ch: "IG", ty: "ريل توعوي", tyc: "#B83B76", date: "2026-07-21 · 21:00", st: ["جاهز للمراجعة", "p-warn"], drive: "1xJyfuwqZ4W4PsRXUuCkiY9EyFg9GG5IM", cap: "متجرك موجود بس المبيعات صفر؟ غالبًا السبب واحد من ثلاثة." },
