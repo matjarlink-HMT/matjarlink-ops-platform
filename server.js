@@ -179,25 +179,21 @@ function designsDir() { const v = process.env.RAILWAY_VOLUME_MOUNT_PATH || (fs.e
 const arDigits = (n) => String(n).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[d]);
 async function renderAndSaveDesign(item, content = {}) {
   const { renderDesign } = await import("./data/designEngine.js");
-  const { fetchPhoto } = await import("./data/stockPhoto.js");
-  const query = content.photo || content.photoQuery || item.photoQuery || "";
-  let photo = null;
-  if (query) { try { photo = await fetchPhoto(query); } catch (e) { console.error("[pexels]", e.message); } }
   const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
-  const accent = item.tyc || "#E8890F", headline = content.t || item.t || "";
+  const headline = content.t || item.t || "", kicker = content.kicker || "";
   const ts = Date.now();
   const save = (name, buf) => { const fd = fs.openSync(path.join(dir, name + ".png"), "w"); try { fs.writeSync(fd, buf); fs.fsyncSync(fd); } finally { fs.closeSync(fd); } };
   const slides = content.slides || item.slides || [];
   const isCarousel = (item.ty || "").includes("كاروسيل") && slides.length;
   if (isCarousel) {
-    const total = slides.length;
-    const bufs = [await renderDesign({ headline, tag: item.ty, accent, photo })]; // cover
-    for (let i = 0; i < total; i++) bufs.push(await renderDesign({ headline: slides[i].t, body: slides[i].body, tag: `${arDigits(i + 1)} / ${arDigits(total)}`, accent }));
+    const n = slides.length;
+    const bufs = [await renderDesign({ role: "cover", headline, kicker, carousel: true })]; // cover
+    for (let i = 0; i < n; i++) bufs.push(await renderDesign({ role: "slide", headline: slides[i].t, body: slides[i].body, index: i + 1, carousel: true, last: i === n - 1 }));
     const images = [];
     for (let i = 0; i < bufs.length; i++) { save(`${item.id}-${i}`, bufs[i]); images.push(`/media/design/${item.id}-${i}?v=${ts}`); }
     return { mediaUrl: images[0], images };
   }
-  save(item.id, await renderDesign({ headline, tag: item.ty || "قريبًا", accent, photo }));
+  save(item.id, await renderDesign({ role: "single", headline, kicker }));
   return { mediaUrl: `/media/design/${item.id}?v=${ts}`, images: [] };
 }
 app.get("/media/design/:id", (req, res) => {
