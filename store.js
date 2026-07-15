@@ -1,10 +1,19 @@
-// Shared notes/approvals store — persisted to a JSON file so all users/devices
+// Shared notes/approvals store — persisted to JSON files so all users/devices
 // hitting this server see the same review state (Ibrahim + Marwa).
-// Note: on Railway the filesystem resets on redeploy; attach a Volume mounted at
-// /data and set NOTES_FILE=/data/notes.json for persistence across deploys.
+// Persistence: attach a Railway Volume at /data; files are written under
+// /data/store (a subdirectory — see note below). The old per-file *_FILE env
+// vars are no longer used.
 import fs from "node:fs";
+import path from "node:path";
 
-const FILE = process.env.NOTES_FILE || new URL("./data/notes.json", import.meta.url).pathname;
+// All persistent stores live in one dir. On Railway use a SUBDIRECTORY of the
+// Volume (/data/store) — direct file writes at the volume-mount root (/data/x)
+// can silently fail, while subdirectories are reliably writable. mkdir ensures it.
+const STORE_DIR = fs.existsSync("/data") ? "/data/store" : new URL("./data", import.meta.url).pathname;
+try { fs.mkdirSync(STORE_DIR, { recursive: true }); } catch (e) {}
+const sp = (name) => path.join(STORE_DIR, name);
+
+const FILE = sp("notes.json");
 let mem = {};
 try { mem = JSON.parse(fs.readFileSync(FILE, "utf8")); } catch (e) { mem = {}; }
 
@@ -12,7 +21,7 @@ function persist() { try { fs.writeFileSync(FILE, JSON.stringify(mem)); } catch 
 
 // ── Runtime integration config (API keys pasted via the Connections page) ──
 // Persisted separately; on Railway attach a Volume for persistence across deploys.
-const CFG_FILE = process.env.CONFIG_FILE || new URL("./data/config.json", import.meta.url).pathname;
+const CFG_FILE = sp("config.json");
 let cfg = {};
 try { cfg = JSON.parse(fs.readFileSync(CFG_FILE, "utf8")); } catch (e) { cfg = {}; }
 function persistCfg() { try { fs.writeFileSync(CFG_FILE, JSON.stringify(cfg)); } catch (e) {} }
@@ -22,7 +31,7 @@ export function cfgSet(map) { for (const k in map) { if (map[k] === "" || map[k]
 export function cfgHas(key) { return Boolean(cfgGet(key)); }
 
 // ── Manager chat history (CAIMO) ── persisted; capped to the last 60 turns.
-const CHAT_FILE = process.env.CHAT_FILE || new URL("./data/chat.json", import.meta.url).pathname;
+const CHAT_FILE = sp("chat.json");
 let chat = [];
 try { chat = JSON.parse(fs.readFileSync(CHAT_FILE, "utf8")); } catch (e) { chat = []; }
 function persistChat() { try { fs.writeFileSync(CHAT_FILE, JSON.stringify(chat)); } catch (e) {} }
@@ -31,7 +40,7 @@ export function addChat(role, text) { chat.push({ role, text, at: new Date().toI
 export function resetChat() { chat = []; persistChat(); return chat; }
 
 // ── Published log ── which queue ids were pushed to Instagram (avoid double-post).
-const PUB_FILE = process.env.PUBLISHED_FILE || new URL("./data/published.json", import.meta.url).pathname;
+const PUB_FILE = sp("published.json");
 let pub = {};
 try { pub = JSON.parse(fs.readFileSync(PUB_FILE, "utf8")); } catch (e) { pub = {}; }
 function persistPub() { try { fs.writeFileSync(PUB_FILE, JSON.stringify(pub)); } catch (e) {} }
@@ -74,7 +83,7 @@ export function addPostNote(id, role, text) {
 
 // ── Post content overrides ── Claude-regenerated title/caption/brief per post
 // (applies to seed July posts too, which aren't in content.json). Volume-ready.
-const OV_FILE = process.env.OVERRIDES_FILE || new URL("./data/overrides.json", import.meta.url).pathname;
+const OV_FILE = sp("overrides.json");
 let ov = {};
 try { ov = JSON.parse(fs.readFileSync(OV_FILE, "utf8")); } catch (e) { ov = {}; }
 function persistOv() { try { fs.writeFileSync(OV_FILE, JSON.stringify(ov)); } catch (e) {} }
@@ -86,7 +95,7 @@ export function setOverride(id, patch) {
 }
 
 // ── Agent self-improvement state ── approved suggestions raise the agent's level.
-const AG_FILE = process.env.AGENTS_FILE || new URL("./data/agents_state.json", import.meta.url).pathname;
+const AG_FILE = sp("agents_state.json");
 let ag = {};
 try { ag = JSON.parse(fs.readFileSync(AG_FILE, "utf8")); } catch (e) { ag = {}; }
 function persistAg() { try { fs.writeFileSync(AG_FILE, JSON.stringify(ag)); } catch (e) {} }

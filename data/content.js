@@ -8,17 +8,26 @@
 // If CONTENT_FILE doesn't exist yet, we fall back to the committed repo copy so
 // a fresh Volume starts from the checked-in baseline.
 import fs from "node:fs";
+import path from "node:path";
 
 const REPO_FILE = new URL("./content.json", import.meta.url).pathname;
-const FILE = process.env.CONTENT_FILE || REPO_FILE;
+// On Railway, write to a SUBDIRECTORY of the Volume (root-level writes can fail).
+const FILE = fs.existsSync("/data") ? "/data/store/content.json" : REPO_FILE;
+try { fs.mkdirSync(path.dirname(FILE), { recursive: true }); } catch (e) {}
 
-function readFrom(path) { try { return JSON.parse(fs.readFileSync(path, "utf8")); } catch (e) { return null; } }
+function readFrom(p) { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch (e) { return null; } }
 
+// In-memory cache so appended posts are visible immediately, even if a disk
+// write hiccups. Seeded from the Volume file, then the committed repo baseline.
+let cache;
 export function loadContent() {
-  return readFrom(FILE) || (FILE !== REPO_FILE ? readFrom(REPO_FILE) : null);
+  if (cache !== undefined) return cache;
+  cache = readFrom(FILE) || (FILE !== REPO_FILE ? readFrom(REPO_FILE) : null);
+  return cache;
 }
 
 export function saveContent(data) {
+  cache = data;
   try { fs.writeFileSync(FILE, JSON.stringify(data, null, 2)); return true; }
   catch (e) { console.error("[content] save failed:", e.message); return false; }
 }
