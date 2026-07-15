@@ -341,8 +341,12 @@ app.post("/api/republish", (req, res) => {
 const AUTO = () => (process.env.AUTO_PUBLISH || store.cfgGet("AUTO_PUBLISH")) === "on";
 function parseWhen(date) { const m = (date || "").match(/(\d{4}-\d{2}-\d{2})[^\d]+(\d{2}):(\d{2})/); return m ? new Date(`${m[1]}T${m[2]}:${m[3]}:00+04:00`) : null; } // Oman time (GST)
 const STALE_MS = 24 * 3600 * 1000; // don't auto-post backlog older than a day
+let autoBusy = false; // serialize ticks: a slow publish (reel) can outlast the 60s
+// interval, and an overlapping tick would double-post before the first marks it.
 async function autoPublishTick() {
-  if (!AUTO() || !metaPublish.publishReady()) return;
+  if (autoBusy || !AUTO() || !metaPublish.publishReady()) return;
+  autoBusy = true;
+  try {
   const notes = store.getNotes();
   const now = Date.now();
   for (const q of fullQueue()) {
@@ -361,6 +365,7 @@ async function autoPublishTick() {
     catch (e) { console.error(`[auto-publish] ${q.id}: ${e.message}`); }
     break; // at most one publish per tick — avoids simultaneous bursts
   }
+  } finally { autoBusy = false; }
 }
 setInterval(() => { autoPublishTick().catch(() => {}); }, 60000);
 
