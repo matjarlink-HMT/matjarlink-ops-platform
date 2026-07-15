@@ -1,20 +1,22 @@
-// Reel engine — turns generated brand frames into a real publishable MP4 reel
-// (9:16, H.264 + silent AAC) using the bundled ffmpeg. This is what makes
-// "regenerate a reel" produce an actual NEW video instead of keeping the old
-// footage: scenes come from CAIMO (hook → value → CTA), each is rendered by the
-// design engine in the professional brand style, then stitched.
+// Reel engine v3 — turns generated brand frames into a real publishable MP4
+// reel (1080x1920, H.264 + silent AAC) with Ken Burns motion, using the
+// bundled ffmpeg. Scenes come from CAIMO (hook → value → CTA), each rendered
+// by the design engine in the professional brand style.
 //
-// MEMORY-LEAN by design: Railway's container OOM-killed the first xfade-based
-// pipeline ("ffmpeg exited null" = SIGKILL). So we use the concat demuxer (one
-// decoder, hard cuts) + a whole-video fade in/out, single-thread ultrafast
-// x264 with no lookahead. If the encoder still gets killed, we retry once at
-// 720x1280 (Instagram accepts it and upscales).
+// ARCHITECTURE (measured, not guessed): the v2 concat-demuxer pipeline peaked
+// at 557MB — the fps=25 filter exploded each single still into 240 queued
+// frames (this, not xfade, was the Railway OOM). v3 encodes EACH SCENE as its
+// own segment through zoompan (a lazy frame generator: ~54MB peak, and free
+// Ken Burns motion), then merges segments losslessly with concat -c copy
+// (~19MB). Sequential segments mean the single-segment peak IS the total peak.
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { renderReelFrame } from "./designEngine.js";
 
-const SCENE_SEC = 3.2, FADE_SEC = 0.5;
+// Scene pacing by role: tight hook, readable body, confident close (~8.4s total).
+const SEC = { hook: 2.4, body: 3.2, cta: 2.8 };
+const FPS = 25, FLASH = 0.25; // white-flash cut between scenes (on-brand: white canvas)
 
 async function ffmpegPath() {
   const m = await import("ffmpeg-static");
@@ -33,18 +35,29 @@ function run(bin, args) {
   });
 }
 
-function encodeArgs(listFile, total, scaleDown, outPath) {
-  const fades = `fade=t=in:st=0:d=${FADE_SEC},fade=t=out:st=${(total - FADE_SEC).toFixed(2)}:d=${FADE_SEC}`;
-  const vf = `${scaleDown ? "scale=720:1280," : ""}fps=25,format=yuv420p,${fades}`;
+// Ken Burns variation per scene index: in → out → drift-up → in.
+function zoomExpr(i, frames) {
+  const d = frames - 1;
+  if (i % 3 === 0) return { z: `1+0.06*on/${d}`, x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" };
+  if (i % 3 === 1) return { z: `1.06-0.06*on/${d}`, x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" };
+  return { z: "1.05", x: "iw/2-(iw/zoom/2)", y: `(ih-ih/zoom)*on/${d}` };
+}
+
+function segArgs(framePng, i, n, sec, outSeg) {
+  const frames = Math.round(sec * FPS);
+  const { z, x, y } = zoomExpr(i, frames);
+  // upscale before zoompan to kill its integer-origin jitter (measured +10MB)
+  let vf = `scale=2160:3840,zoompan=z='${z}':x='${x}':y='${y}':d=${frames}:s=1080x1920:fps=${FPS}`;
+  if (i === 0) vf += `,fade=t=in:st=0:d=0.4`;
+  if (i < n - 1) vf += `,fade=t=out:st=${(sec - FLASH).toFixed(2)}:d=${FLASH}:c=white`; // white-flash into next
+  else vf += `,fade=t=out:st=${(sec - 0.4).toFixed(2)}:d=0.4`;
+  if (i > 0) vf += `,fade=t=in:st=0:d=${FLASH}:c=white`;
+  vf += `,format=yuv420p`; // LAST — colored fades force RGB and would leak yuv444p (IG rejects it)
   return [
-    "-y",
-    "-f", "concat", "-safe", "0", "-i", listFile,
-    "-f", "lavfi", "-t", String(total), "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
-    "-vf", vf,
-    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22", "-threads", "1",
+    "-y", "-i", framePng, "-vf", vf,
+    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23", "-threads", "1",
     "-x264-params", "ref=1:bframes=0:rc-lookahead=0:keyint=50",
-    "-c:a", "aac", "-b:a", "96k", "-shortest", "-movflags", "+faststart",
-    outPath
+    "-an", outSeg
   ];
 }
 
@@ -59,31 +72,34 @@ export async function renderReel(scenes, outPath) {
   scenes = scenes.slice(0, 4);
   const dir = path.dirname(outPath);
   fs.mkdirSync(dir, { recursive: true });
-  const base = path.join(dir, `.frames-${path.basename(outPath, ".mp4")}`);
-  const frames = [], listFile = `${base}.txt`;
+  const base = path.join(dir, `.seg-${path.basename(outPath, ".mp4")}`);
+  const tmp = [];
   try {
     const bin = await ffmpegPath();
-    for (let i = 0; i < scenes.length; i++) {
-      const f = `${base}-${i}.png`;
-      fs.writeFileSync(f, await renderReelFrame(scenes[i]));
-      frames.push(f);
+    const n = scenes.length, segs = [];
+    let total = 0;
+    for (let i = 0; i < n; i++) {
+      const sec = SEC[scenes[i].kind] || 3.0; total += sec;
+      const png = `${base}-${i}.png`, seg = `${base}-${i}.mp4`;
+      fs.writeFileSync(png, await renderReelFrame(scenes[i]));
+      tmp.push(png, seg);
+      await run(bin, segArgs(png, i, n, sec, seg)); // sequential: one encoder at a time
+      segs.push(seg);
     }
-    const total = scenes.length * SCENE_SEC;
-    // concat demuxer playlist (last entry repeated, per the demuxer's spec)
-    const lines = frames.map((f) => `file '${f}'\nduration ${SCENE_SEC}`);
-    lines.push(`file '${frames[frames.length - 1]}'`);
-    fs.writeFileSync(listFile, lines.join("\n"));
-    try {
-      await run(bin, encodeArgs(listFile, total, false, outPath)); // 1080x1920
-    } catch (e) {
-      console.error("[reel] 1080p encode failed, retrying at 720p:", e.message);
-      await run(bin, encodeArgs(listFile, total, true, outPath)); // 720x1280 fallback
-    }
+    // lossless merge + silent stereo AAC (some IG checks want an audio track)
+    const listFile = `${base}.txt`; tmp.push(listFile);
+    fs.writeFileSync(listFile, segs.map((s) => `file '${s}'`).join("\n"));
+    await run(bin, [
+      "-y", "-f", "concat", "-safe", "0", "-i", listFile,
+      "-f", "lavfi", "-t", total.toFixed(2), "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+      "-c:v", "copy", "-c:a", "aac", "-b:a", "96k", "-shortest", "-movflags", "+faststart",
+      outPath
+    ]);
     // fsync so the reel survives a Railway redeploy (Volume-backed like designs)
     const fd = fs.openSync(outPath, "r+"); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
     return outPath;
   } finally {
     busy = false;
-    for (const f of [...frames, listFile]) { try { fs.unlinkSync(f); } catch (e) {} }
+    for (const f of tmp) { try { fs.unlinkSync(f); } catch (e) {} }
   }
 }
