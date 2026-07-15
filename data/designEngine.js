@@ -33,7 +33,7 @@ function wrapLines(ctx, text, maxW) {
   return lines;
 }
 
-export async function renderDesign({ headline = "", tag = "قريبًا", accent = "#E8890F", photo = null } = {}) {
+export async function renderDesign({ headline = "", tag = "قريبًا", accent = "#E8890F", photo = null, body = "" } = {}) {
   const W = 1080, H = 1350, R = W - 84; // right anchor
   const cv = createCanvas(W, H);
   const ctx = cv.getContext("2d");
@@ -68,21 +68,25 @@ export async function renderDesign({ headline = "", tag = "قريبًا", accent
 
   ctx.direction = "rtl"; ctx.textAlign = "right";
 
-  // headline — adaptive size to fit
-  let size = 88;
+  // headline — adaptive size to fit (smaller when a body line is present, e.g. carousel slides)
+  let size = body ? 70 : 88;
   let lines = wrapLines((ctx.font = size + "px TajawalXB", ctx), headline, W - 168);
-  while (lines.length > 4 && size > 54) { size -= 8; lines = wrapLines((ctx.font = size + "px TajawalXB", ctx), headline, W - 168); }
+  while (lines.length > 4 && size > 50) { size -= 8; lines = wrapLines((ctx.font = size + "px TajawalXB", ctx), headline, W - 168); }
   lines = lines.slice(0, 5);
   const lh = size * 1.3;
-  const blockH = lines.length * lh;
+
+  // optional body (carousel slide detail)
+  const bsize = 37, blh = bsize * 1.45;
+  const bodyLines = body ? wrapLines((ctx.font = bsize + "px Tajawal", ctx), body, W - 168).slice(0, 4) : [];
+  const contentH = lines.length * lh + (bodyLines.length ? 40 + bodyLines.length * blh : 0);
 
   const footerY = H - 168;
-  // Photo mode: anchor text to the bottom (over the dark gradient). Plain: upper-middle.
-  const hlTop = hasPhoto ? (footerY - 78 - blockH) : 560;
+  // Photo mode: anchor to the bottom (over the dark gradient). Plain: upper area.
+  const hlTop = hasPhoto ? (footerY - 78 - contentH) : (body ? 460 : 560);
   const pillH = 66;
 
   // tag pill (above the headline)
-  ctx.font = "34px TajawalXB";
+  ctx.font = "34px TajawalXB"; ctx.textAlign = "right";
   const tw = ctx.measureText(tag).width;
   const pillW = tw + 64, pillY = hlTop - pillH - 26;
   ctx.fillStyle = accent; ctx.beginPath(); ctx.roundRect(R - pillW, pillY, pillW, pillH, 33); ctx.fill();
@@ -94,7 +98,13 @@ export async function renderDesign({ headline = "", tag = "قريبًا", accent
   for (const ln of lines) { ctx.fillText(ln, R, y); y += lh; }
 
   // accent underline
-  ctx.fillStyle = accent; ctx.beginPath(); ctx.roundRect(R - 168, y - lh + 34, 168, 12, 6); ctx.fill();
+  ctx.fillStyle = accent; ctx.beginPath(); ctx.roundRect(R - 168, y - lh + 34, 150, 10, 5); ctx.fill();
+
+  // body
+  if (bodyLines.length) {
+    y += 40; ctx.fillStyle = "#EBD3E0"; ctx.font = bsize + "px Tajawal";
+    for (const ln of bodyLines) { ctx.fillText(ln, R, y); y += blh; }
+  }
 
   // footer brand
   const img = await getLogo();

@@ -82,7 +82,7 @@ app.get("/api/state", async (req, res) => {
   const ov = store.getOverrides();
   state.queue = state.queue.map((q) => {
     const o = ov[q.id]; if (!o) return q;
-    return { ...q, t: o.t ?? q.t, cap: o.cap ?? q.cap, brief: o.brief ?? q.brief, ty: o.ty ?? q.ty, mediaUrl: o.mediaUrl ?? q.mediaUrl, regenerated: true, regens: o.regens };
+    return { ...q, t: o.t ?? q.t, cap: o.cap ?? q.cap, brief: o.brief ?? q.brief, ty: o.ty ?? q.ty, mediaUrl: o.mediaUrl ?? q.mediaUrl, images: (o.images && o.images.length) ? o.images : q.images, regenerated: true, regens: o.regens };
   });
   // Hide deleted posts.
   const removed = new Set(store.getRemoved());
@@ -114,12 +114,12 @@ app.post("/api/regenerate", async (req, res) => {
   try { out = await generator.regeneratePost({ ...item, ...(store.getOverrides()[id] || {}) }, notes, lang || "ar"); }
   catch (e) { console.error("[regenerate]", e.message); return res.status(500).json({ ok: false, error: e.message }); }
   if (!out) return res.status(502).json({ ok: false, error: "generation failed" });
-  // Render a fresh on-brand design (with a topic photo when relevant) from the new content.
-  let mediaUrl;
-  try { mediaUrl = await renderAndSaveDesign(item, out); }
+  // Render a fresh on-brand design (photo/carousel slides when relevant) from the new content.
+  let design;
+  try { design = await renderAndSaveDesign(item, out); }
   catch (e) { console.error("[design]", e.message); }
-  const patch = { t: out.t, cap: out.cap, brief: out.brief, photoQuery: out.photo || "" };
-  if (mediaUrl) patch.mediaUrl = mediaUrl;
+  const patch = { t: out.t, cap: out.cap, brief: out.brief, photoQuery: out.photo || "", slides: out.slides || [] };
+  if (design) { patch.mediaUrl = design.mediaUrl; patch.images = design.images || []; }
   const saved = store.setOverride(id, patch);
   // Record CAIMO's action in the post thread so the owner sees it happened.
   store.addPostNote(id, "manager", `♻️ أعدتُ توليد المنشور حسب ملاحظتك: «${out.t}»${mediaUrl ? " — وصمّمتُ صورة جديدة بهوية العلامة" : ""}.`);
@@ -136,7 +136,7 @@ app.post("/api/generate-post", async (req, res) => {
   try { post = await generator.generatePost({ idNum, date: when, prompt: prompt || "" }, lang || "ar"); }
   catch (e) { console.error("[generate-post]", e.message); return res.status(500).json({ ok: false, error: e.message }); }
   if (!post) return res.status(502).json({ ok: false, error: "generation failed" });
-  try { post.mediaUrl = await renderAndSaveDesign(post, post); } catch (e) { console.error("[design]", e.message); }
+  try { const d = await renderAndSaveDesign(post, post); post.mediaUrl = d.mediaUrl; if (d.images?.length) post.images = d.images; } catch (e) { console.error("[design]", e.message); }
   appendPost(post);
   res.json({ ok: true, post });
 });
@@ -166,7 +166,7 @@ function publicBase(req) { return process.env.PUBLIC_BASE || (req ? `${req.proto
 function resolveMedia(q, base) {
   const isReel = (q.ty || "").includes("ريل");
   const cap = q.cap || q.t || "";
-  if (q.images?.length) return { images: q.images, caption: cap, kind: q.images.length > 1 ? "carousel" : "image" };
+  if (q.images?.length) return { images: q.images.map((u) => (u.startsWith("/") ? `${base}${u}` : u)), caption: cap, kind: q.images.length > 1 ? "carousel" : "image" };
   if (q.mediaUrl) { const url = q.mediaUrl.startsWith("/") ? `${base}${q.mediaUrl}` : q.mediaUrl; const isDesign = q.mediaUrl.includes("/media/design/"); return { mediaUrl: url, caption: cap, kind: (isReel && !isDesign) ? "reel" : "image" }; }
   if (q.drive) return { mediaUrl: `${base}/media/drive/${q.drive}?type=${isReel ? "video" : "image"}`, caption: cap, kind: isReel ? "reel" : "image" };
   return null;
@@ -174,17 +174,29 @@ function resolveMedia(q, base) {
 
 // ── Live design engine ── render + serve on-brand post images (Volume-backed) ──
 function designsDir() { return process.env.DESIGNS_DIR || (fs.existsSync("/data") ? "/data/designs" : path.join(__dirname, "data", "designs")); }
+const arDigits = (n) => String(n).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[d]);
 async function renderAndSaveDesign(item, content = {}) {
   const { renderDesign } = await import("./data/designEngine.js");
   const { fetchPhoto } = await import("./data/stockPhoto.js");
   const query = content.photo || content.photoQuery || item.photoQuery || "";
   let photo = null;
   if (query) { try { photo = await fetchPhoto(query); } catch (e) { console.error("[pexels]", e.message); } }
-  const png = await renderDesign({ headline: content.t || item.t || "", tag: item.ty || "قريبًا", accent: item.tyc || "#E8890F", photo });
   const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
-  const fd = fs.openSync(path.join(dir, item.id + ".png"), "w"); // fsync so the design survives a redeploy
-  try { fs.writeSync(fd, png); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
-  return `/media/design/${item.id}?v=${Date.now()}`;
+  const accent = item.tyc || "#E8890F", headline = content.t || item.t || "";
+  const ts = Date.now();
+  const save = (name, buf) => { const fd = fs.openSync(path.join(dir, name + ".png"), "w"); try { fs.writeSync(fd, buf); fs.fsyncSync(fd); } finally { fs.closeSync(fd); } };
+  const slides = content.slides || item.slides || [];
+  const isCarousel = (item.ty || "").includes("كاروسيل") && slides.length;
+  if (isCarousel) {
+    const total = slides.length;
+    const bufs = [await renderDesign({ headline, tag: item.ty, accent, photo })]; // cover
+    for (let i = 0; i < total; i++) bufs.push(await renderDesign({ headline: slides[i].t, body: slides[i].body, tag: `${arDigits(i + 1)} / ${arDigits(total)}`, accent }));
+    const images = [];
+    for (let i = 0; i < bufs.length; i++) { save(`${item.id}-${i}`, bufs[i]); images.push(`/media/design/${item.id}-${i}?v=${ts}`); }
+    return { mediaUrl: images[0], images };
+  }
+  save(item.id, await renderDesign({ headline, tag: item.ty || "قريبًا", accent, photo }));
+  return { mediaUrl: `/media/design/${item.id}?v=${ts}`, images: [] };
 }
 app.get("/media/design/:id", (req, res) => {
   const id = (req.params.id || "").replace(/[^A-Za-z0-9_-]/g, "");

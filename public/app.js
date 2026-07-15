@@ -294,7 +294,7 @@ function carouselCard(q, i) {
   else if (q.drive && isReel) inner = `<span class="cplay">▶</span>`;
   else inner = `<span class="cph">✎</span>`;
   return `<div class="ccard ${i === pf.focus ? "focus" : ""}" data-idx="${i}" style="background:${grad}">
-    ${inner}<span class="ctag">${q.id}${q.gen ? " ✨" : ""}</span>
+    ${inner}<span class="ctag">${q.id}${q.gen ? " ✨" : ""}</span>${q.images && q.images.length > 1 ? `<span class="cslides">▦ ${q.images.length}</span>` : ""}
     <div class="cclabel"><div class="cct">${escapeHtml(q.t.slice(0, 34))}</div><div class="ccm">${chan(q.ch)} ${q.ty} · ${q.date}</div></div></div>`;
 }
 const carouselDetail = (q) => q ? pdetailMain(q) : "";
@@ -320,6 +320,7 @@ function pdetailMain(q) {
       <div class="pmeta">${chan(q.ch)} ${q.ty} · <b>${q.date}</b></div>
       <div class="pcdrow">${cdHtml}<div class="pbadges">${badges}${q.regens ? `<span class="pill p-idle">♻️ ${q.regens}</span>` : ""}</div></div>
       <div class="pcap">${escapeHtml((q.cap || "").slice(0, 240))}${(q.cap || "").length > 240 ? "…" : ""}</div>
+      ${q.images && q.images.length > 1 ? `<div class="slideshdr">${T("slides_label")} (${q.images.length})</div><div class="slides">${q.images.map((u, idx) => `<img class="slidethumb" src="${u}" loading="lazy" data-img="${u}" data-t="${idx === 0 ? T("cover") : T("slide") + " " + idx}" title="${idx === 0 ? T("cover") : T("slide") + " " + idx}">`).join("")}</div>` : ""}
       ${threadHtml}
       <div class="pnotebar"><input class="pnote" data-id="${q.id}" placeholder="${T("note_ask_ph")}" autocomplete="off"><button class="btn sm askbtn" data-ask="${q.id}">${T("note_ask")}</button></div>
       <div class="pactions">
@@ -379,6 +380,7 @@ function bindDetail(list) {
   host.querySelectorAll("[data-approve]").forEach(b => b.onclick = async () => { b.disabled = true; await postNote(b.dataset.approve, { id: b.dataset.approve, action: "approve" }); renderPipeline($("#content")); });
   host.querySelectorAll("[data-pub]").forEach(b => b.onclick = () => publishPost(b.dataset.pub, b));
   host.querySelectorAll("[data-play2]").forEach(b => b.onclick = () => openDrivePlay(b.dataset.play2, host.querySelector(".ptitle")?.textContent || ""));
+  host.querySelectorAll("[data-img]").forEach(b => b.onclick = () => openImage(b.dataset.img, b.dataset.t));
   host.querySelectorAll("[data-regen]").forEach(b => b.onclick = () => regenPost(b.dataset.regen, b));
   host.querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
     if (b.dataset.armed) return delPost(b.dataset.del);
@@ -499,6 +501,12 @@ function openDrivePlay(driveId, title) {
   $("#mvtitle").textContent = title || "";
   $("#mvframe").innerHTML = `<iframe src="https://drive.google.com/file/d/${driveId}/preview" allow="autoplay" allowfullscreen></iframe>`;
   $("#mvhint").innerHTML = `<a class="link" target="_blank" href="https://drive.google.com/file/d/${driveId}/view">${T("openDrive")}</a>`;
+  $("#mv").classList.add("on");
+}
+function openImage(url, title) {
+  $("#mvtitle").textContent = title || "";
+  $("#mvframe").innerHTML = `<img src="${url}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#160a1b">`;
+  $("#mvhint").innerHTML = "";
   $("#mv").classList.add("on");
 }
 
