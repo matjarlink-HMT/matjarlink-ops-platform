@@ -452,6 +452,8 @@ function pdetailMain(q) {
   let pubBtn = "";
   if (pub) pubBtn = pub.permalink ? `<a class="link sm" target="_blank" href="${pub.permalink}">${T("published_ok")} ↗</a>` : "";
   else if (S.publishReady && !held) pubBtn = `<button class="btn sm pubbtn" data-pub="${q.id}">📤 ${T("publish_now")}</button>`;
+  // one-tap emergency stop: writes a hold note so the scheduler skips this post
+  const stopBtn = (!pub && !held && !q.gen) ? `<button class="btn ghost sm" data-stop="${q.id}" title="${T("stop_hint")}">⏸ ${T("stop_pub")}</button>` : "";
   return `<div class="pcard nofloat" data-id="${q.id}"><div class="pmain">
       <div class="ptitle">${escapeHtml(q.t)}</div>
       <div class="pmeta">${chan(q.ch)} ${q.ty} · <b>${q.date}</b></div>
@@ -463,7 +465,7 @@ function pdetailMain(q) {
       <div class="pactions">
         ${pub ? "" : `<button class="btn ghost sm regenbtn ${hasNote ? "hot" : ""}" data-regen="${q.id}">♻️ ${T("regen")}</button>`}
         ${approved || pub ? "" : `<button class="btn ok sm" data-approve="${q.id}">✓ ${T("approve")}</button>`}
-        ${pubBtn}
+        ${pubBtn}${stopBtn}
         ${isVideoUrl(q.mediaUrl) ? `<button class="btn ghost sm" data-playvid="${q.mediaUrl}">▶ ${lang === "en" ? "Preview" : lang === "fa" ? "پیش‌نمایش" : "معاينة"}</button>` : q.drive ? `<button class="btn ghost sm" data-play2="${q.drive}" data-reel="${(q.ty || "").includes("ريل") ? "1" : "0"}">▶ ${lang === "en" ? "Preview" : lang === "fa" ? "پیش‌نمایش" : "معاينة"}</button>` : ""}${q.drive ? `<a class="link sm" target="_blank" href="https://drive.google.com/file/d/${q.drive}/view">${T("openDrive")}</a>` : ""}
         <button class="btn ghost sm delbtn" data-del="${q.id}" title="${T("del")}" style="margin-inline-start:auto">🗑</button>
       </div></div></div>`;
@@ -522,6 +524,7 @@ function bindDetail(list) {
   host.querySelectorAll("[data-ask]").forEach(b => b.onclick = () => askManager(b.dataset.ask));
   host.querySelectorAll(".pnote").forEach(i => i.onkeydown = e => { if (e.key === "Enter") askManager(i.dataset.id); });
   host.querySelectorAll("[data-approve]").forEach(b => b.onclick = async () => { b.disabled = true; await postNote(b.dataset.approve, { id: b.dataset.approve, action: "approve" }); renderPipeline($("#content")); });
+  host.querySelectorAll("[data-stop]").forEach(b => b.onclick = async () => { b.disabled = true; await postNote(b.dataset.stop, { id: b.dataset.stop, note: T("stop_note") }); renderPipeline($("#content")); });
   host.querySelectorAll("[data-pub]").forEach(b => b.onclick = () => publishPost(b.dataset.pub, b));
   host.querySelectorAll("[data-play2]").forEach(b => b.onclick = () => openDrivePlay(b.dataset.play2, host.querySelector(".ptitle")?.textContent || "", b.dataset.reel === "1"));
   host.querySelectorAll("[data-playvid]").forEach(b => b.onclick = () => openVideo(b.dataset.playvid, host.querySelector(".ptitle")?.textContent || ""));
