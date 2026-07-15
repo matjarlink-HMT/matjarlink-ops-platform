@@ -144,15 +144,34 @@ function wrapLines(ctx, text, maxW) {
   return lines;
 }
 
-// Cover-fit an image inside a rounded-rect window (the MJ-003/MJ-011 photo style).
+// Cover-fit an image inside a rounded-rect window (the MJ-003/MJ-011 photo
+// style) with brand treatment: unified vibrance, a subtle plum wash, a top
+// depth gradient tying it to the headline, and a warm glow at the base.
 function drawPhotoWindow(ctx, img, x, y, w, h, r = 40) {
   ctx.save();
   ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.clip();
   const ir = img.width / img.height, cr = w / h;
   let dw, dh, dx, dy;
   if (ir > cr) { dh = h; dw = h * ir; dx = x + (w - dw) / 2; dy = y; } else { dw = w; dh = w / ir; dx = x; dy = y + (h - dh) / 2; }
+  ctx.filter = "saturate(1.08) contrast(1.06) brightness(1.02)"; // evens out mixed stock
   ctx.drawImage(img, dx, dy, dw, dh);
+  ctx.filter = "none";
+  // plum wash unifies any photo with the brand world
+  ctx.globalCompositeOperation = "multiply";
+  ctx.fillStyle = "rgba(110,20,68,0.10)"; ctx.fillRect(x, y, w, h);
+  ctx.globalCompositeOperation = "source-over";
+  const tg = ctx.createLinearGradient(0, y, 0, y + h * 0.5);
+  tg.addColorStop(0, "rgba(78,14,48,0.28)"); tg.addColorStop(1, "rgba(78,14,48,0)");
+  ctx.fillStyle = tg; ctx.fillRect(x, y, w, h * 0.5);
+  ctx.globalCompositeOperation = "soft-light";
+  const og = ctx.createLinearGradient(0, y + h * 0.55, 0, y + h);
+  og.addColorStop(0, "rgba(232,137,15,0)"); og.addColorStop(1, "rgba(232,137,15,0.35)");
+  ctx.fillStyle = og; ctx.fillRect(x, y + h * 0.55, w, h * 0.45);
+  ctx.globalCompositeOperation = "source-over";
   ctx.restore();
+  // hairline frame seats the window on the white canvas
+  ctx.strokeStyle = "rgba(110,20,68,0.18)"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.roundRect(x + 1.5, y + 1.5, w - 3, h - 3, r); ctx.stroke();
 }
 
 // role: "single" | "cover" | "slide". index/carousel/last drive the number circle + swipe.
