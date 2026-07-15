@@ -70,7 +70,8 @@ async function refresh() {
   buildNav(); updateNotif();
   const active = document.querySelector("#nav button.on")?.dataset.go;
   // don't blow away pages holding live input / typed notes
-  if (active && !["pipeline", "manager", "settings"].includes(active)) render(active);
+  // pages with live text inputs must not be re-rendered under the user's fingers
+  if (active && !["pipeline", "manager", "settings", "comments", "messages", "leads", "plan"].includes(active)) render(active);
 }
 function applyLang() {
   const L = LANGS[lang]; document.documentElement.lang = lang; document.documentElement.dir = L.dir;
@@ -412,7 +413,7 @@ function pdetailMain(q) {
   const held = !approved && !!(nt.note && nt.note.trim()); // an unresolved note = objection → won't auto-publish
   const thread = nt.thread || [];
   const badges = [
-    pub ? `<span class="pill p-ok">📤 ${T("published_ok")}</span>` : approved ? `<span class="pill p-ok">✓ ${T("approve")}</span>` : held ? `<span class="pill p-warn">✎ ${T("held")}</span>` : `<span class="pill p-info">🔕 ${T("silent_ok")}</span>`,
+    pub ? `<span class="pill p-ok">📤 ${T("published_ok")}</span>` : approved ? `<span class="pill p-ok">✓ ${T("approve")}</span>` : held ? `<span class="pill p-warn">✎ ${T("held")}</span>` : q.gen ? `<span class="pill p-warn">✋ ${T("gen_hold")}</span>` : `<span class="pill p-info">🔕 ${T("silent_ok")}</span>`,
     q.gen ? `<span class="pill p-new">✨ ${T("gen")}</span>` : ""
   ].filter(Boolean).join(" ");
   const threadHtml = thread.length ? `<div class="pthread">${thread.map(bubble).join("")}</div>` : "";
@@ -511,7 +512,8 @@ async function delPost(id) {
   S = await fetch("/api/state").then(x => x.json()); pf.focus = 0; renderPipeline($("#content"));
 }
 // ── live publish countdown ────────────────────────────────────────
-function parseWhenClient(date) { const m = (date || "").match(/(\d{4})-(\d{2})-(\d{2})[^\d]+(\d{2}):(\d{2})/); return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : null; }
+// Oman time (+04:00) — must match the server's parseWhen, or countdowns lie when traveling.
+function parseWhenClient(date) { const m = (date || "").match(/(\d{4})-(\d{2})-(\d{2})[^\d]+(\d{2}):(\d{2})/); return m ? new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:00+04:00`) : null; }
 function fmtCountdown(when) {
   let ms = when.getTime() - Date.now();
   if (ms <= 0) return "⚠️ " + T("cd_passed");
@@ -670,14 +672,14 @@ function leadsView() {
   return `<div class="kanban">${stages.map(s => {
     const items = S.leads.filter(l => l.stage === s);
     return `<div class="kcol"><div class="kh">${T("stage_" + s)} <span class="kc">${items.length}</span></div>
-      ${items.map(l => `<div class="lcard"><div class="ln">${chan(l.ch)} ${l.name}</div><div class="mut">${l.note}</div><div class="lt">${l.tm}</div></div>`).join("") || `<div class="mut" style="padding:.5rem">—</div>`}</div>`;
+      ${items.map(l => `<div class="lcard"><div class="ln">${chan(l.ch)} ${escapeHtml(l.name)}</div><div class="mut">${escapeHtml(l.note)}</div><div class="lt">${escapeHtml(l.tm || "")}</div></div>`).join("") || `<div class="mut" style="padding:.5rem">—</div>`}</div>`;
   }).join("")}</div>`;
 }
 
 // ── feeds + reply ─────────────────────────────────────────────────
 function feed(list, kind, replyKind) {
-  return `<div class="feed">${list.map((m, i) => `<div class="msg"><div class="mh">${chan(m.ch)} <span class="who">${m.who}</span> <span style="font-size:.72rem;color:var(--faint)">${m.ref || ""}</span><span class="tm">${m.tm}</span></div>
-    <div class="mt">${m.tx}</div>${m.sug !== "" ? `<div class="reply"><input value="${(m.sug || "").replace(/"/g, "&quot;")}" id="${kind}${i}"><button class="btn sm" data-r="${kind}${i}" data-ch="${m.ch}" data-id="${m.id || ""}" data-kind="${replyKind}">${T("reply")}</button></div><div id="s${kind}${i}" class="ok-s"></div>` : `<div style="font-size:.76rem;color:var(--warn)">${T("waitingChannel")}</div>`}</div>`).join("")}</div>`;
+  return `<div class="feed">${list.map((m, i) => `<div class="msg"><div class="mh">${chan(m.ch)} <span class="who">${escapeHtml(m.who)}</span> <span style="font-size:.72rem;color:var(--faint)">${escapeHtml(m.ref || "")}</span><span class="tm">${escapeHtml(m.tm || "")}</span></div>
+    <div class="mt">${escapeHtml(m.tx)}</div>${m.sug !== "" ? `<div class="reply"><input value="${escapeHtml(m.sug || "").replace(/"/g, "&quot;")}" id="${kind}${i}"><button class="btn sm" data-r="${kind}${i}" data-ch="${m.ch}" data-id="${m.id || ""}" data-kind="${replyKind}">${T("reply")}</button></div><div id="s${kind}${i}" class="ok-s"></div>` : `<div style="font-size:.76rem;color:var(--warn)">${T("waitingChannel")}</div>`}</div>`).join("")}</div>`;
 }
 function bindReply() {
   document.querySelectorAll("[data-r]").forEach(b => b.onclick = async () => {
@@ -699,9 +701,9 @@ $("#mv").onclick = (e) => { if (e.target.id === "mv") closeMv(); };
 // ── notifications ─────────────────────────────────────────────────
 function updateNotif() {
   const items = [];
-  (S.comments || []).forEach(c => items.push(`${chan(c.ch)} ${c.who}: ${c.tx.slice(0, 40)}`));
-  (S.messages || []).filter(m => m.sug !== "").forEach(m => items.push(`✉ ${m.who}: ${m.tx.slice(0, 40)}`));
-  (S.leads || []).filter(l => l.stage === "جديد").forEach(l => items.push(`🔥 ${lang === "en" ? "New lead" : "عميل جديد"}: ${l.name}`));
+  (S.comments || []).forEach(c => items.push(`${chan(c.ch)} ${escapeHtml(c.who)}: ${escapeHtml(c.tx.slice(0, 40))}`));
+  (S.messages || []).filter(m => m.sug !== "").forEach(m => items.push(`✉ ${escapeHtml(m.who)}: ${escapeHtml(m.tx.slice(0, 40))}`));
+  (S.leads || []).filter(l => l.stage === "جديد").forEach(l => items.push(`🔥 ${lang === "en" ? "New lead" : "عميل جديد"}: ${escapeHtml(l.name)}`));
   $("#notifcount").textContent = items.length || "";
   $("#notifcount").style.display = items.length ? "grid" : "none";
   $("#notiflist").innerHTML = items.length ? items.map(t => `<div class="ni">${t}</div>`).join("") : `<div class="ni mut">${T("notif_none")}</div>`;

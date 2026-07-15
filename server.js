@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { baseState } from "./data/seed.js";
 import { getAnalytics } from "./data/analytics.js";
@@ -18,7 +19,7 @@ import { managerSystem, demoReply, errReply, managerNoteSystem, demoNoteReply, a
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-app.use(express.json());
+app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf; } })); // rawBody: webhook HMAC verification
 app.use(express.urlencoded({ extended: true }));
 
 const MODE = process.env.MODE || "mock";
@@ -57,9 +58,11 @@ app.get("/api/state", async (req, res) => {
   // Attempt live pulls for whichever integrations are connected; each returns
   // empty/null instantly when not ready, so mock mode stays fast.
   const settle = async (p, fb) => { try { return await p; } catch (e) { console.error(e.message); return fb; } };
+  // Short-TTL cache: /api/state is polled every 60s per open tab, and getComments
+  // alone is ~9 sequential Graph calls — uncached this exhausts IG rate limits.
   const [comments, igMsgs, published, insights] = await Promise.all([
-    settle(meta.getComments(), []), settle(meta.getMessages(), []),
-    settle(meta.getPublished(), []), settle(windsor.getInsights(), null)
+    settle(cached("comments", 240, () => meta.getComments()), []), settle(cached("igmsgs", 240, () => meta.getMessages()), []),
+    settle(cached("published", 120, () => meta.getPublished()), []), settle(cached("insights", 600, () => windsor.getInsights()), null)
   ]);
   const waMsgs = wa.getMessages();
   if (comments.length) state.comments = comments;
@@ -225,18 +228,31 @@ function applyOverride(q) {
   return { ...q, t: o.t ?? q.t, t2: o.t2 ?? q.t2, cta: o.cta ?? q.cta, cap: o.cap ?? q.cap, brief: o.brief ?? q.brief, ty: o.ty ?? q.ty, mediaUrl: o.mediaUrl ?? q.mediaUrl, images: (o.images && o.images.length) ? o.images : q.images, regenerated: true, regens: o.regens };
 }
 
-// Full queue = seed (July) + Claude-generated content (Aug+), override-merged.
-// Used for publishing.
+// Full queue = seed (July) + Claude-generated content (Aug+), override-merged,
+// with deleted posts EXCLUDED — a deleted post must never publish.
 function fullQueue() {
   const q = [...baseState().queue];
   const c = loadContent();
   if (c?.queue?.length) q.push(...c.queue);
-  return q.map(applyOverride);
+  const removed = new Set(store.getRemoved());
+  return q.filter((x) => !removed.has(x.id)).map(applyOverride);
 }
 
 // Public base URL for building absolute media links Instagram can fetch.
 const FALLBACK_BASE = "https://matjarlink-ops-production.up.railway.app";
 function publicBase(req) { return process.env.PUBLIC_BASE || (req ? `${req.protocol}://${req.get("host")}` : FALLBACK_BASE); }
+
+// TTL memo for expensive upstream pulls (Graph API etc). One in-flight promise
+// per key; result reused for ttlSec so polling tabs don't multiply API calls.
+const _memo = {};
+function cached(key, ttlSec, fn) {
+  const now = Date.now(), m = _memo[key];
+  if (m && now - m.at < ttlSec * 1000) return m.p;
+  const p = Promise.resolve().then(fn);
+  _memo[key] = { at: now, p };
+  p.catch(() => { if (_memo[key]?.p === p) delete _memo[key]; }); // don't cache failures
+  return p;
+}
 
 // Resolve a queue item to publish input. Priority: explicit images[]/mediaUrl,
 // else proxy the Drive design through our public /media/drive/<id> URL.
@@ -489,6 +505,8 @@ app.post("/api/publish", async (req, res) => {
   if (!item) return res.status(404).json({ ok: false, error: "post not found" });
   const input = resolveMedia(item, publicBase(req));
   if (!input) return res.status(400).json({ ok: false, error: "no media for this post — add a Drive file (shared publicly), mediaUrl, or images[]" });
+  if (publishingNow.has(id)) return res.status(409).json({ ok: false, error: "publish already in progress for this post" });
+  publishingNow.add(id);
   try {
     const result = await metaPublish.publish(input);
     store.markPublished(id, result);
@@ -496,7 +514,7 @@ app.post("/api/publish", async (req, res) => {
   } catch (e) {
     console.error("[publish]", e.message);
     res.status(500).json({ ok: false, error: e.message });
-  }
+  } finally { publishingNow.delete(id); }
 });
 
 // ── Re-publish ── clear a post's published flag so it can publish again ──
@@ -513,6 +531,9 @@ app.post("/api/republish", (req, res) => {
 const AUTO = () => (process.env.AUTO_PUBLISH || store.cfgGet("AUTO_PUBLISH")) === "on";
 function parseWhen(date) { const m = (date || "").match(/(\d{4}-\d{2}-\d{2})[^\d]+(\d{2}):(\d{2})/); return m ? new Date(`${m[1]}T${m[2]}:${m[3]}:00+04:00`) : null; } // Oman time (GST)
 const STALE_MS = 24 * 3600 * 1000; // don't auto-post backlog older than a day
+// Per-post in-flight lock shared by the scheduler AND manual publish — closes
+// the double-publish race (a slow reel upload spans multiple ticks/clicks).
+const publishingNow = new Set();
 let autoBusy = false; // serialize ticks: a slow publish (reel) can outlast the 60s
 // interval, and an overlapping tick would double-post before the first marks it.
 async function autoPublishTick() {
@@ -526,15 +547,22 @@ async function autoPublishTick() {
     // Silence = approval: publish at the scheduled time UNLESS there's an unresolved
     // objection (a note left without approval). Explicit approval also passes.
     const nt = notes[q.id] || {};
-    const held = nt.status !== "معتمد" && !!(nt.note && nt.note.trim());
+    const approved = nt.status === "معتمد";
+    const held = !approved && !!(nt.note && nt.note.trim());
+    // AI-generated posts (plan / ➕) need EXPLICIT approval — silence=consent
+    // applies only to content the owner has already seen (the seeded batch).
+    if (q.gen && !approved) continue;
     const when = parseWhen(q.date);
     if (held || !when) continue;
     const dueAgo = now - when.getTime();
     if (dueAgo < 0 || dueAgo > STALE_MS) continue; // not due yet, or too stale (publish manually)
     const input = resolveMedia(q, publicBase());
     if (!input) continue; // needs media
+    if (publishingNow.has(q.id)) continue; // a manual publish is already in flight
+    publishingNow.add(q.id);
     try { const r = await metaPublish.publish(input); store.markPublished(q.id, r); console.log(`[auto-publish] ${q.id} → ${r.permalink || r.id}`); }
     catch (e) { console.error(`[auto-publish] ${q.id}: ${e.message}`); }
+    finally { publishingNow.delete(q.id); }
     break; // at most one publish per tick — avoids simultaneous bursts
   }
   } finally { autoBusy = false; }
@@ -610,7 +638,18 @@ app.get("/webhook/whatsapp", (req, res) => {
   if (req.query["hub.verify_token"] === verify) return res.send(req.query["hub.challenge"]);
   res.sendStatus(403);
 });
-app.post("/webhook/whatsapp", (req, res) => { wa.ingestWebhook(req.body); res.sendStatus(200); });
+app.post("/webhook/whatsapp", (req, res) => {
+  // Verify Meta's HMAC signature when META_APP_SECRET is configured — otherwise
+  // anyone could POST forged "customer messages" into the inbox.
+  const secret = process.env.META_APP_SECRET || "";
+  if (secret) {
+    const sig = req.get("x-hub-signature-256") || "";
+    const expect = "sha256=" + crypto.createHmac("sha256", secret).update(req.rawBody || Buffer.alloc(0)).digest("hex");
+    const ok = sig.length === expect.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expect));
+    if (!ok) return res.sendStatus(403);
+  }
+  wa.ingestWebhook(req.body); res.sendStatus(200);
+});
 
 // ── Public media (Instagram pulls post media from these URLs) ───────
 app.use("/media", express.static(path.join(__dirname, "public", "media")));
