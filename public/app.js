@@ -366,8 +366,13 @@ function bindPipeline(list) {
   if (!list || !list.length) return;
   document.querySelectorAll(".ccard").forEach(c => c.onclick = () => {
     const idx = +c.dataset.idx;
-    if (idx === pf.focus) { const q = list[idx]; if (q.drive) openDrivePlay(q.drive, q.t, (q.ty || "").includes("ريل")); }
-    else setFocus(idx, list);
+    if (idx === pf.focus) {
+      const q = list[idx];
+      // open the SAME design shown on the card (carousel gallery / image / Drive)
+      if (q.images && q.images.length) openGallery(q.images, 0, q.t);
+      else if (q.mediaUrl) openImage(q.mediaUrl, q.t);
+      else if (q.drive) openDrivePlay(q.drive, q.t, (q.ty || "").includes("ريل"));
+    } else setFocus(idx, list);
   });
   document.querySelectorAll("[data-nav]").forEach(b => b.onclick = () => setFocus(pf.focus + (+b.dataset.nav), list));
   bindDetail(list);
@@ -380,7 +385,10 @@ function bindDetail(list) {
   host.querySelectorAll("[data-approve]").forEach(b => b.onclick = async () => { b.disabled = true; await postNote(b.dataset.approve, { id: b.dataset.approve, action: "approve" }); renderPipeline($("#content")); });
   host.querySelectorAll("[data-pub]").forEach(b => b.onclick = () => publishPost(b.dataset.pub, b));
   host.querySelectorAll("[data-play2]").forEach(b => b.onclick = () => openDrivePlay(b.dataset.play2, host.querySelector(".ptitle")?.textContent || "", b.dataset.reel === "1"));
-  host.querySelectorAll("[data-img]").forEach(b => b.onclick = () => openImage(b.dataset.img, b.dataset.t));
+  host.querySelectorAll(".slidethumb").forEach((b, i) => b.onclick = () => {
+    const imgs = [...host.querySelectorAll(".slidethumb")].map(x => x.dataset.img);
+    openGallery(imgs, i, host.querySelector(".ptitle")?.textContent || "");
+  });
   host.querySelectorAll("[data-regen]").forEach(b => b.onclick = () => regenPost(b.dataset.regen, b));
   host.querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
     if (b.dataset.armed) return delPost(b.dataset.del);
@@ -504,14 +512,33 @@ function openDrivePlay(driveId, title, isReel) {
   $("#mvhint").innerHTML = `<a class="link" target="_blank" href="https://drive.google.com/file/d/${driveId}/view">${T("openDrive")}</a>`;
   $("#mv").classList.add("on");
 }
-function openImage(url, title) {
-  $("#mvtitle").textContent = title || "";
-  const f = $("#mvframe"); f.style.aspectRatio = ""; f.classList.add("imgfit"); // natural aspect, no 9:16 letterbox
-  f.innerHTML = `<img src="${url}">`;
-  $("#mvhint").innerHTML = "";
-  $("#mv").classList.add("on");
+// Image lightbox / carousel gallery with ‹ › navigation between slides.
+let galImgs = [], galIdx = 0, galTitle = "";
+function openImage(url, title) { openGallery([url], 0, title); }
+function openGallery(images, idx, title) {
+  galImgs = (images || []).filter(Boolean); galIdx = idx || 0; galTitle = title || "";
+  if (!galImgs.length) return;
+  renderGallery(); $("#mv").classList.add("on");
 }
-function closeMv() { $("#mv").classList.remove("on"); const f = $("#mvframe"); f.innerHTML = ""; f.classList.remove("imgfit"); f.style.aspectRatio = ""; }
+function renderGallery() {
+  const f = $("#mvframe"); f.style.aspectRatio = ""; f.classList.add("imgfit");
+  const multi = galImgs.length > 1;
+  $("#mvtitle").textContent = galTitle + (multi ? ` — ${galIdx + 1}/${galImgs.length}` : "");
+  f.innerHTML = `<img src="${galImgs[galIdx]}">` + (multi ? `<button class="galnav gprev" aria-label="prev">‹</button><button class="galnav gnext" aria-label="next">›</button>` : "");
+  $("#mvhint").innerHTML = "";
+  if (multi) {
+    f.querySelector(".gprev").onclick = (e) => { e.stopPropagation(); galStep(-1); };
+    f.querySelector(".gnext").onclick = (e) => { e.stopPropagation(); galStep(1); };
+  }
+}
+function galStep(d) { galIdx = (galIdx + d + galImgs.length) % galImgs.length; renderGallery(); }
+function closeMv() { $("#mv").classList.remove("on"); const f = $("#mvframe"); f.innerHTML = ""; f.classList.remove("imgfit"); f.style.aspectRatio = ""; galImgs = []; }
+document.addEventListener("keydown", (e) => {
+  if (!$("#mv").classList.contains("on")) return;
+  if (e.key === "Escape") closeMv();
+  else if (galImgs.length > 1 && e.key === "ArrowRight") galStep(1);
+  else if (galImgs.length > 1 && e.key === "ArrowLeft") galStep(-1);
+});
 
 // ── campaigns ─────────────────────────────────────────────────────
 const campView = () => `<div class="card" style="text-align:center;padding:1.4rem"><div style="font-weight:800;color:var(--plum)">${T("campNone")}</div>
