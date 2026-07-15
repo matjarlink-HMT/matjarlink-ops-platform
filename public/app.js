@@ -285,16 +285,25 @@ function pipeCarousel(list) {
     <div class="carnav"><button class="carbtn" data-nav="-1">‹</button><span class="cardot">${pf.focus + 1} / ${list.length}</span><button class="carbtn" data-nav="1">›</button></div>
     <div class="cdetail" id="cdetail">${carouselDetail(list[pf.focus])}</div>`;
 }
+// Authoritative slide list for a post. Original professional Drive carousels
+// (driveSlides) win over any generated override; then generated images[].
+function slidesOf(q) {
+  if (q.driveSlides && q.driveSlides.length) return q.driveSlides.map((id) => `/media/drive/${id}`);
+  if (q.images && q.images.length) return q.images;
+  return [];
+}
 function carouselCard(q, i) {
   const isReel = (q.ty || "").includes("ريل");
   const grad = `linear-gradient(160deg,${q.tyc},${q.tyc}bb)`;
+  const slides = slidesOf(q);
   let inner;
-  if (q.mediaUrl) inner = `<img class="cmedia" loading="lazy" src="${q.mediaUrl}" alt="" onerror="this.remove()">`;
+  if (slides.length) inner = `<img class="cmedia" loading="lazy" src="${slides[0]}" alt="" onerror="this.remove()">`;
+  else if (q.mediaUrl) inner = `<img class="cmedia" loading="lazy" src="${q.mediaUrl}" alt="" onerror="this.remove()">`;
   else if (q.drive && !isReel) inner = `<img class="cmedia" loading="lazy" src="/media/drive/${q.drive}" alt="" onerror="this.remove()">`;
   else if (q.drive && isReel) inner = `<span class="cplay">▶</span>`;
   else inner = `<span class="cph">✎</span>`;
   return `<div class="ccard ${i === pf.focus ? "focus" : ""}" data-idx="${i}" style="background:${grad}">
-    ${inner}<span class="ctag">${q.id}${q.gen ? " ✨" : ""}</span>${q.images && q.images.length > 1 ? `<span class="cslides">▦ ${q.images.length}</span>` : ""}
+    ${inner}<span class="ctag">${q.id}${q.gen ? " ✨" : ""}</span>${slides.length > 1 ? `<span class="cslides">▦ ${slides.length}</span>` : ""}
     <div class="cclabel"><div class="cct">${escapeHtml(q.t.slice(0, 34))}</div><div class="ccm">${chan(q.ch)} ${q.ty} · ${q.date}</div></div></div>`;
 }
 const carouselDetail = (q) => q ? pdetailMain(q) : "";
@@ -320,7 +329,7 @@ function pdetailMain(q) {
       <div class="pmeta">${chan(q.ch)} ${q.ty} · <b>${q.date}</b></div>
       <div class="pcdrow">${cdHtml}<div class="pbadges">${badges}${q.regens ? `<span class="pill p-idle">♻️ ${q.regens}</span>` : ""}</div></div>
       <div class="pcap">${escapeHtml((q.cap || "").slice(0, 240))}${(q.cap || "").length > 240 ? "…" : ""}</div>
-      ${q.images && q.images.length > 1 ? `<div class="slideshdr">${T("slides_label")} (${q.images.length})</div><div class="slides">${q.images.map((u, idx) => `<img class="slidethumb" src="${u}" loading="lazy" data-img="${u}" data-t="${idx === 0 ? T("cover") : T("slide") + " " + idx}" title="${idx === 0 ? T("cover") : T("slide") + " " + idx}">`).join("")}</div>` : ""}
+      ${(() => { const sl = slidesOf(q); return sl.length > 1 ? `<div class="slideshdr">${T("slides_label")} (${sl.length})</div><div class="slides">${sl.map((u, idx) => `<img class="slidethumb" src="${u}" loading="lazy" data-img="${u}" data-t="${idx === 0 ? T("cover") : T("slide") + " " + idx}" title="${idx === 0 ? T("cover") : T("slide") + " " + idx}">`).join("")}</div>` : ""; })()}
       ${threadHtml}
       <div class="pnotebar"><input class="pnote" data-id="${q.id}" placeholder="${T("note_ask_ph")}" autocomplete="off"><button class="btn sm askbtn" data-ask="${q.id}">${T("note_ask")}</button></div>
       <div class="pactions">
@@ -369,7 +378,8 @@ function bindPipeline(list) {
     if (idx === pf.focus) {
       const q = list[idx];
       // open the SAME design shown on the card (carousel gallery / image / Drive)
-      if (q.images && q.images.length) openGallery(q.images, 0, q.t);
+      const slides = slidesOf(q);
+      if (slides.length) openGallery(slides, 0, q.t);
       else if (q.mediaUrl) openImage(q.mediaUrl, q.t);
       else if (q.drive) openDrivePlay(q.drive, q.t, (q.ty || "").includes("ريل"));
     } else setFocus(idx, list);

@@ -166,6 +166,8 @@ function publicBase(req) { return process.env.PUBLIC_BASE || (req ? `${req.proto
 function resolveMedia(q, base) {
   const isReel = (q.ty || "").includes("ريل");
   const cap = q.cap || q.t || "";
+  // Original professional Drive carousels win — publish the real slides in order.
+  if (q.driveSlides?.length) return { images: q.driveSlides.map((id) => `${base}/media/drive/${id}`), caption: cap, kind: q.driveSlides.length > 1 ? "carousel" : "image" };
   if (q.images?.length) return { images: q.images.map((u) => (u.startsWith("/") ? `${base}${u}` : u)), caption: cap, kind: q.images.length > 1 ? "carousel" : "image" };
   if (q.mediaUrl) { const url = q.mediaUrl.startsWith("/") ? `${base}${q.mediaUrl}` : q.mediaUrl; const isDesign = q.mediaUrl.includes("/media/design/"); return { mediaUrl: url, caption: cap, kind: (isReel && !isDesign) ? "reel" : "image" }; }
   if (q.drive) return { mediaUrl: `${base}/media/drive/${q.drive}?type=${isReel ? "video" : "image"}`, caption: cap, kind: isReel ? "reel" : "image" };
