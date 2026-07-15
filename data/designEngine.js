@@ -26,6 +26,18 @@ async function getLogo() {
   if (LOGO === undefined) { try { LOGO = await loadImage(path.join(__dirname, "..", "public", "logo-full.png")); } catch (e) { LOGO = null; } }
   return LOGO;
 }
+// White (or any-color) silhouette of the logo lockup — for dark reveal slides.
+let LOGO_TINTS = {};
+async function getTintedLogo(color) {
+  if (LOGO_TINTS[color] !== undefined) return LOGO_TINTS[color];
+  const img = await getLogo();
+  if (!img) return (LOGO_TINTS[color] = null);
+  const c = createCanvas(img.width, img.height), x = c.getContext("2d");
+  x.drawImage(img, 0, 0);
+  x.globalCompositeOperation = "source-in";
+  x.fillStyle = color; x.fillRect(0, 0, img.width, img.height);
+  return (LOGO_TINTS[color] = c);
+}
 
 // ── drawing helpers ──────────────────────────────────────────────────────────
 function pill(ctx, cx, cy, len, thick, angleDeg, color, alpha = 1) {
@@ -69,10 +81,12 @@ function drawLogo(ctx, img) {
   if (img) ctx.drawImage(img, 78, 46, 250, 250); // logo-full.png is a padded square lockup
 }
 // Branded footer: @matjarlink · IG glyph · phone · WhatsApp glyph (centered).
-function drawFooter(ctx, W, H) {
+// light=true renders the inverted (dark background) variant of the reveal slide.
+function drawFooter(ctx, W, H, light = false) {
+  const TXT = light ? "#FBE3C8" : PLUM, WA = light ? ORANGE : MAGENTA;
   const y = H - 96;
   ctx.textAlign = "left"; ctx.direction = "ltr";
-  ctx.font = "42px TajawalXB"; ctx.fillStyle = PLUM;
+  ctx.font = "42px TajawalXB"; ctx.fillStyle = TXT;
   const handle = "@matjarlink", phone = "97426620";
   const hw = ctx.measureText(handle).width, pw = ctx.measureText(phone).width;
   const igS = 44, waS = 44, gap = 22, dot = 8;
@@ -80,10 +94,10 @@ function drawFooter(ctx, W, H) {
   let x = (W - total) / 2;
   ctx.fillText(handle, x, y + 30); x += hw + gap;
   drawInstagram(ctx, x, y, igS); x += igS + gap;
-  ctx.fillStyle = PINK; ctx.beginPath(); ctx.arc(x + dot / 2, y + igS / 2, dot / 2, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = light ? "#ffffff55" : PINK; ctx.beginPath(); ctx.arc(x + dot / 2, y + igS / 2, dot / 2, 0, Math.PI * 2); ctx.fill();
   x += dot + gap;
-  ctx.fillStyle = PLUM; ctx.fillText(phone, x, y + 30); x += pw + gap;
-  drawWhatsApp(ctx, x, y, waS);
+  ctx.fillStyle = light ? "#fff" : PLUM; ctx.fillText(phone, x, y + 30); x += pw + gap;
+  drawWhatsApp(ctx, x, y, waS, WA);
   ctx.direction = "rtl";
 }
 // Accurate Instagram mark: rounded-square camera body, lens ring, flash dot.
@@ -93,10 +107,10 @@ function drawInstagram(ctx, x, y, s) {
   ctx.beginPath(); ctx.arc(x + s / 2, y + s / 2, s * 0.215, 0, Math.PI * 2); ctx.stroke();
   ctx.fillStyle = ORANGE; ctx.beginPath(); ctx.arc(x + s * 0.75, y + s * 0.25, s * 0.062, 0, Math.PI * 2); ctx.fill();
 }
-// Accurate WhatsApp mark: magenta bubble with a bottom-left tail + white handset.
-function drawWhatsApp(ctx, x, y, s) {
+// Accurate WhatsApp mark: brand bubble with a bottom-left tail + white handset.
+function drawWhatsApp(ctx, x, y, s, color = MAGENTA) {
   const cx = x + s / 2, cy = y + s / 2, r = s / 2;
-  ctx.fillStyle = MAGENTA;
+  ctx.fillStyle = color;
   ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
   // speech-bubble tail (bottom-left)
   ctx.beginPath(); ctx.moveTo(cx - r * 0.62, cy + r * 0.72); ctx.lineTo(cx - r * 0.34, cy + r * 0.10); ctx.lineTo(cx + r * 0.06, cy + r * 0.58); ctx.closePath(); ctx.fill();
@@ -148,6 +162,36 @@ export async function renderDesign({ headline = "", headline2 = "", cta = "", bo
   const W = 1080, H = 1350, CX = W / 2;
   const cv = createCanvas(W, H);
   const ctx = cv.getContext("2d");
+
+  // ── reveal (الشريحة الختامية) ── inverted brand slide like the originals:
+  // plum bg, white logo, white question + cream bridge + orange solution,
+  // orange-outline «قريبًا في سلطنة عُمان» pill, light footer.
+  if (role === "reveal") {
+    ctx.fillStyle = MAGENTA; ctx.fillRect(0, 0, W, H);
+    pill(ctx, 990, 90, 420, 78, -33, ORANGE);
+    pill(ctx, 880, 240, 300, 70, -33, "#7A0F45");
+    pill(ctx, 60, 1030, 330, 64, -33, "#7A0F45");
+    pill(ctx, 130, 1150, 300, 64, -33, ORANGE);
+    const wl = await getTintedLogo("#ffffff");
+    if (wl) ctx.drawImage(wl, CX - 210, 60, 420, 420);
+    ctx.textAlign = "center"; ctx.direction = "rtl";
+    ctx.fillStyle = "#fff";
+    let size = 74; let lines = wrapLines((ctx.font = size + "px TajawalXB", ctx), headline, W - 220);
+    while (lines.length > 2 && size > 52) { size -= 6; lines = wrapLines((ctx.font = size + "px TajawalXB", ctx), headline, W - 220); }
+    let y = 640;
+    for (const ln of lines.slice(0, 3)) { ctx.fillText(ln, CX, y); y += size * 1.3; }
+    if (body) { ctx.fillStyle = CREAM; ctx.font = "42px Tajawal"; for (const ln of wrapLines(ctx, body, W - 240).slice(0, 2)) { ctx.fillText(ln, CX, y + 14); y += 66; } y += 22; }
+    if (headline2) { ctx.fillStyle = ORANGE; ctx.font = "64px TajawalXB"; for (const ln of wrapLines(ctx, headline2, W - 200).slice(0, 2)) { ctx.fillText(ln, CX, y + 34); y += 86; } y += 20; }
+    const pillTxt = cta || "قريبًا في سلطنة عُمان";
+    ctx.font = "46px TajawalXB";
+    const tw = ctx.measureText(pillTxt).width, pw2 = tw + 130, ph2 = 96, py = Math.max(y + 30, 940);
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 5; ctx.beginPath(); ctx.roundRect(CX - pw2 / 2 - 7, py - 7, pw2 + 14, ph2 + 14, (ph2 + 14) / 2); ctx.stroke();
+    ctx.fillStyle = ORANGE; ctx.beginPath(); ctx.roundRect(CX - pw2 / 2, py, pw2, ph2, ph2 / 2); ctx.fill();
+    ctx.fillStyle = "#fff"; ctx.fillText(pillTxt, CX, py + 62);
+    drawFooter(ctx, W, H, true);
+    return cv.toBuffer("image/png");
+  }
+
   ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, W, H);
   drawFrame(ctx, W, H);
   drawLogo(ctx, await getLogo());

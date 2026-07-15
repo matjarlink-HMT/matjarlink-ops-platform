@@ -268,7 +268,13 @@ async function renderAndSaveDesign(item, content = {}) {
   if (isCarousel) {
     const n = slides.length;
     const bufs = [await renderDesign({ role: "cover", headline, headline2, cta, kicker, carousel: true, photo })]; // cover
-    for (let i = 0; i < n; i++) bufs.push(await renderDesign({ role: "slide", headline: slides[i].t, body: slides[i].body, index: i + 1, carousel: true, last: i === n - 1 }));
+    for (let i = 0; i < n; i++) {
+      const s = slides[i], isLast = i === n - 1;
+      // the final slide renders as the inverted brand "reveal" (like the originals)
+      bufs.push(isLast
+        ? await renderDesign({ role: "reveal", headline: s.t, body: s.body, headline2: s.t2 || "", cta: s.cta || "" })
+        : await renderDesign({ role: "slide", headline: s.t, body: s.body, index: i + 1, carousel: true }));
+    }
     const images = [];
     for (let i = 0; i < bufs.length; i++) { save(`${item.id}-${i}`, bufs[i]); images.push(`/media/design/${item.id}-${i}?v=${ts}`); }
     return { mediaUrl: images[0], images };
