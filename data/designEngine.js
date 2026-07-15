@@ -79,21 +79,38 @@ function drawFooter(ctx, W, H) {
   const total = hw + gap + igS + gap + dot + gap + pw + gap + waS;
   let x = (W - total) / 2;
   ctx.fillText(handle, x, y + 30); x += hw + gap;
-  // Instagram glyph (monoline rounded square + lens + dot)
-  ctx.strokeStyle = ORANGE; ctx.lineWidth = 4.2;
-  ctx.beginPath(); ctx.roundRect(x, y, igS, igS, 13); ctx.stroke();
-  ctx.beginPath(); ctx.arc(x + igS / 2, y + igS / 2, igS * 0.24, 0, Math.PI * 2); ctx.stroke();
-  ctx.fillStyle = ORANGE; ctx.beginPath(); ctx.arc(x + igS * 0.76, y + igS * 0.24, 3.2, 0, Math.PI * 2); ctx.fill();
-  x += igS + gap;
+  drawInstagram(ctx, x, y, igS); x += igS + gap;
   ctx.fillStyle = PINK; ctx.beginPath(); ctx.arc(x + dot / 2, y + igS / 2, dot / 2, 0, Math.PI * 2); ctx.fill();
   x += dot + gap;
   ctx.fillStyle = PLUM; ctx.fillText(phone, x, y + 30); x += pw + gap;
-  // WhatsApp glyph (magenta disc + white handset)
-  ctx.fillStyle = MAGENTA; ctx.beginPath(); ctx.arc(x + waS / 2, y + waS / 2, waS / 2, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = "#fff"; ctx.lineWidth = 4; ctx.lineCap = "round";
-  ctx.beginPath(); ctx.arc(x + waS / 2, y + waS / 2, waS * 0.26, Math.PI * 0.15, Math.PI * 1.15); ctx.stroke();
-  ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(x + waS * 0.62, y + waS * 0.66, 4, 0, Math.PI * 2); ctx.fill();
-  ctx.lineCap = "butt"; ctx.direction = "rtl";
+  drawWhatsApp(ctx, x, y, waS);
+  ctx.direction = "rtl";
+}
+// Accurate Instagram mark: rounded-square camera body, lens ring, flash dot.
+function drawInstagram(ctx, x, y, s) {
+  ctx.strokeStyle = ORANGE; ctx.lineWidth = s * 0.095; ctx.lineJoin = "round"; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.roundRect(x + s * 0.06, y + s * 0.06, s * 0.88, s * 0.88, s * 0.30); ctx.stroke();
+  ctx.beginPath(); ctx.arc(x + s / 2, y + s / 2, s * 0.215, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = ORANGE; ctx.beginPath(); ctx.arc(x + s * 0.75, y + s * 0.25, s * 0.062, 0, Math.PI * 2); ctx.fill();
+}
+// Accurate WhatsApp mark: magenta bubble with a bottom-left tail + white handset.
+function drawWhatsApp(ctx, x, y, s) {
+  const cx = x + s / 2, cy = y + s / 2, r = s / 2;
+  ctx.fillStyle = MAGENTA;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  // speech-bubble tail (bottom-left)
+  ctx.beginPath(); ctx.moveTo(cx - r * 0.62, cy + r * 0.72); ctx.lineTo(cx - r * 0.34, cy + r * 0.10); ctx.lineTo(cx + r * 0.06, cy + r * 0.58); ctx.closePath(); ctx.fill();
+  // handset: a curved receiver (crescent) with rounded earpiece + mouthpiece
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(Math.PI * 0.25);
+  ctx.fillStyle = "#fff";
+  const R = s * 0.31, ri = s * 0.175, mid = (R + ri) / 2, a1 = Math.PI * 0.12, a2 = Math.PI * 0.88;
+  ctx.beginPath();
+  ctx.arc(0, 0, R, a1, a2, false);
+  ctx.arc(0, 0, ri, a2, a1, true);
+  ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.arc(Math.cos(a1) * mid, Math.sin(a1) * mid, s * 0.115, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(Math.cos(a2) * mid, Math.sin(a2) * mid, s * 0.115, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
 }
 // "اسحب لليسار" swipe hint with an orange triangle, centered.
 function drawSwipe(ctx, W, y) {
