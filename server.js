@@ -79,11 +79,7 @@ app.get("/api/state", async (req, res) => {
   state.autoPublish = (process.env.AUTO_PUBLISH || store.cfgGet("AUTO_PUBLISH")) === "on";
   state.publishedLog = store.getPublished();
   // Apply Claude-regenerated content overrides onto the queue.
-  const ov = store.getOverrides();
-  state.queue = state.queue.map((q) => {
-    const o = ov[q.id]; if (!o) return q;
-    return { ...q, t: o.t ?? q.t, t2: o.t2 ?? q.t2, cta: o.cta ?? q.cta, cap: o.cap ?? q.cap, brief: o.brief ?? q.brief, ty: o.ty ?? q.ty, mediaUrl: o.mediaUrl ?? q.mediaUrl, images: (o.images && o.images.length) ? o.images : q.images, regenerated: true, regens: o.regens };
-  });
+  state.queue = state.queue.map(applyOverride);
   // Hide deleted posts.
   const removed = new Set(store.getRemoved());
   if (removed.size) state.queue = state.queue.filter((q) => !removed.has(q.id));
@@ -221,12 +217,21 @@ app.post("/api/delete-post", (req, res) => {
   res.json({ ok: true, removed: store.getRemoved() });
 });
 
-// Full queue = seed (July) + Claude-generated content (Aug+). Used for publishing.
+// Merge a queue item with its owner-approved regeneration override. Publishing
+// MUST see the same merged item the dashboard shows — otherwise a regenerated
+// post would silently publish its OLD copy/design.
+function applyOverride(q) {
+  const o = store.getOverrides()[q.id]; if (!o) return q;
+  return { ...q, t: o.t ?? q.t, t2: o.t2 ?? q.t2, cta: o.cta ?? q.cta, cap: o.cap ?? q.cap, brief: o.brief ?? q.brief, ty: o.ty ?? q.ty, mediaUrl: o.mediaUrl ?? q.mediaUrl, images: (o.images && o.images.length) ? o.images : q.images, regenerated: true, regens: o.regens };
+}
+
+// Full queue = seed (July) + Claude-generated content (Aug+), override-merged.
+// Used for publishing.
 function fullQueue() {
   const q = [...baseState().queue];
   const c = loadContent();
   if (c?.queue?.length) q.push(...c.queue);
-  return q;
+  return q.map(applyOverride);
 }
 
 // Public base URL for building absolute media links Instagram can fetch.
@@ -238,9 +243,12 @@ function publicBase(req) { return process.env.PUBLIC_BASE || (req ? `${req.proto
 function resolveMedia(q, base) {
   const isReel = (q.ty || "").includes("ريل");
   const cap = q.cap || q.t || "";
-  // Original professional Drive carousels win — publish the real slides in order.
+  // Original professional Drive carousels win — unless the owner regenerated
+  // the post (fresh generated slides then represent their explicit request).
+  const genImgs = q.images?.length ? q.images.map((u) => (u.startsWith("/") ? `${base}${u}` : u)) : null;
+  if (q.regenerated && genImgs) return { images: genImgs, caption: cap, kind: genImgs.length > 1 ? "carousel" : "image" };
   if (q.driveSlides?.length) return { images: q.driveSlides.map((id) => `${base}/media/drive/${id}`), caption: cap, kind: q.driveSlides.length > 1 ? "carousel" : "image" };
-  if (q.images?.length) return { images: q.images.map((u) => (u.startsWith("/") ? `${base}${u}` : u)), caption: cap, kind: q.images.length > 1 ? "carousel" : "image" };
+  if (genImgs) return { images: genImgs, caption: cap, kind: genImgs.length > 1 ? "carousel" : "image" };
   if (q.mediaUrl) { const url = q.mediaUrl.startsWith("/") ? `${base}${q.mediaUrl}` : q.mediaUrl; const isVideo = q.mediaUrl.includes(".mp4"); const isDesign = q.mediaUrl.includes("/media/design/"); return { mediaUrl: url, caption: cap, kind: (isReel && (isVideo || !isDesign)) ? "reel" : "image" }; }
   if (q.drive) return { mediaUrl: `${base}/media/drive/${q.drive}?type=${isReel ? "video" : "image"}`, caption: cap, kind: isReel ? "reel" : "image" };
   return null;

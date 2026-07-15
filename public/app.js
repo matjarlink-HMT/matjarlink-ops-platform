@@ -380,11 +380,13 @@ function pipeCarousel(list) {
     <div class="cdetail" id="cdetail">${carouselDetail(list[pf.focus])}</div>`;
 }
 // Authoritative slide list for a post. Original professional Drive carousels
-// (driveSlides) win over any generated override; then generated images[].
+// (driveSlides) win — unless the owner explicitly regenerated the post
+// (regenerated + fresh images[]), in which case the new design is shown.
 function slidesOf(q) {
+  const gen = q.images && q.images.length ? q.images : null;
+  if (q.regenerated && gen) return gen;
   if (q.driveSlides && q.driveSlides.length) return q.driveSlides.map((id) => `/media/drive/${id}`);
-  if (q.images && q.images.length) return q.images;
-  return [];
+  return gen || [];
 }
 const isVideoUrl = (u) => typeof u === "string" && u.split("?")[0].endsWith(".mp4");
 function carouselCard(q, i) {
