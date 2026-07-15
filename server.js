@@ -114,15 +114,20 @@ app.post("/api/regenerate", async (req, res) => {
   try { out = await generator.regeneratePost({ ...item, ...(store.getOverrides()[id] || {}) }, notes, lang || "ar"); }
   catch (e) { console.error("[regenerate]", e.message); return res.status(500).json({ ok: false, error: e.message }); }
   if (!out) return res.status(502).json({ ok: false, error: "generation failed" });
-  // Render a fresh on-brand design (photo/carousel slides when relevant) from the new content.
-  let design;
-  try { design = await renderAndSaveDesign(item, out); }
-  catch (e) { console.error("[design]", e.message); }
+  // Reels stay videos: regenerate the copy only — never replace the video with a still.
+  const isReel = (item.ty || "").includes("ريل");
+  let design = null;
+  if (!isReel) {
+    try { design = await renderAndSaveDesign(item, out); }
+    catch (e) { console.error("[design]", e.message); }
+  }
   const patch = { t: out.t, cap: out.cap, brief: out.brief, photoQuery: out.photo || "", slides: out.slides || [] };
-  if (design) { patch.mediaUrl = design.mediaUrl; patch.images = design.images || []; }
+  if (isReel) { patch.mediaUrl = null; patch.images = []; } // revert any earlier still back to the reel video
+  else if (design) { patch.mediaUrl = design.mediaUrl; patch.images = design.images || []; }
   const saved = store.setOverride(id, patch);
   // Record CAIMO's action in the post thread so the owner sees it happened.
-  store.addPostNote(id, "manager", `♻️ أعدتُ توليد المنشور حسب ملاحظتك: «${out.t}»${mediaUrl ? " — وصمّمتُ صورة جديدة بهوية العلامة" : ""}.`);
+  const madeDesign = !!(design && design.mediaUrl);
+  store.addPostNote(id, "manager", `♻️ أعدتُ توليد ${isReel ? "نص الريل" : "المنشور"} حسب ملاحظتك: «${out.t}»${madeDesign ? " — وصمّمتُ صورة جديدة بهوية العلامة" : ""}.`);
   res.json({ ok: true, override: saved, thread: store.getPostThread(id) });
 });
 
