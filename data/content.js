@@ -28,8 +28,11 @@ export function loadContent() {
 
 export function saveContent(data) {
   cache = data;
-  try { fs.writeFileSync(FILE, JSON.stringify(data, null, 2)); return true; }
-  catch (e) { console.error("[content] save failed:", e.message); return false; }
+  try {
+    const fd = fs.openSync(FILE, "w"); // fsync so generated posts survive a Railway redeploy
+    try { fs.writeSync(fd, JSON.stringify(data, null, 2)); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    return true;
+  } catch (e) { console.error("[content] save failed:", e.message); return false; }
 }
 
 // Append a generated post to the queue (dedup by id). Returns the saved doc.

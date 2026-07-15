@@ -182,7 +182,8 @@ async function renderAndSaveDesign(item, content = {}) {
   if (query) { try { photo = await fetchPhoto(query); } catch (e) { console.error("[pexels]", e.message); } }
   const png = await renderDesign({ headline: content.t || item.t || "", tag: item.ty || "قريبًا", accent: item.tyc || "#E8890F", photo });
   const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, item.id + ".png"), png);
+  const fd = fs.openSync(path.join(dir, item.id + ".png"), "w"); // fsync so the design survives a redeploy
+  try { fs.writeSync(fd, png); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
   return `/media/design/${item.id}?v=${Date.now()}`;
 }
 app.get("/media/design/:id", (req, res) => {
