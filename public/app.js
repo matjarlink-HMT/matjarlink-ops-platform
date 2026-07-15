@@ -108,7 +108,12 @@ function buildNav() {
 // ── router ────────────────────────────────────────────────────────
 function render(p) {
   const C = $("#content");
-  if (p === "overview") C.innerHTML = ovv();
+  if (p === "overview") {
+    C.innerHTML = ovv();
+    C.querySelectorAll("[data-goview]").forEach(b => b.onclick = () => {
+      const t = document.querySelector(`#nav button[data-go="${b.dataset.goview}"]`); if (t) t.click();
+    });
+  }
   else if (p === "agents") { C.innerHTML = `<div class="note-info">🚀 ${T("agent_improve_hint")}</div><div class="grid g3">${S.agents.map((a, i) => agentCard(a, i)).join("")}</div>`; bindAgents(); }
   else if (p === "needs") C.innerHTML = `<div class="grid g2">${S.needs.map(needCard).join("")}</div>`;
   else if (p === "pipeline") renderPipeline(C);
@@ -294,6 +299,30 @@ async function activateConn(key) {
 }
 
 // ── dashboard (overview) ──────────────────────────────────────────
+// Morning brief — the one card that answers "what happens today, what needs me?"
+function briefCard() {
+  const q = S.queue || [], notes = S.notes || {}, pubLog = S.publishedLog || {};
+  const omanNow = new Date(Date.now() + (4 * 60 + new Date().getTimezoneOffset()) * 60000);
+  const dstr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const today = dstr(omanNow), yesterday = dstr(new Date(omanNow.getTime() - 86400000));
+  const todays = q.filter(p => (p.date || "").startsWith(today) && !pubLog[p.id]);
+  const pubYest = q.filter(p => pubLog[p.id] && (pubLog[p.id].at || "").slice(0, 10) === yesterday);
+  const genHold = q.filter(p => p.gen && !pubLog[p.id] && (notes[p.id] || {}).status !== "معتمد").length;
+  const held = q.filter(p => !pubLog[p.id] && (notes[p.id] || {}).status !== "معتمد" && ((notes[p.id] || {}).note || "").trim()).length;
+  const newC = (S.comments || []).length, newM = (S.messages || []).filter(m => m.sug !== "").length;
+  const lines = [];
+  if (todays.length) lines.push(`📤 ${T("brief_today")}: ${todays.map(p => `<b>${escapeHtml(p.t)}</b> (${p.date.split("·")[1] || ""})`).join("، ")}`);
+  else lines.push(`🍃 ${T("brief_none")}`);
+  if (pubYest.length) lines.push(`✅ ${T("brief_yest")}: ${pubYest.map(p => pubLog[p.id].permalink ? `<a class="link" target="_blank" href="${pubLog[p.id].permalink}">${escapeHtml(p.t)} ↗</a>` : escapeHtml(p.t)).join("، ")}`);
+  if (genHold) lines.push(`✋ <b>${genHold}</b> ${T("brief_genhold")}`);
+  if (held) lines.push(`✎ <b>${held}</b> ${T("brief_held")}`);
+  if (newC || newM) lines.push(`💬 ${newC} ${T("nav_comments")} · ✉ ${newM} ${T("nav_messages")}`);
+  return `<div class="card brief"><div class="sec-h"><h2>☀️ ${T("brief_title")}</h2><span class="hint">${today}</span></div>
+    <div class="brieflines">${lines.map(l => `<div class="bl">${l}</div>`).join("")}</div>
+    <div style="display:flex;gap:.5rem;margin-top:.7rem;flex-wrap:wrap">
+      <button class="btn sm" data-goview="pipeline">📋 ${T("brief_review")}</button>
+      <button class="btn ghost sm" data-goview="plan">🗓 ${T("nav_plan")}</button></div></div>`;
+}
 function ovv() {
   const labels = [T("kpi_agents"), T("kpi_queue"), T("kpi_assets"), T("kpi_followers")];
   const k = S.kpis.map((x, i) => `<div class="card kpi"><span class="n">${x[0]}</span><span class="l">${labels[i]}</span><span class="d">${pill([x[2], x[3]])}</span></div>`).join("");
@@ -320,7 +349,7 @@ function ovv() {
   const sched = `<div class="card"><div class="sec-h"><h2>${T("dash_upcoming")}</h2></div>
     <div class="agenda">${up.map(x => `<div class="agrow"><span class="agd">${x.date}</span><span class="agc">${chan(x.ch)}</span><span class="agt">${escapeHtml(x.t)}</span>${((S.notes && S.notes[x.id]) || {}).status === "معتمد" ? `<span class="pill p-ok">✓</span>` : `<span class="pill p-warn">${T("s_review")}</span>`}</div>`).join("") || `<div class="mut">—</div>`}</div></div>`;
   const cmp = (A && A.platforms) ? `<div class="card"><div class="sec-h"><h2>${T("comparison")}</h2></div>${compareBars()}</div>` : "";
-  return `<div class="grid g4">${k}</div>
+  return `${briefCard()}<div class="grid g4" style="margin-top:1rem">${k}</div>
     <div class="grid g2" style="margin-top:1rem">${pipeHealth}${trend}</div>
     <div class="grid g2" style="margin-top:1rem">${sched}${ins}</div>
     <div style="margin-top:1rem">${cmp}</div>`;
