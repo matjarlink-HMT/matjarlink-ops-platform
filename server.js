@@ -176,13 +176,24 @@ app.post("/api/apply-hook", async (req, res) => {
   if (!item) return res.status(404).json({ ok: false, error: "post not found" });
   const merged = { ...item, t: String(hook).trim() };
   const isReel = (item.ty || "").includes("ريل");
-  const patch = { t: merged.t };
+  const hasPro = !!item.drive || (item.driveSlides && item.driveSlides.length); // professional July design
+  const patch = { t: merged.t, cap: merged.t };
   try {
-    if (!isReel) { const d = await renderAndSaveDesign(merged, merged); patch.mediaUrl = d.mediaUrl; patch.images = d.images || []; }
+    // Only (re)render a generated design when there's no professional design to
+    // preserve — a July post keeps its Drive artwork; we just update the copy.
+    if (!isReel && !hasPro) { const d = await renderAndSaveDesign(merged, merged); patch.mediaUrl = d.mediaUrl; patch.images = d.images || []; }
   } catch (e) { console.error("[apply-hook design]", e.message); }
   store.addHookPref(merged.t); // learn the owner's taste
   const saved = store.setOverride(id, patch);
   res.json({ ok: true, override: saved, prefs: store.getHookPrefs().length });
+});
+
+// Restore a post to its original (clears the override — reverts title/design).
+app.post("/api/restore-original", (req, res) => {
+  const { id } = req.body || {};
+  if (!id) return res.status(400).json({ ok: false, error: "id required" });
+  store.clearOverride(id);
+  res.json({ ok: true });
 });
 
 // Generate a brand-new post from an optional free-form prompt.

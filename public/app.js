@@ -562,6 +562,7 @@ function pdetailMain(q) {
       <div class="pactions">
         ${pub ? "" : `<button class="btn ghost sm regenbtn ${hasNote ? "hot" : ""}" data-regen="${q.id}">♻️ ${T("regen")}</button>`}
         ${pub ? "" : `<button class="btn ghost sm" data-alt="${q.id}">🅰🅱 ${T("alt_hooks")}</button>`}
+        ${!pub && q.regenerated && (q.drive || (q.driveSlides && q.driveSlides.length)) ? `<button class="btn ghost sm" data-restore="${q.id}">↺ ${T("restore_orig")}</button>` : ""}
         ${approved || pub ? "" : `<button class="btn ok sm" data-approve="${q.id}">✓ ${T("approve")}</button>`}
         ${pubBtn}${stopBtn}
         ${isVideoUrl(q.mediaUrl) ? `<button class="btn ghost sm" data-playvid="${q.mediaUrl}">▶ ${lang === "en" ? "Preview" : lang === "fa" ? "پیش‌نمایش" : "معاينة"}</button>` : q.drive ? `<button class="btn ghost sm" data-play2="${q.drive}" data-reel="${(q.ty || "").includes("ريل") ? "1" : "0"}">▶ ${lang === "en" ? "Preview" : lang === "fa" ? "پیش‌نمایش" : "معاينة"}</button>` : ""}${q.drive ? `<a class="link sm" target="_blank" href="https://drive.google.com/file/d/${q.drive}/view">${T("openDrive")}</a>` : ""}
@@ -626,6 +627,13 @@ function bindDetail(list) {
   host.querySelectorAll("[data-pub]").forEach(b => b.onclick = () => publishPost(b.dataset.pub, b));
   host.querySelectorAll("[data-play2]").forEach(b => b.onclick = () => openDrivePlay(b.dataset.play2, host.querySelector(".ptitle")?.textContent || "", b.dataset.reel === "1"));
   host.querySelectorAll("[data-playvid]").forEach(b => b.onclick = () => openVideo(b.dataset.playvid, host.querySelector(".ptitle")?.textContent || ""));
+  host.querySelectorAll("[data-restore]").forEach(b => b.onclick = async () => {
+    if (!confirm(T("restore_confirm"))) return;
+    b.disabled = true; b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
+    await fetch("/api/restore-original", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: b.dataset.restore }) }).then(x => x.json()).catch(() => null);
+    try { S = await fetch("/api/state").then(x => x.json()); } catch (e) {}
+    renderPipeline($("#content"));
+  });
   host.querySelectorAll("[data-alt]").forEach(b => b.onclick = async () => {
     const id = b.dataset.alt, box = host.querySelector(`[data-althost="${id}"]`);
     b.disabled = true; b.innerHTML = `🅰🅱 <span class="dots"><i></i><i></i><i></i></span>`;

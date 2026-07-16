@@ -103,6 +103,7 @@ export function setOverride(id, patch) {
   persistOv();
   return ov[id];
 }
+export function clearOverride(id) { if (ov[id]) { delete ov[id]; persistOv(); } return true; }
 
 // ── Hook preferences ── titles the owner picked (A/B), to steer future writing.
 const PREF_FILE = sp("hookprefs.json");
