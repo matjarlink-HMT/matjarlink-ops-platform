@@ -221,12 +221,15 @@ function currentMonthSchedule(req) {
   const now = new Date();
   const y = now.getFullYear(), m = now.getMonth() + 1, prefix = `${y}-${String(m).padStart(2, "0")}`;
   const base = publicBase(req);
+  const notes = store.getNotes();
   const items = fullQueue()
     .filter((q) => (q.date || "").startsWith(prefix))
     .map((q) => {
       const pub = store.getPublished()[q.id];
+      const nt = notes[q.id] || {};
       const dm = (q.date || "").match(/-(\d{2})[^\d]+(\d{2}:\d{2})/);
-      return { key: q.id, id: q.id, day: dm ? +dm[1] : 0, time: dm ? dm[2] : "", t: q.t, ty: q.ty, pillar: "", cap: q.cap || "", status: pub ? "published" : "scheduled", permalink: pub?.permalink || null, readonly: true };
+      const status = pub ? "published" : nt.status === "معتمد" ? "approved" : (nt.note || "").trim() ? "held" : "scheduled";
+      return { key: q.id, id: q.id, day: dm ? +dm[1] : 0, time: dm ? dm[2] : "", t: q.t, ty: q.ty, pillar: "", cap: q.cap || "", brief: q.brief || "", drive: q.drive || null, status, permalink: pub?.permalink || null, readonly: true };
     })
     .sort((a, b) => a.day - b.day);
   return items.length ? { label: `${ARMONTHS[m - 1]} ${y}`, year: y, month: m, goal: "المجدول هذا الشهر (من قائمة النشر)", pillars: [], items, current: true } : null;

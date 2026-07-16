@@ -146,9 +146,10 @@ function planCalendar(plan) {
   for (let i = 0; i < first; i++) cells.push(`<div class="calcell empty"></div>`);
   for (let d = 1; d <= daysIn; d++) {
     const items = (byDay[d] || []).map(it => {
-      const applied = it.status === "applied";
+      const locked = it.status !== "draft"; // only draft (future-plan) chips are draggable
       const c = TYCOLOR(it.ty);
-      return `<div class="calchip ${applied ? "locked" : ""}" ${applied ? "" : `draggable="true"`} data-key="${escapeHtml(it.key)}" style="background:${c}" title="${escapeHtml(it.t)}">${applied ? "🔒 " : ""}${escapeHtml((it.t || "").slice(0, 22))}<span class="calct">${escapeHtml((it.time || ""))}</span></div>`;
+      const badge = it.status === "published" ? "📤 " : it.status === "applied" ? "🔒 " : "";
+      return `<div class="calchip ${locked ? "locked" : ""}" ${locked ? "" : `draggable="true"`} data-key="${escapeHtml(it.key)}" style="background:${c}" title="${escapeHtml(it.t)}">${badge}${escapeHtml((it.t || "").slice(0, 22))}<span class="calct">${escapeHtml((it.time || ""))}</span></div>`;
     }).join("");
     cells.push(`<div class="calcell" data-day="${d}"><div class="caldn">${d}</div>${items}</div>`);
   }
@@ -205,23 +206,33 @@ async function renderPlan(C) {
   const tabBar = `<div class="montabs">${tabs.map(t => `<button class="montab ${t.key === active.key ? "on" : ""}" data-mk="${t.key}">${escapeHtml(t.label)}${t.kind === "current" ? " • " + T("plan_this_month") : t.kind === "new" && !plans[t.key] ? " +" : ""}</button>`).join("")}</div>`;
 
   const bindTabs = () => C.querySelectorAll("[data-mk]").forEach(b => b.onclick = () => { planActiveKey = b.dataset.mk; renderPlan(C); });
-  const fullDate = (p, it) => `${p.year}-${String(p.month).padStart(2, "0")}-${String(it.day).padStart(2, "0")} · ${it.time || ""}`;
+  const fullDate = (p, it) => `${p.year}-${String(p.month).padStart(2, "0")}-${String(it.day).padStart(2, "0")}`;
+  const weekdayOf = (p, it) => { const wd = WEEKDAYS_CLIENT[lang] || WEEKDAYS_CLIENT.ar; return wd[new Date(p.year, p.month - 1, it.day).getDay()]; };
+  const statusPill = (it) => it.status === "published" ? (it.permalink ? `<a class="pill p-ok" target="_blank" href="${it.permalink}">📤 ${T("s_published")} ↗</a>` : `<span class="pill p-ok">📤 ${T("s_published")}</span>`) : it.status === "approved" ? `<span class="pill p-ok">✓ ${T("s_approved")}</span>` : it.status === "held" ? `<span class="pill p-warn">✎ ${T("held")}</span>` : `<span class="pill p-info">🗓 ${T("plan_scheduled")}</span>`;
+  const detailData = (it) => [it.cap, it.brief ? "📐 " + it.brief : "", it.drive ? "🖼 Drive: " + it.drive : ""].filter(Boolean).join("\n\n");
 
-  // ── current-month read-only schedule (real queue) ──
+  // ── current month: real scheduled queue as an Excel-like table + calendar ──
   if (active.kind === "current" && current) {
     const rows = current.items.map(it => `<tr>
         <td class="pdate">${escapeHtml(fullDate(current, it))}</td>
-        <td>${escapeHtml(it.t)}</td><td><span class="pill p-idle">${escapeHtml(it.ty)}</span></td>
-        <td class="pstat">${it.status === "published" ? (it.permalink ? `<a class="pill p-ok" target="_blank" href="${it.permalink}">📤 ${T("s_published")} ↗</a>` : `<span class="pill p-ok">📤 ${T("s_published")}</span>`) : `<span class="pill p-info">🗓 ${T("plan_scheduled")}</span>`}</td>
-        <td>${it.cap ? `<button class="btn ghost sm pdet" data-cap="${attrSafe(it.cap)}">📄</button>` : ""}</td>
+        <td>${escapeHtml(weekdayOf(current, it))}</td>
+        <td>${escapeHtml(it.time || "")}</td>
+        <td>${escapeHtml(it.id)}</td>
+        <td style="font-weight:800;min-width:12rem">${escapeHtml(it.t)}</td>
+        <td><span class="pill" style="background:${TYCOLOR(it.ty)}22;color:${TYCOLOR(it.ty)}">${escapeHtml(it.ty)}</span></td>
+        <td class="pstat">${statusPill(it)}</td>
+        <td>${(it.cap || it.brief) ? `<button class="btn ghost sm pdet" data-cap="${attrSafe(detailData(it))}">📄</button>` : ""}${it.drive ? ` <a class="link sm" target="_blank" href="https://drive.google.com/file/d/${it.drive}/view">🖼</a>` : ""}</td>
       </tr>`).join("");
+    const table = `<div class="tablewrap"><table class="plantable"><thead><tr>
+        <th>${T("plan_date")}</th><th>${T("plan_weekday")}</th><th>${T("plan_time")}</th><th>#</th><th>${T("plan_title")}</th><th>${T("plan_type")}</th><th>${T("plan_status")}</th><th>${T("plan_detail")}</th>
+      </tr></thead><tbody>${rows}</tbody></table></div>`;
     C.innerHTML = `<div class="planwrap">${tabBar}
       <div class="pcard nofloat planhead"><div><div class="ptitle">🗓 ${escapeHtml(current.label)}</div>
-        <div class="mut" style="margin-top:.35rem">${escapeHtml(current.goal)}</div></div></div>
-      <div class="tablewrap"><table class="plantable"><thead><tr>
-        <th>${T("plan_date")}</th><th>${T("plan_title")}</th><th>${T("plan_type")}</th><th>${T("plan_status")}</th><th></th>
-      </tr></thead><tbody>${rows}</tbody></table></div></div>`;
+        <div class="mut" style="margin-top:.35rem">${escapeHtml(current.goal)}</div></div>
+        <div class="planacts"><div class="viewtog"><button class="vtbtn ${planViewMode === "table" ? "on" : ""}" data-pv="table">▤ ${T("plan_v_table")}</button><button class="vtbtn ${planViewMode === "calendar" ? "on" : ""}" data-pv="calendar">🗓 ${T("plan_v_cal")}</button></div></div></div>
+      ${planViewMode === "calendar" ? planCalendar(current) : table}</div>`;
     bindTabs();
+    C.querySelectorAll("[data-pv]").forEach(b => b.onclick = () => { planViewMode = b.dataset.pv; renderPlan(C); });
     C.querySelectorAll(".pdet").forEach(b => b.onclick = () => openCap(b.dataset.cap));
     return;
   }
