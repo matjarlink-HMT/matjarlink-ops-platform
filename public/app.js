@@ -138,7 +138,7 @@ let planViewMode = "table"; // "table" | "calendar"
 function planCalendar(plan) {
   const y = plan.year, m = plan.month;
   const first = new Date(y, m - 1, 1).getDay(); // 0=Sun
-  const daysIn = new Date(y, m, 0).getDate();
+  const daysIn = Math.min(new Date(y, m, 0).getDate(), 28); // plans cap the day at 28 everywhere
   const byDay = {}; (plan.items || []).forEach(it => { (byDay[+it.day] = byDay[+it.day] || []).push(it); });
   const wd = WEEKDAYS_CLIENT[lang] || WEEKDAYS_CLIENT.ar;
   const head = wd.map(d => `<div class="calhd">${d}</div>`).join("");
@@ -179,8 +179,11 @@ function bindCalendarDnD(C, plan, key) {
       const it = plan.items.find(x => x.key === k); if (!it || it.status === "applied") return;
       const newDay = +cell.dataset.day; if (newDay === +it.day) return;
       it.day = newDay;
-      renderPlan(C); // optimistic
+      // persist FIRST (source of truth), then re-render — avoids the chip
+      // snapping back to the old day when renderPlan re-fetches from the server.
+      cell.querySelector(".caldn")?.insertAdjacentHTML("afterend", `<div class="calchip" style="background:${TYCOLOR(it.ty)};opacity:.6">…</div>`);
       await fetch("/api/plan", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan }) }).then(x => x.json()).catch(() => null);
+      renderPlan(C);
     };
   });
 }
@@ -279,12 +282,17 @@ async function renderPlan(C) {
   bindTabs();
   C.querySelectorAll(".pdet").forEach(b => b.onclick = () => openCap(b.dataset.cap));
 
-  const collect = () => ({ ...plan, items: [...C.querySelectorAll("tbody tr")].map(tr => {
-    const key = tr.dataset.key, old = plan.items.find(i => i.key === key) || {};
-    return { ...old, key, day: Math.min(Math.max(parseInt(tr.querySelector(".pday").value, 10) || old.day || 1, 1), 28),
-      time: tr.querySelector(".ptime").value, t: tr.querySelector(".pt").value.trim(),
-      ty: tr.querySelector(".pty").value, pillar: tr.querySelector(".ppl").value.trim() };
-  }) });
+  const collect = () => {
+    // Calendar mode has no table rows — its edits already live on plan.items
+    // (updated on drop). Reading the DOM there would wipe the month.
+    if (planViewMode === "calendar") return { ...plan };
+    return { ...plan, items: [...C.querySelectorAll("tbody tr")].map(tr => {
+      const key = tr.dataset.key, old = plan.items.find(i => i.key === key) || {};
+      return { ...old, key, day: Math.min(Math.max(parseInt(tr.querySelector(".pday").value, 10) || old.day || 1, 1), 28),
+        time: tr.querySelector(".ptime").value, t: tr.querySelector(".pt").value.trim(),
+        ty: tr.querySelector(".pty").value, pillar: tr.querySelector(".ppl").value.trim() };
+    }) };
+  };
   const save = async () => {
     const r = await fetch("/api/plan", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan: collect() }) }).then(x => x.json());
     if (r.ok) { plans[active.key] = r.plan; $("#planmsg").textContent = "✓ " + T("plan_saved"); setTimeout(() => { const m = $("#planmsg"); if (m) m.textContent = ""; }, 2500); }

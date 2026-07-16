@@ -177,7 +177,7 @@ app.post("/api/apply-hook", async (req, res) => {
   const merged = { ...item, t: String(hook).trim() };
   const isReel = (item.ty || "").includes("ريل");
   const hasPro = !!item.drive || (item.driveSlides && item.driveSlides.length); // professional July design
-  const patch = { t: merged.t, cap: merged.t };
+  const patch = { t: merged.t }; // ONLY the headline — never clobber the full caption (cap)
   try {
     // Only (re)render a generated design when there's no professional design to
     // preserve — a July post keeps its Drive artwork; we just update the copy.
