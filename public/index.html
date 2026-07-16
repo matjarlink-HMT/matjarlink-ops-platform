@@ -111,6 +111,20 @@ table{width:100%;border-collapse:collapse;font-size:.83rem}th,td{text-align:star
 .montab{border:1px solid #eadfe6;background:#fff;border-radius:2rem;padding:.4rem 1rem;font:inherit;font-size:.85rem;cursor:pointer;color:#6E1444}
 .montab.on{background:#6E1444;color:#fff;border-color:#6E1444}
 .pdate{white-space:nowrap;font-size:.82rem;color:#8a7280;font-weight:700}
+/* plan calendar (drag & drop) */
+.calwrap{background:#fff;border-radius:var(--r,15px);box-shadow:var(--shadow);padding:.6rem;overflow-x:auto}
+.calgrid{display:grid;grid-template-columns:repeat(7,minmax(6.5rem,1fr));gap:.4rem;min-width:48rem}
+.calhead{margin-bottom:.4rem}
+.calhd{text-align:center;font-size:.74rem;font-weight:800;color:#8a7280;padding:.3rem 0}
+.calcell{min-height:6rem;border:1px solid #f0e2ea;border-radius:10px;padding:.3rem;background:#fdfafc;display:flex;flex-direction:column;gap:.25rem;transition:background .12s ease,border-color .12s ease}
+.calcell.empty{background:transparent;border:none}
+.calcell.over{background:var(--orange-soft);border-color:var(--orange)}
+.caldn{font-size:.72rem;font-weight:800;color:#b7aebd}
+.calchip{color:#fff;border-radius:7px;padding:.28rem .4rem;font-size:.72rem;font-weight:700;cursor:grab;line-height:1.25;display:flex;flex-direction:column;box-shadow:0 1px 3px rgba(78,14,48,.15)}
+.calchip:hover{filter:brightness(1.06)}
+.calchip.locked{cursor:default;opacity:.75}
+.calchip.dragging{opacity:.4}
+.calchip .calct{font-size:.62rem;opacity:.85;font-weight:600}
 .toplist{display:flex;flex-direction:column;gap:.5rem;margin-top:.4rem}
 .toprow{display:flex;align-items:center;gap:.6rem}
 .toprow .topr{width:1.5rem;height:1.5rem;border-radius:50%;background:#6E1444;color:#fff;display:grid;place-items:center;font-size:.78rem;font-weight:800;flex:none}

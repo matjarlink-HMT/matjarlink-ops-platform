@@ -130,7 +130,60 @@ function render(p) {
 // ── content plan (خطة المحتوى) ── month tabs · editable table · one-click apply ──
 const PLAN_TYPES = ["ريل تشويقي", "كاروسيل توعوي", "منشور علامة", "تفاعلي + استطلاع", "مجتمعي", "كاروسيل فاخر"];
 const ARMONTHS_CLIENT = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+const WEEKDAYS_CLIENT = { ar: ["أحد", "إثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت"], en: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], fa: ["یک", "دو", "سه", "چهار", "پنج", "جمعه", "شنبه"] };
 let planActiveKey = null; // which month tab is open
+let planViewMode = "table"; // "table" | "calendar"
+
+// Monthly calendar grid; each plan item is a draggable chip on its day.
+function planCalendar(plan) {
+  const y = plan.year, m = plan.month;
+  const first = new Date(y, m - 1, 1).getDay(); // 0=Sun
+  const daysIn = new Date(y, m, 0).getDate();
+  const byDay = {}; (plan.items || []).forEach(it => { (byDay[+it.day] = byDay[+it.day] || []).push(it); });
+  const wd = WEEKDAYS_CLIENT[lang] || WEEKDAYS_CLIENT.ar;
+  const head = wd.map(d => `<div class="calhd">${d}</div>`).join("");
+  const cells = [];
+  for (let i = 0; i < first; i++) cells.push(`<div class="calcell empty"></div>`);
+  for (let d = 1; d <= daysIn; d++) {
+    const items = (byDay[d] || []).map(it => {
+      const applied = it.status === "applied";
+      const c = TYCOLOR(it.ty);
+      return `<div class="calchip ${applied ? "locked" : ""}" ${applied ? "" : `draggable="true"`} data-key="${escapeHtml(it.key)}" style="background:${c}" title="${escapeHtml(it.t)}">${applied ? "🔒 " : ""}${escapeHtml((it.t || "").slice(0, 22))}<span class="calct">${escapeHtml((it.time || ""))}</span></div>`;
+    }).join("");
+    cells.push(`<div class="calcell" data-day="${d}"><div class="caldn">${d}</div>${items}</div>`);
+  }
+  return `<div class="calwrap"><div class="calgrid calhead">${head}</div><div class="calgrid calbody">${cells.join("")}</div></div>`;
+}
+// Brand color per post type (for calendar chips).
+function TYCOLOR(ty) {
+  ty = ty || "";
+  if (ty.includes("ريل")) return "#6E1444";
+  if (ty.includes("كاروسيل")) return "#E8890F";
+  if (ty.includes("استطلاع") || ty.includes("تفاعلي")) return "#2D6FB3";
+  if (ty.includes("مجتمعي")) return "#0E8C6A";
+  return "#9D1F60";
+}
+// Drag a chip onto another day → update its day, persist, re-render.
+function bindCalendarDnD(C, plan, key) {
+  let dragKey = null;
+  C.querySelectorAll(".calchip[draggable=true]").forEach(ch => {
+    ch.ondragstart = (e) => { dragKey = ch.dataset.key; e.dataTransfer.effectAllowed = "move"; ch.classList.add("dragging"); };
+    ch.ondragend = () => { dragKey = null; ch.classList.remove("dragging"); };
+  });
+  C.querySelectorAll(".calcell[data-day]").forEach(cell => {
+    cell.ondragover = (e) => { e.preventDefault(); cell.classList.add("over"); };
+    cell.ondragleave = () => cell.classList.remove("over");
+    cell.ondrop = async (e) => {
+      e.preventDefault(); cell.classList.remove("over");
+      const k = dragKey; if (!k) return;
+      const it = plan.items.find(x => x.key === k); if (!it || it.status === "applied") return;
+      const newDay = +cell.dataset.day; if (newDay === +it.day) return;
+      it.day = newDay;
+      renderPlan(C); // optimistic
+      await fetch("/api/plan", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan }) }).then(x => x.json()).catch(() => null);
+    };
+  });
+}
 async function renderPlan(C) {
   C.innerHTML = `<div class="loading">…</div>`;
   let plans = {}, current = null;
@@ -209,6 +262,7 @@ async function renderPlan(C) {
         <div class="mut" style="margin-top:.35rem">🎯 ${escapeHtml(plan.goal || "")}</div>
         <div class="pillars">${(plan.pillars || []).map(p => `<span class="pill p-info">${escapeHtml(p)}</span>`).join(" ")}</div></div>
       <div class="planacts">
+        <div class="viewtog" style="margin-inline-end:.3rem"><button class="vtbtn ${planViewMode === "table" ? "on" : ""}" data-pv="table">▤ ${T("plan_v_table")}</button><button class="vtbtn ${planViewMode === "calendar" ? "on" : ""}" data-pv="calendar">🗓 ${T("plan_v_cal")}</button></div>
         <button class="btn ghost sm" id="plannew">♻️ ${T("plan_new")}</button>
         <button class="btn ghost sm" id="planslots" title="${T("plan_slots_hint")}">🪄 ${T("plan_slots")}</button>
         <button class="btn ghost sm" id="plansave">💾 ${T("plan_save")}</button>
@@ -216,10 +270,12 @@ async function renderPlan(C) {
     <div class="pcard nofloat" style="margin-bottom:1rem;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
       <span>💡</span><input class="pinput" id="ideain" placeholder="${T("idea_ph")}" style="flex:1;min-width:14rem" autocomplete="off">
       <button class="btn sm" id="ideago">${T("idea_add")}</button></div>
-    <div class="tablewrap"><table class="plantable"><thead><tr>
+    ${planViewMode === "calendar" ? planCalendar(plan) : `<div class="tablewrap"><table class="plantable"><thead><tr>
       <th>${T("plan_date")}</th><th>${T("plan_day")}</th><th>${T("plan_time")}</th><th>${T("plan_title")}</th><th>${T("plan_type")}</th><th>${T("plan_pillar")}</th><th>${T("plan_status")}</th><th></th>
-    </tr></thead><tbody>${rows}</tbody></table></div>
-    <div class="mut" id="planmsg" style="margin-top:.6rem"></div></div>`;
+    </tr></thead><tbody>${rows}</tbody></table></div>`}
+    <div class="mut" id="planmsg" style="margin-top:.6rem">${planViewMode === "calendar" ? T("plan_cal_hint") : ""}</div></div>`;
+  C.querySelectorAll("[data-pv]").forEach(b => b.onclick = () => { planViewMode = b.dataset.pv; renderPlan(C); });
+  if (planViewMode === "calendar") bindCalendarDnD(C, plan, active.key);
   bindTabs();
   C.querySelectorAll(".pdet").forEach(b => b.onclick = () => openCap(b.dataset.cap));
 
