@@ -104,12 +104,22 @@ export function setOverride(id, patch) {
   return ov[id];
 }
 
-// ── Content plan ── the editable monthly plan (خطة المحتوى page). Volume-backed.
-const PLAN_FILE = sp("plan.json");
-let plan = null;
-try { plan = JSON.parse(fs.readFileSync(PLAN_FILE, "utf8")); } catch (e) { plan = null; }
-export function getPlan() { return plan; }
-export function setPlan(p) { plan = p; try { writeDurable(PLAN_FILE, JSON.stringify(plan)); } catch (e) {} return plan; }
+// ── Content plans ── editable monthly plans keyed by "YYYY-MM". Volume-backed.
+// Migrates the old single plan.json into the keyed map on first load.
+const PLANS_FILE = sp("plans.json");
+let plans = {};
+try { plans = JSON.parse(fs.readFileSync(PLANS_FILE, "utf8")); } catch (e) {
+  try { const old = JSON.parse(fs.readFileSync(sp("plan.json"), "utf8")); if (old && old.year) plans[`${old.year}-${String(old.month).padStart(2, "0")}`] = old; } catch (e2) {}
+}
+function persistPlans() { try { writeDurable(PLANS_FILE, JSON.stringify(plans)); } catch (e) {} }
+const planKey = (p) => `${p.year}-${String(p.month).padStart(2, "0")}`;
+export function getPlans() { return plans; }
+export function getPlan(key) {
+  if (key) return plans[key] || null;
+  const keys = Object.keys(plans).sort(); // no key → latest month
+  return keys.length ? plans[keys[keys.length - 1]] : null;
+}
+export function setPlan(p) { if (!p || !p.year) return p; plans[planKey(p)] = p; persistPlans(); return p; }
 
 // ── Removed posts ── ids hidden from the queue (delete button). Volume-backed.
 const RM_FILE = sp("removed.json");

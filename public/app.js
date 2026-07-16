@@ -127,38 +127,85 @@ function render(p) {
   else if (p === "settings") renderSettings(C);
 }
 
-// ── content plan (خطة المحتوى) ── editable monthly table → one-click apply ──
+// ── content plan (خطة المحتوى) ── month tabs · editable table · one-click apply ──
 const PLAN_TYPES = ["ريل تشويقي", "كاروسيل توعوي", "منشور علامة", "تفاعلي + استطلاع", "مجتمعي", "كاروسيل فاخر"];
+const ARMONTHS_CLIENT = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+let planActiveKey = null; // which month tab is open
 async function renderPlan(C) {
   C.innerHTML = `<div class="loading">…</div>`;
-  let plan = null;
-  try { plan = (await fetch("/api/plan").then(r => r.json())).plan; } catch (e) {}
+  let plans = {}, current = null;
+  try { const r = await fetch("/api/plan").then(r => r.json()); plans = r.plans || {}; current = r.current || null; } catch (e) {}
+
+  // month tabs: current-month schedule (if any) + each stored plan + next month slot
+  const now = new Date(); const curKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const nm = now.getMonth() + 1 >= 12 ? 1 : now.getMonth() + 2; const ny = now.getMonth() + 1 >= 12 ? now.getFullYear() + 1 : now.getFullYear();
+  const nextKey = `${ny}-${String(nm).padStart(2, "0")}`;
+  const tabs = [];
+  if (current) tabs.push({ key: curKey, label: current.label, kind: "current" });
+  Object.keys(plans).sort().forEach(k => { if (!tabs.some(t => t.key === k)) tabs.push({ key: k, label: plans[k].label, kind: "plan" }); });
+  if (!tabs.some(t => t.key === nextKey)) tabs.push({ key: nextKey, label: `${ARMONTHS_CLIENT[nm - 1]} ${ny}`, kind: "new" });
+  if (!planActiveKey || !tabs.some(t => t.key === planActiveKey)) planActiveKey = plans[nextKey] ? nextKey : (tabs.find(t => t.kind === "plan")?.key || tabs[0]?.key);
+  const active = tabs.find(t => t.key === planActiveKey) || tabs[0];
+  const tabBar = `<div class="montabs">${tabs.map(t => `<button class="montab ${t.key === active.key ? "on" : ""}" data-mk="${t.key}">${escapeHtml(t.label)}${t.kind === "current" ? " • " + T("plan_this_month") : t.kind === "new" && !plans[t.key] ? " +" : ""}</button>`).join("")}</div>`;
+
+  const bindTabs = () => C.querySelectorAll("[data-mk]").forEach(b => b.onclick = () => { planActiveKey = b.dataset.mk; renderPlan(C); });
+  const fullDate = (p, it) => `${p.year}-${String(p.month).padStart(2, "0")}-${String(it.day).padStart(2, "0")} · ${it.time || ""}`;
+
+  // ── current-month read-only schedule (real queue) ──
+  if (active.kind === "current" && current) {
+    const rows = current.items.map(it => `<tr>
+        <td class="pdate">${escapeHtml(fullDate(current, it))}</td>
+        <td>${escapeHtml(it.t)}</td><td><span class="pill p-idle">${escapeHtml(it.ty)}</span></td>
+        <td class="pstat">${it.status === "published" ? (it.permalink ? `<a class="pill p-ok" target="_blank" href="${it.permalink}">📤 ${T("s_published")} ↗</a>` : `<span class="pill p-ok">📤 ${T("s_published")}</span>`) : `<span class="pill p-info">🗓 ${T("plan_scheduled")}</span>`}</td>
+        <td>${it.cap ? `<button class="btn ghost sm pdet" data-cap="${escapeHtml(it.cap).replace(/"/g, "&quot;")}">📄</button>` : ""}</td>
+      </tr>`).join("");
+    C.innerHTML = `<div class="planwrap">${tabBar}
+      <div class="pcard nofloat planhead"><div><div class="ptitle">🗓 ${escapeHtml(current.label)}</div>
+        <div class="mut" style="margin-top:.35rem">${escapeHtml(current.goal)}</div></div></div>
+      <div class="tablewrap"><table class="plantable"><thead><tr>
+        <th>${T("plan_date")}</th><th>${T("plan_title")}</th><th>${T("plan_type")}</th><th>${T("plan_status")}</th><th></th>
+      </tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    bindTabs();
+    C.querySelectorAll(".pdet").forEach(b => b.onclick = () => openCap(b.dataset.cap));
+    return;
+  }
+
+  const plan = plans[active.key];
+  // ── empty month → generate ──
   if (!plan) {
-    C.innerHTML = `<div class="pcard nofloat planempty"><div class="ptitle">🗓 ${T("plan_empty_t")}</div>
+    C.innerHTML = `<div class="planwrap">${tabBar}
+      <div class="pcard nofloat planempty"><div class="ptitle">🗓 ${escapeHtml(active.label)}</div>
       <div class="mut" style="margin:.5rem 0 1rem">${T("plan_empty_d")}</div>
-      <button class="btn" id="plangen">✨ ${T("plan_gen")}</button></div>`;
+      <button class="btn" id="plangen">✨ ${T("plan_gen")}</button></div></div>`;
+    bindTabs();
     $("#plangen").onclick = async () => {
       const b = $("#plangen"); b.disabled = true; b.innerHTML = `${T("plan_gen_loading")} <span class="dots"><i></i><i></i><i></i></span>`;
-      try {
-        const r = await fetch("/api/plan/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).then(x => x.json());
-        if (r.ok) renderPlan(C); else { alert(r.error || "!"); b.disabled = false; b.textContent = "✨ " + T("plan_gen"); }
-      } catch (e) { b.disabled = false; b.textContent = "✨ " + T("plan_gen"); }
+      const [yy, mo] = active.key.split("-").map(Number);
+      const r = await fetch("/api/plan/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ year: yy, month: mo }) }).then(x => x.json()).catch(() => null);
+      if (r && r.ok) renderPlan(C); else { alert((r && r.error) || "!"); b.disabled = false; b.textContent = "✨ " + T("plan_gen"); }
     };
     return;
   }
+
+  // ── editable draft plan ──
   const applied = plan.items.filter(i => i.status === "applied").length;
-  const rows = plan.items.map((it, idx) => `<tr data-key="${escapeHtml(it.key)}" class="${it.status === "applied" ? "applied" : ""}">
-      <td><input class="pinput pday" type="number" min="1" max="28" value="${it.day}" ${it.status === "applied" ? "disabled" : ""}></td>
-      <td><select class="psel ptime" ${it.status === "applied" ? "disabled" : ""}>${["19:30", "20:00", "20:30", "21:00"].map(t => `<option ${t === (it.time || "20:00") ? "selected" : ""}>${t}</option>`).join("")}</select></td>
-      <td><input class="pinput pt" value="${escapeHtml(it.t).replace(/"/g, "&quot;")}" ${it.status === "applied" ? "disabled" : ""}></td>
-      <td><select class="psel pty" ${it.status === "applied" ? "disabled" : ""}>${PLAN_TYPES.map(t => `<option ${t === it.ty ? "selected" : ""}>${t}</option>`).join("")}</select></td>
-      <td><input class="pinput ppl" value="${escapeHtml(it.pillar).replace(/"/g, "&quot;")}" ${it.status === "applied" ? "disabled" : ""}></td>
+  const rows = plan.items.map((it) => {
+    const dis = it.status === "applied" ? "disabled" : "";
+    const detail = (it.hook || it.cap) ? `<button class="btn ghost sm pdet" data-cap="${escapeHtml([it.hook ? "🎣 " + it.hook : "", it.cap].filter(Boolean).join("\n\n")).replace(/"/g, "&quot;")}">📄</button>` : "";
+    return `<tr data-key="${escapeHtml(it.key)}" class="${it.status === "applied" ? "applied" : ""}">
+      <td class="pdate">${escapeHtml(fullDate(plan, it))}</td>
+      <td><input class="pinput pday" type="number" min="1" max="28" value="${it.day}" ${dis}></td>
+      <td><select class="psel ptime" ${dis}>${["19:30", "20:00", "20:30", "21:00"].map(t => `<option ${t === (it.time || "20:00") ? "selected" : ""}>${t}</option>`).join("")}</select></td>
+      <td><input class="pinput pt" value="${escapeHtml(it.t).replace(/"/g, "&quot;")}" ${dis}></td>
+      <td><select class="psel pty" ${dis}>${PLAN_TYPES.map(t => `<option ${t === it.ty ? "selected" : ""}>${t}</option>`).join("")}</select></td>
+      <td><input class="pinput ppl" value="${escapeHtml(it.pillar).replace(/"/g, "&quot;")}" ${dis}></td>
       <td class="pstat">${it.status === "applied" ? `<span class="pill p-ok">✓ ${escapeHtml(it.id || "")}</span>` : `<span class="pill p-idle">${T("plan_draft")}</span>`}</td>
-      <td>${it.status === "applied" ? "" : `<button class="btn ghost sm applyone" data-key="${escapeHtml(it.key)}">⬆ ${T("plan_apply")}</button>`}</td>
-    </tr>`).join("");
-  C.innerHTML = `<div class="planwrap">
+      <td>${detail}${it.status === "applied" ? "" : `<button class="btn ghost sm applyone" data-key="${escapeHtml(it.key)}">⬆ ${T("plan_apply")}</button>`}</td>
+    </tr>`;
+  }).join("");
+  C.innerHTML = `<div class="planwrap">${tabBar}
     <div class="pcard nofloat planhead"><div>
-        <div class="ptitle">🗓 ${T("plan_title_h")} — ${escapeHtml(plan.label)}</div>
+        <div class="ptitle">🗓 ${escapeHtml(plan.label)}</div>
         <div class="mut" style="margin-top:.35rem">🎯 ${escapeHtml(plan.goal || "")}</div>
         <div class="pillars">${(plan.pillars || []).map(p => `<span class="pill p-info">${escapeHtml(p)}</span>`).join(" ")}</div></div>
       <div class="planacts">
@@ -170,9 +217,11 @@ async function renderPlan(C) {
       <span>💡</span><input class="pinput" id="ideain" placeholder="${T("idea_ph")}" style="flex:1;min-width:14rem" autocomplete="off">
       <button class="btn sm" id="ideago">${T("idea_add")}</button></div>
     <div class="tablewrap"><table class="plantable"><thead><tr>
-      <th>${T("plan_day")}</th><th>${T("plan_time")}</th><th>${T("plan_title")}</th><th>${T("plan_type")}</th><th>${T("plan_pillar")}</th><th>${T("plan_status")}</th><th></th>
+      <th>${T("plan_date")}</th><th>${T("plan_day")}</th><th>${T("plan_time")}</th><th>${T("plan_title")}</th><th>${T("plan_type")}</th><th>${T("plan_pillar")}</th><th>${T("plan_status")}</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table></div>
     <div class="mut" id="planmsg" style="margin-top:.6rem"></div></div>`;
+  bindTabs();
+  C.querySelectorAll(".pdet").forEach(b => b.onclick = () => openCap(b.dataset.cap));
 
   const collect = () => ({ ...plan, items: [...C.querySelectorAll("tbody tr")].map(tr => {
     const key = tr.dataset.key, old = plan.items.find(i => i.key === key) || {};
@@ -182,32 +231,28 @@ async function renderPlan(C) {
   }) });
   const save = async () => {
     const r = await fetch("/api/plan", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan: collect() }) }).then(x => x.json());
-    if (r.ok) { plan = r.plan; $("#planmsg").textContent = "✓ " + T("plan_saved"); setTimeout(() => { const m = $("#planmsg"); if (m) m.textContent = ""; }, 2500); }
+    if (r.ok) { plans[active.key] = r.plan; $("#planmsg").textContent = "✓ " + T("plan_saved"); setTimeout(() => { const m = $("#planmsg"); if (m) m.textContent = ""; }, 2500); }
     return r.ok;
   };
   $("#plansave").onclick = save;
-  // 💡 idea inbox: raw thought → CAIMO expands it into a draft row
   const addIdea = async () => {
     const inp = $("#ideain"), text = inp.value.trim(); if (!text) return;
     const b = $("#ideago"); b.disabled = true; b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
-    const r = await fetch("/api/plan/idea", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) }).then(x => x.json()).catch(() => null);
+    const r = await fetch("/api/plan/idea", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, month: active.key }) }).then(x => x.json()).catch(() => null);
     if (r && r.ok) renderPlan(C); else { alert((r && r.error) || "!"); b.disabled = false; b.textContent = T("idea_add"); }
   };
   $("#ideago").onclick = addIdea;
   $("#ideain").onkeydown = (e) => { if (e.key === "Enter") addIdea(); };
-  // 🪄 smart slots: evening window by type, ≥2-day gaps, skip occupied days
   $("#planslots").onclick = () => {
     const TIME_BY_TYPE = { "ريل": "21:00", "كاروسيل": "20:30", "استطلاع": "19:30", "تفاعلي": "19:30", "مجتمعي": "19:30" };
-    const mm = String(plan.month).padStart(2, "0");
-    const taken = new Set();
-    (S.queue || []).forEach(p => { const m = (p.date || "").match(new RegExp(`^${plan.year}-${mm}-(\\d{2})`)); if (m) taken.add(+m[1]); });
-    plan.items.filter(i => i.status === "applied").forEach(i => taken.add(+i.day));
+    const taken = new Set(plan.items.filter(i => i.status === "applied").map(i => +i.day));
+    (S.queue || []).forEach(p => { const m = (p.date || "").match(new RegExp(`^${active.key}-(\\d{2})`)); if (m) taken.add(+m[1]); });
     let day = 2;
     C.querySelectorAll("tbody tr").forEach(tr => {
       if (tr.classList.contains("applied")) return;
       while (taken.has(day) && day < 28) day += 1;
       tr.querySelector(".pday").value = Math.min(day, 28);
-      taken.add(day); day += 2; // breathing gap between posts
+      taken.add(day); day += 2;
       const ty = tr.querySelector(".pty").value;
       const t = Object.entries(TIME_BY_TYPE).find(([k]) => ty.includes(k));
       tr.querySelector(".ptime").value = t ? t[1] : "20:00";
@@ -217,12 +262,13 @@ async function renderPlan(C) {
   $("#plannew").onclick = async () => {
     if (!confirm(T("plan_new_confirm"))) return;
     const b = $("#plannew"); b.disabled = true; b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
-    const r = await fetch("/api/plan/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).then(x => x.json()).catch(() => null);
+    const [yy, mo] = active.key.split("-").map(Number);
+    const r = await fetch("/api/plan/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ year: yy, month: mo }) }).then(x => x.json()).catch(() => null);
     if (r && r.ok) renderPlan(C); else { b.disabled = false; b.textContent = "♻️ " + T("plan_new"); }
   };
   const applyOne = async (key) => {
     const r = await fetch("/api/plan/apply-item", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key }) }).then(x => x.json());
-    if (r.ok && r.plan) plan = r.plan;
+    if (r.ok && r.plan) plans[active.key] = r.plan;
     return r;
   };
   C.querySelectorAll(".applyone").forEach(b => b.onclick = async () => {
@@ -250,6 +296,13 @@ async function renderPlan(C) {
     await renderPlan(C);
     const m = $("#planmsg"); if (m) m.textContent = `✓ ${T("plan_done")}: ${done}` + (fail ? ` · ✗ ${fail}` : "");
   };
+}
+// caption/detail popup reusing the media lightbox frame
+function openCap(text) {
+  $("#mvtitle").textContent = T("plan_caption");
+  const f = $("#mvframe"); f.style.aspectRatio = ""; f.classList.add("imgfit");
+  f.innerHTML = `<div style="background:#fff;color:#2b1622;padding:1.4rem;max-width:34rem;white-space:pre-wrap;line-height:1.7;text-align:start;border-radius:.6rem;max-height:80vh;overflow:auto">${escapeHtml(text || "")}</div>`;
+  $("#mvhint").innerHTML = ""; $("#mv").classList.add("on");
 }
 
 // ── manager chat (CAIMO) ──────────────────────────────────────────

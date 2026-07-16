@@ -168,8 +168,24 @@ app.post("/api/generate-post", async (req, res) => {
   res.json({ ok: true, post });
 });
 
-// ── Content plan (خطة المحتوى) ── editable monthly plan → one-click apply ──
-app.get("/api/plan", (req, res) => res.json({ ok: true, plan: store.getPlan() }));
+// ── Content plan (خطة المحتوى) ── editable monthly plans → one-click apply ──
+// Returns all stored month plans + a read-only schedule for the CURRENT month
+// derived from the real queue (so the owner sees this month alongside next).
+function currentMonthSchedule(req) {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth() + 1, prefix = `${y}-${String(m).padStart(2, "0")}`;
+  const base = publicBase(req);
+  const items = fullQueue()
+    .filter((q) => (q.date || "").startsWith(prefix))
+    .map((q) => {
+      const pub = store.getPublished()[q.id];
+      const dm = (q.date || "").match(/-(\d{2})[^\d]+(\d{2}:\d{2})/);
+      return { key: q.id, id: q.id, day: dm ? +dm[1] : 0, time: dm ? dm[2] : "", t: q.t, ty: q.ty, pillar: "", cap: q.cap || "", status: pub ? "published" : "scheduled", permalink: pub?.permalink || null, readonly: true };
+    })
+    .sort((a, b) => a.day - b.day);
+  return items.length ? { label: `${ARMONTHS[m - 1]} ${y}`, year: y, month: m, goal: "المجدول هذا الشهر (من قائمة النشر)", pillars: [], items, current: true } : null;
+}
+app.get("/api/plan", (req, res) => res.json({ ok: true, plans: store.getPlans(), current: currentMonthSchedule(req) }));
 
 // Generate a fresh draft plan for the next month (or a given year/month).
 app.post("/api/plan/generate", async (req, res) => {
@@ -184,7 +200,7 @@ app.post("/api/plan/generate", async (req, res) => {
   if (!out) return res.status(502).json({ ok: false, error: "plan generation failed" });
   const items = (out.concepts || []).slice(0, 16).map((c, i) => {
     const day = Math.min(Math.max(parseInt(c.day, 10) || (2 + i * 2), 1), 28);
-    return { key: `${year}-${month}-${i}`, day, time: i % 2 ? "20:30" : "20:00", t: String(c.t || ""), ty: String(c.ty || "منشور علامة"), pillar: String(c.pillar || ""), status: "draft", id: null };
+    return { key: `${year}-${month}-${i}`, day, time: i % 2 ? "20:30" : "20:00", t: String(c.t || ""), ty: String(c.ty || "منشور علامة"), pillar: String(c.pillar || ""), hook: String(c.hook || ""), cap: String(c.cap || ""), status: "draft", id: null };
   });
   const plan = store.setPlan({ label, year, month, goal: String(out.goal || ""), pillars: (out.pillars || []).map(String).slice(0, 6), items, generatedAt: new Date().toISOString() });
   res.json({ ok: true, plan });
@@ -193,8 +209,8 @@ app.post("/api/plan/generate", async (req, res) => {
 // Save owner edits to the draft plan (titles, types, days, pillars).
 app.put("/api/plan", (req, res) => {
   const p = (req.body || {}).plan;
-  if (!p || !Array.isArray(p.items)) return res.status(400).json({ ok: false, error: "plan.items required" });
-  const cur = store.getPlan() || {};
+  if (!p || !Array.isArray(p.items) || !p.year) return res.status(400).json({ ok: false, error: "plan.items + year/month required" });
+  const cur = store.getPlan(`${p.year}-${String(p.month).padStart(2, "0")}`) || {};
   // keep applied ids/status authoritative from the server side
   const byKey = Object.fromEntries((cur.items || []).map((i) => [i.key, i]));
   p.items = p.items.map((i) => ({ ...i, status: byKey[i.key]?.status === "applied" ? "applied" : "draft", id: byKey[i.key]?.id || null }));
@@ -203,10 +219,11 @@ app.put("/api/plan", (req, res) => {
 
 // 💡 Idea inbox: expand a raw owner idea into a draft plan row (first free day).
 app.post("/api/plan/idea", async (req, res) => {
-  const text = ((req.body || {}).text || "").trim();
+  const { text: raw, month } = req.body || {};
+  const text = (raw || "").trim();
   if (!text) return res.status(400).json({ ok: false, error: "text required" });
   if (!generator.claudeReady()) return res.status(400).json({ ok: false, error: "add ANTHROPIC_API_KEY to enable generation" });
-  const plan = store.getPlan();
+  const plan = store.getPlan(month);
   if (!plan) return res.status(400).json({ ok: false, error: "no plan yet — generate one first" });
   let c;
   try { c = await generator.expandIdea(text); }
@@ -223,7 +240,8 @@ app.post("/api/plan/idea", async (req, res) => {
 app.post("/api/plan/apply-item", async (req, res) => {
   const { key } = req.body || {};
   if (!generator.claudeReady()) return res.status(400).json({ ok: false, error: "add ANTHROPIC_API_KEY to enable generation" });
-  const plan = store.getPlan();
+  const plans = store.getPlans();
+  const plan = Object.values(plans).find((p) => (p.items || []).some((i) => i.key === key));
   const item = plan?.items?.find((i) => i.key === key);
   if (!item) return res.status(404).json({ ok: false, error: "plan item not found" });
   if (item.status === "applied" && item.id) return res.json({ ok: true, plan, post: null, already: true });
