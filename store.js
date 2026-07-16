@@ -104,6 +104,22 @@ export function setOverride(id, patch) {
   return ov[id];
 }
 
+// ── Hook preferences ── titles the owner picked (A/B), to steer future writing.
+const PREF_FILE = sp("hookprefs.json");
+let prefs = [];
+try { prefs = JSON.parse(fs.readFileSync(PREF_FILE, "utf8")); } catch (e) { prefs = []; }
+export function getHookPrefs() { return prefs; }
+export function addHookPref(text) {
+  const t = String(text || "").trim(); if (!t) return prefs;
+  prefs = [t, ...prefs.filter((x) => x !== t)].slice(0, 12); // most-recent first, dedup
+  try { writeDurable(PREF_FILE, JSON.stringify(prefs)); } catch (e) {}
+  return prefs;
+}
+// A short line for generation prompts so writing leans toward the owner's taste.
+export function hookPrefLine() {
+  return prefs.length ? `أمثلة عناوين فضّلها المالك سابقاً (حاكِ أسلوبها وإيقاعها لا نصّها): ${prefs.slice(0, 6).map((p) => `«${p}»`).join(" · ")}.` : "";
+}
+
 // ── Pre-publish announcements ── ids the owner was already alerted about (T-10m).
 const ANN_FILE = sp("announced.json");
 let announced = {};

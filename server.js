@@ -128,7 +128,7 @@ app.post("/api/regenerate", async (req, res) => {
   if (!item) return res.status(404).json({ ok: false, error: "post not found" });
   const notes = store.getPostThread(id);
   let out;
-  try { out = await generator.regeneratePost({ ...item, ...(store.getOverrides()[id] || {}) }, notes, lang || "ar"); }
+  try { out = await generator.regeneratePost({ ...item, ...(store.getOverrides()[id] || {}) }, notes, lang || "ar", store.hookPrefLine()); }
   catch (e) { console.error("[regenerate]", e.message); return res.status(500).json({ ok: false, error: e.message }); }
   if (!out) return res.status(502).json({ ok: false, error: "generation failed" });
   // Reels get a REAL new video (motion reel); other posts get a fresh design image.
@@ -154,6 +154,37 @@ app.post("/api/regenerate", async (req, res) => {
   res.json({ ok: true, override: saved, thread: store.getPostThread(id) });
 });
 
+// A/B hooks — propose 3 alternative titles for a post (owner picks one).
+app.post("/api/alt-hooks", async (req, res) => {
+  const { id } = req.body || {};
+  if (!generator.claudeReady()) return res.status(400).json({ ok: false, error: "add ANTHROPIC_API_KEY to enable generation" });
+  const item = fullQueue().find((q) => q.id === id);
+  if (!item) return res.status(404).json({ ok: false, error: "post not found" });
+  let hooks;
+  try { hooks = await generator.altHooks(item, store.hookPrefLine()); }
+  catch (e) { console.error("[alt-hooks]", e.message); return res.status(500).json({ ok: false, error: e.message }); }
+  if (!hooks) return res.status(502).json({ ok: false, error: "generation failed" });
+  res.json({ ok: true, hooks });
+});
+
+// Apply a chosen alternative title: sets the override title, re-renders the
+// design (keeps reels as video), and records the pick to steer future writing.
+app.post("/api/apply-hook", async (req, res) => {
+  const { id, hook } = req.body || {};
+  if (!id || !hook || !String(hook).trim()) return res.status(400).json({ ok: false, error: "id & hook required" });
+  const item = fullQueue().find((q) => q.id === id);
+  if (!item) return res.status(404).json({ ok: false, error: "post not found" });
+  const merged = { ...item, t: String(hook).trim() };
+  const isReel = (item.ty || "").includes("ريل");
+  const patch = { t: merged.t };
+  try {
+    if (!isReel) { const d = await renderAndSaveDesign(merged, merged); patch.mediaUrl = d.mediaUrl; patch.images = d.images || []; }
+  } catch (e) { console.error("[apply-hook design]", e.message); }
+  store.addHookPref(merged.t); // learn the owner's taste
+  const saved = store.setOverride(id, patch);
+  res.json({ ok: true, override: saved, prefs: store.getHookPrefs().length });
+});
+
 // Generate a brand-new post from an optional free-form prompt.
 app.post("/api/generate-post", async (req, res) => {
   const { prompt, date, lang } = req.body || {};
@@ -161,7 +192,7 @@ app.post("/api/generate-post", async (req, res) => {
   const idNum = nextIdNum(baseState().queue);
   const when = date || defaultNextSlot();
   let post;
-  try { post = await generator.generatePost({ idNum, date: when, prompt: prompt || "" }, lang || "ar"); }
+  try { post = await generator.generatePost({ idNum, date: when, prompt: prompt || "", prefLine: store.hookPrefLine() }, lang || "ar"); }
   catch (e) { console.error("[generate-post]", e.message); return res.status(500).json({ ok: false, error: e.message }); }
   if (!post) return res.status(502).json({ ok: false, error: "generation failed" });
   try {

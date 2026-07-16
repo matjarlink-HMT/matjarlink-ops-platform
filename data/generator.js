@@ -45,11 +45,11 @@ function parseJSON(raw) {
 }
 
 // Rewrite an existing post based on the owner's notes.
-export async function regeneratePost(item = {}, notes = [], lang = "ar") {
+export async function regeneratePost(item = {}, notes = [], lang = "ar", prefLine = "") {
   if (!claudeReady()) return null;
   const noteText = (notes || []).filter(n => n && n.role === "user").map(n => n.text).join(" | ") || "(بدون ملاحظة محددة — حسّن الجودة والهوك)";
   const system = `${BRAND}
-
+${prefLine ? prefLine + "\n" : ""}
 أنت «CAIMO»، مدير التسويق في متجرلينك — لست منفّذاً حرفياً. طبّق ملاحظة المالك **بحكمك المهني**: إن كانت في مصلحة الحساب نفّذها، وإن رأيتها تُضعف المنشور (عنوان طويل أو وصفي، هوك ضعيف) فحسّنها مع احترام نيّتها. اجعل العنوان (t) قصيراً قوياً يوقف السكرول (٦ كلمات أو أقل إن أمكن).
 المنشور الحالي: العنوان «${item.t || ""}» — النوع «${item.ty || ""}» — الكابشن «${(item.cap || "").slice(0, 400)}».
 ملاحظات المالك: ${noteText}
@@ -61,10 +61,10 @@ export async function regeneratePost(item = {}, notes = [], lang = "ar") {
 }
 
 // Generate a brand-new post. `prompt` is optional free-form direction from the owner.
-export async function generatePost({ idNum = 0, date = "", pillar = "", prompt = "" } = {}, lang = "ar") {
+export async function generatePost({ idNum = 0, date = "", pillar = "", prompt = "", prefLine = "" } = {}, lang = "ar") {
   if (!claudeReady()) return null;
   const system = `${BRAND}
-
+${prefLine ? prefLine + "\n" : ""}
 أنت وكيل المحتوى في متجرلينك. أنشئ منشور إنستغرام واحداً جديداً${pillar ? ` ضمن عمود المحتوى: «${pillar}»` : ""}${prompt ? ` وفق توجيه المالك: «${prompt}»` : ""}.
 أعد **JSON فقط** بلا أي نص خارج الأقواس بهذا الشكل:
 {"t":"<السطر الرئيسي للعنوان (خمري) — قصير صادم>","t2":"<سطر ثانٍ مكمّل برتقالي أو \"\">","cta":"<عبارة حث ≤4 كلمات كحبة مائلة أو \"\">","ty":"<نوع من: ريل تشويقي/كاروسيل توعوي/منشور علامة/تفاعلي + استطلاع/مجتمعي/كاروسيل فاخر>","cap":"<الكابشن كاملاً باللهجة العُمانية>","brief":"<بريف تصميم: الصيغة + هوك قوي + ألوان خمري/برتقالي + طاقة بصرية عالية + Stop-the-Scroll>","photo":"<٢-٤ كلمات إنجليزية لصورة خلفية موضوعية تناسب المنشور — مثل: omani merchant store / online shopping delivery / retail cashier — أو اتركها فارغة \"\" إن كانت بطاقة نصية أنسب>","slides":[<إن كان النوع «كاروسيل» اجعلها ٤-٦ شرائح محتوى (بعد الغلاف)، كل عنصر {"t":"عنوان قصير للشريحة","body":"سطر أو سطران موجزان"} — واجعل الشريحة الأخيرة ختاماً (reveal): {"t":"سؤال ختامي يلخص القيمة","body":"جسر قصير","t2":"جملة الحل تُرسم برتقالية مثل «ومتجرلينك جايب لك الحل»","cta":"قريبًا في سلطنة عُمان"}؛ وإلا اتركها []>],"scenes":[<إن كان النوع «ريل» اجعلها ٣ مشاهد فيديو متتابعة: هوك صادم ثم القيمة ثم ختام «قريبًا» — كل عنصر {"t":"سطر المشهد (٦ كلمات أو أقل)","body":"سطر داعم موجز أو \"\"","kicker":"سطر تمهيدي صغير أو \"\"}؛ وإلا اتركها []>]}`;
@@ -72,6 +72,21 @@ export async function generatePost({ idNum = 0, date = "", pillar = "", prompt =
   if (!out || !out.cap) return null;
   const id = "MJ-" + String(idNum).padStart(3, "0");
   return { id, t: String(out.t || "منشور جديد"), t2: out.t2 ? String(out.t2) : "", cta: out.cta ? String(out.cta) : "", ch: "IG", ty: String(out.ty || "منشور علامة"), tyc: pickColor(idNum), date, st: ["مسودة — بانتظار التصميم", "p-idle"], drive: "", gen: true, cap: String(out.cap), brief: String(out.brief || ""), photoQuery: out.photo ? String(out.photo) : "", slides: cleanSlides(out.slides), scenes: cleanScenes(out.scenes) };
+}
+
+// Propose 3 alternative scroll-stopping hooks/titles for a post (A/B testing).
+// prefLine steers them toward the owner's picked style.
+export async function altHooks(item = {}, prefLine = "") {
+  if (!claudeReady()) return null;
+  const system = `${BRAND}
+
+أنت «CAIMO». اقترح ٣ عناوين بديلة قصيرة توقف السكرول للمنشور التالي — بزوايا مختلفة (سؤال، رقم/قائمة، ألم/فائدة). كل عنوان ٦ كلمات أو أقل باللهجة العُمانية.
+المنشور: «${item.t || ""}» — النوع «${item.ty || ""}» — الكابشن «${(item.cap || "").slice(0, 200)}».
+${prefLine}
+أعد **JSON فقط**: {"hooks":["<عنوان١>","<عنوان٢>","<عنوان٣>"]}`;
+  const out = parseJSON(await chat([{ role: "user", text: "اقترح الآن. JSON فقط." }], system));
+  const hooks = (out && Array.isArray(out.hooks) ? out.hooks : []).map((h) => String(h || "").trim()).filter(Boolean).slice(0, 3);
+  return hooks.length ? hooks : null;
 }
 
 // Expand a raw owner idea («فكرة: …») into a plan-row concept.

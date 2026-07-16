@@ -561,11 +561,12 @@ function pdetailMain(q) {
       <div class="pnotebar"><input class="pnote" data-id="${q.id}" placeholder="${T("note_ask_ph")}" autocomplete="off"><button class="btn sm askbtn" data-ask="${q.id}">${T("note_ask")}</button></div>
       <div class="pactions">
         ${pub ? "" : `<button class="btn ghost sm regenbtn ${hasNote ? "hot" : ""}" data-regen="${q.id}">♻️ ${T("regen")}</button>`}
+        ${pub ? "" : `<button class="btn ghost sm" data-alt="${q.id}">🅰🅱 ${T("alt_hooks")}</button>`}
         ${approved || pub ? "" : `<button class="btn ok sm" data-approve="${q.id}">✓ ${T("approve")}</button>`}
         ${pubBtn}${stopBtn}
         ${isVideoUrl(q.mediaUrl) ? `<button class="btn ghost sm" data-playvid="${q.mediaUrl}">▶ ${lang === "en" ? "Preview" : lang === "fa" ? "پیش‌نمایش" : "معاينة"}</button>` : q.drive ? `<button class="btn ghost sm" data-play2="${q.drive}" data-reel="${(q.ty || "").includes("ريل") ? "1" : "0"}">▶ ${lang === "en" ? "Preview" : lang === "fa" ? "پیش‌نمایش" : "معاينة"}</button>` : ""}${q.drive ? `<a class="link sm" target="_blank" href="https://drive.google.com/file/d/${q.drive}/view">${T("openDrive")}</a>` : ""}
         <button class="btn ghost sm delbtn" data-del="${q.id}" title="${T("del")}" style="margin-inline-start:auto">🗑</button>
-      </div></div></div>`;
+      </div><div class="althost" data-althost="${q.id}"></div></div></div>`;
 }
 function setFocus(i, list) {
   pf.focus = Math.max(0, Math.min(list.length - 1, i));
@@ -625,6 +626,20 @@ function bindDetail(list) {
   host.querySelectorAll("[data-pub]").forEach(b => b.onclick = () => publishPost(b.dataset.pub, b));
   host.querySelectorAll("[data-play2]").forEach(b => b.onclick = () => openDrivePlay(b.dataset.play2, host.querySelector(".ptitle")?.textContent || "", b.dataset.reel === "1"));
   host.querySelectorAll("[data-playvid]").forEach(b => b.onclick = () => openVideo(b.dataset.playvid, host.querySelector(".ptitle")?.textContent || ""));
+  host.querySelectorAll("[data-alt]").forEach(b => b.onclick = async () => {
+    const id = b.dataset.alt, box = host.querySelector(`[data-althost="${id}"]`);
+    b.disabled = true; b.innerHTML = `🅰🅱 <span class="dots"><i></i><i></i><i></i></span>`;
+    const r = await fetch("/api/alt-hooks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).then(x => x.json()).catch(() => null);
+    b.disabled = false; b.innerHTML = `🅰🅱 ${T("alt_hooks")}`;
+    if (!r || !r.ok) { if (box) box.innerHTML = `<div class="mut">${(r && r.error) || "!"}</div>`; return; }
+    if (box) box.innerHTML = `<div class="altwrap"><div class="mut" style="width:100%">${T("alt_pick")}</div>${r.hooks.map(h => `<button class="altchip" data-pick="${escapeHtml(h).replace(/"/g, "&quot;")}" data-pid="${id}">${escapeHtml(h)}</button>`).join("")}</div>`;
+    box.querySelectorAll("[data-pick]").forEach(c => c.onclick = async () => {
+      c.disabled = true; c.classList.add("picking");
+      const rr = await fetch("/api/apply-hook", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: c.dataset.pid, hook: c.dataset.pick }) }).then(x => x.json()).catch(() => null);
+      if (rr && rr.ok) { try { S = await fetch("/api/state").then(x => x.json()); } catch (e) {} renderPipeline($("#content")); }
+      else { c.disabled = false; c.classList.remove("picking"); }
+    });
+  });
   host.querySelectorAll(".slidethumb").forEach((b, i) => b.onclick = () => {
     const imgs = [...host.querySelectorAll(".slidethumb")].map(x => x.dataset.img);
     openGallery(imgs, i, host.querySelector(".ptitle")?.textContent || "");

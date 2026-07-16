@@ -235,6 +235,26 @@ table{width:100%;border-collapse:collapse;font-size:.83rem}th,td{text-align:star
 .agrow:hover,.toprow:hover{background:#fbf5f9}
 .montab{transition:background .15s ease,color .15s ease,border-color .15s ease}
 .montab:hover:not(.on){border-color:var(--orange);color:var(--orange)}
+/* A/B alternative titles */
+.althost{margin-top:.5rem}
+.altwrap{display:flex;flex-wrap:wrap;gap:.45rem;background:var(--orange-soft);border-radius:12px;padding:.6rem .7rem}
+.altchip{all:unset;cursor:pointer;background:#fff;border:1px solid #f0d9b8;border-radius:999px;padding:.35rem .8rem;font-size:.82rem;font-weight:700;color:var(--plum-deep);transition:transform .12s ease,box-shadow .12s ease,background .12s ease}
+.altchip:hover{background:var(--orange);color:#fff;border-color:var(--orange);transform:translateY(-1px);box-shadow:0 3px 10px rgba(232,137,15,.3)}
+.altchip.picking{opacity:.5}
+/* ── second refinement: empty states, focus rings, headers, mobile ── */
+.card:focus-within{border-color:#e7cfe0}
+.btn:focus-visible,.nav button:focus-visible,.montab:focus-visible,.altchip:focus-visible{outline:2px solid var(--orange);outline-offset:2px}
+.planempty,.loading{border-radius:var(--r)}
+.planempty .ptitle{font-size:1.15rem}
+.pill{transition:filter .12s ease}
+.top h1{letter-spacing:-.01em}
+.sec-h h2{letter-spacing:-.01em}
+.agent .task{transition:background .12s ease}
+.agent:hover .task{background:#fbf3f8}
+.kpi .n{transition:color .2s ease}
+@media(max-width:820px){.montabs{overflow-x:auto;flex-wrap:nowrap}.montab{flex:none}.pactions{gap:.4rem}.top h1{font-size:1.15rem}}
+.segbar{border-radius:999px;overflow:hidden}
+.brand .logo{transition:transform .3s ease}.brand:hover .logo{transform:rotate(-6deg)}
 </style></head><body>
 <div class="app">
   <main class="main">
