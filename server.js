@@ -369,6 +369,33 @@ async function renderAndSaveDesign(item, content = {}) {
   return { mediaUrl: `/media/design/${item.id}?v=${ts}`, images: [] };
 }
 
+// After a feed post publishes, optionally publish a branded companion Story
+// ("جديد في البروفايل ↑") — doubles daily presence with zero owner effort.
+// Toggle with AUTO_STORY. Never throws into the publish path.
+async function publishCompanionStory(item, kind, base) {
+  try {
+    if ((process.env.AUTO_STORY || store.cfgGet("AUTO_STORY")) !== "on") return;
+    if (kind === "reel") return; // stories accompany feed image/carousel posts
+    const { renderStory } = await import("./data/designEngine.js");
+    const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
+    const buf = await renderStory({ title: item.t || item.cap || "منشور جديد" });
+    const name = `${item.id}-story`;
+    const fd = fs.openSync(path.join(dir, name + ".png"), "w"); try { fs.writeSync(fd, buf); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    const url = `${base}/media/design/${name}?v=${Date.now()}`;
+    await metaPublish.publishStory(url);
+    console.log(`[story] companion story for ${item.id}`);
+  } catch (e) { console.error("[story]", e.message); }
+}
+
+// Notify the owner on WhatsApp (best-effort; needs OWNER_WHATSAPP + WA config).
+async function notifyOwner(text) {
+  try {
+    const to = process.env.OWNER_WHATSAPP || store.cfgGet("OWNER_WHATSAPP");
+    if (!to || !wa.whatsappReady()) return false;
+    await wa.sendMessage(to, text); return true;
+  } catch (e) { console.error("[notifyOwner]", e.message); return false; }
+}
+
 // Generate a REAL new reel video (1080x1920 MP4) from CAIMO's scenes.
 async function renderAndSaveReel(item, content = {}) {
   const { renderReel } = await import("./data/reelEngine.js");
@@ -574,6 +601,7 @@ app.post("/api/publish", async (req, res) => {
     const result = await metaPublish.publish(input);
     store.markPublished(id, result);
     res.json({ ok: true, result });
+    publishCompanionStory(item, input.kind, publicBase(req)); // fire-and-forget
   } catch (e) {
     console.error("[publish]", e.message);
     res.status(500).json({ ok: false, error: e.message });
@@ -618,12 +646,19 @@ async function autoPublishTick() {
     const when = parseWhen(q.date);
     if (held || !when) continue;
     const dueAgo = now - when.getTime();
+    // 10-minute heads-up: as a post enters its final window, alert the owner on
+    // WhatsApp ONCE so they always have ~10 min to hit ⏸ before it goes live.
+    if (dueAgo < 0 && dueAgo > -10 * 60000 && !store.wasAnnounced(q.id)) {
+      store.markAnnounced(q.id);
+      const mins = Math.max(1, Math.ceil(-dueAgo / 60000));
+      notifyOwner(`⏰ متجرلينك: «${q.t}» سيُنشر تلقائياً خلال ~${mins} دقيقة. لإيقافه افتح اللوحة واضغط ⏸ على المنشور.`);
+    }
     if (dueAgo < 0 || dueAgo > STALE_MS) continue; // not due yet, or too stale (publish manually)
     const input = resolveMedia(q, publicBase());
     if (!input) continue; // needs media
     if (publishingNow.has(q.id)) continue; // a manual publish is already in flight
     publishingNow.add(q.id);
-    try { const r = await metaPublish.publish(input); store.markPublished(q.id, r); console.log(`[auto-publish] ${q.id} → ${r.permalink || r.id}`); }
+    try { const r = await metaPublish.publish(input); store.markPublished(q.id, r); console.log(`[auto-publish] ${q.id} → ${r.permalink || r.id}`); publishCompanionStory(q, input.kind, publicBase()); }
     catch (e) { console.error(`[auto-publish] ${q.id}: ${e.message}`); }
     finally { publishingNow.delete(q.id); }
     break; // at most one publish per tick — avoids simultaneous bursts

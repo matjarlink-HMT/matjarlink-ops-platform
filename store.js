@@ -104,6 +104,13 @@ export function setOverride(id, patch) {
   return ov[id];
 }
 
+// ── Pre-publish announcements ── ids the owner was already alerted about (T-10m).
+const ANN_FILE = sp("announced.json");
+let announced = {};
+try { announced = JSON.parse(fs.readFileSync(ANN_FILE, "utf8")); } catch (e) { announced = {}; }
+export function wasAnnounced(id) { return Boolean(announced[id]); }
+export function markAnnounced(id) { announced[id] = new Date().toISOString(); try { writeDurable(ANN_FILE, JSON.stringify(announced)); } catch (e) {} }
+
 // ── Content plans ── editable monthly plans keyed by "YYYY-MM". Volume-backed.
 // Migrates the old single plan.json into the keyed map on first load.
 const PLANS_FILE = sp("plans.json");

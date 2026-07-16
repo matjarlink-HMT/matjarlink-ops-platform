@@ -296,6 +296,43 @@ export async function renderDesign({ headline = "", headline2 = "", cta = "", bo
   return cv.toBuffer("image/png");
 }
 
+// ── Story ── 1080x1920 branded "new on the profile" companion for a feed post ─
+export async function renderStory({ title = "", badge = "جديد في البروفايل" } = {}) {
+  const W = 1080, H = 1920, CX = W / 2;
+  const cv = createCanvas(W, H);
+  const ctx = cv.getContext("2d");
+  const g = ctx.createLinearGradient(0, 0, W * 0.5, H);
+  g.addColorStop(0, MAGENTA); g.addColorStop(1, DEEP);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // corner pills (lighter on the dark ground)
+  pill(ctx, 900, 120, 460, 84, -33, ORANGE);
+  pill(ctx, 150, 1720, 360, 70, -33, "#8A1A50");
+  pill(ctx, 250, 1830, 320, 70, -33, ORANGE);
+  sparkle(ctx, 200, 520, 30, ORANGE); sparkle(ctx, 900, 1380, 22, "#F0D8E6");
+  const wl = await getTintedLogo("#ffffff");
+  if (wl) ctx.drawImage(wl, CX - 190, 300, 380, 380);
+  ctx.textAlign = "center"; ctx.direction = "rtl";
+  // badge pill
+  ctx.font = "48px TajawalXB";
+  const bw = ctx.measureText(badge).width, bpw = bw + 120;
+  ctx.fillStyle = ORANGE; ctx.beginPath(); ctx.roundRect(CX - bpw / 2, 760, bpw, 100, 50); ctx.fill();
+  ctx.fillStyle = "#fff"; ctx.fillText(badge, CX, 826);
+  // title
+  ctx.fillStyle = "#fff"; let size = 92;
+  let lines = wrapLines((ctx.font = size + "px TajawalXB", ctx), title, W - 200);
+  while (lines.length > 3 && size > 60) { size -= 8; lines = wrapLines((ctx.font = size + "px TajawalXB", ctx), title, W - 200); }
+  let y = 1030 + size;
+  for (const ln of lines.slice(0, 4)) { ctx.fillText(ln, CX, y); y += size * 1.3; }
+  // "see it now" cue + a drawn up-chevron (no emoji — the font lacks them)
+  const cueY = Math.max(y + 70, 1500);
+  ctx.fillStyle = CREAM; ctx.font = "52px TajawalXB"; ctx.fillText("اطّلع عليه الآن", CX, cueY);
+  ctx.strokeStyle = ORANGE; ctx.lineWidth = 8; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.beginPath(); ctx.moveTo(CX - 26, cueY + 46); ctx.lineTo(CX, cueY + 20); ctx.lineTo(CX + 26, cueY + 46); ctx.stroke();
+  ctx.lineCap = "butt";
+  drawFooter(ctx, W, H, true);
+  return cv.toBuffer("image/png");
+}
+
 // ── Reel frames ── 1080x1920 (9:16) scenes for the generated motion reel ─────
 // kind: "hook" (kicker + big headline) | "body" (headline + supporting line)
 //       | "cta" (big logo + قريبًا + handle)

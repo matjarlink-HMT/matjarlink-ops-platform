@@ -70,6 +70,15 @@ export async function publish(item) {
   return { id, permalink, at: new Date().toISOString() };
 }
 
+// Publish a Story (image). Instagram pulls the public imageUrl. Requires the
+// same content-publish permission; STORIES media type on the IG user node.
+export async function publishStory(imageUrl) {
+  if (!publishReady()) throw new Error("Meta publishing not configured");
+  const { id: creationId } = await post(`${IG()}/media`, { image_url: imageUrl, media_type: "STORIES" });
+  const { id } = await post(`${IG()}/media_publish`, { creation_id: creationId });
+  return { id, at: new Date().toISOString() };
+}
+
 // Map a dashboard queue item to publish input; returns null if no public media yet.
 export function fromQueueItem(q) {
   const media = q.images ? { images: q.images } : q.mediaUrl ? { mediaUrl: q.mediaUrl } : null;

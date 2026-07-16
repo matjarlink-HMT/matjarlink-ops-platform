@@ -205,6 +205,36 @@ table{width:100%;border-collapse:collapse;font-size:.83rem}th,td{text-align:star
 .slides{display:flex;gap:.5rem;overflow-x:auto;padding:.35rem 0 .5rem}
 .slidethumb{flex:0 0 auto;width:3.6rem;aspect-ratio:4/5;border-radius:9px;object-fit:cover;cursor:pointer;border:2px solid var(--line)}.slidethumb:hover{border-color:var(--orange)}
 #mvframe img{display:block}
+/* ── design polish pass (professional dashboard) ── */
+:root{--shadow:0 1px 2px rgba(78,14,48,.05),0 4px 14px rgba(78,14,48,.05);--shadow-lg:0 6px 26px rgba(78,14,48,.10);--r:15px}
+.main{background:radial-gradient(1200px 400px at 100% -5%,rgba(232,137,15,.06),transparent 60%),radial-gradient(1000px 400px at -10% 0,rgba(157,31,96,.06),transparent 55%)}
+.card{border-radius:var(--r);transition:box-shadow .18s ease,transform .18s ease,border-color .18s ease}
+.card:hover{box-shadow:var(--shadow-lg)}
+.sec-h h2{position:relative;padding-inline-start:.7rem}
+.sec-h h2::before{content:"";position:absolute;inset-inline-start:0;top:.15em;bottom:.15em;width:.28rem;border-radius:2px;background:linear-gradient(var(--orange),var(--plum))}
+/* KPI cards: accent bar + lift + tabular numerals */
+.kpi{position:relative;overflow:hidden}
+.kpi::before{content:"";position:absolute;top:0;inset-inline-start:0;right:0;height:.22rem;background:linear-gradient(90deg,var(--orange),var(--plum))}
+.kpi .n{font-size:2rem;font-feature-settings:"tnum";letter-spacing:-.02em}
+.kpi:hover{transform:translateY(-2px)}
+/* live pulse */
+@keyframes mlpulse{0%{box-shadow:0 0 0 0 rgba(30,142,90,.5)}70%{box-shadow:0 0 0 .5rem rgba(30,142,90,0)}100%{box-shadow:0 0 0 0 rgba(30,142,90,0)}}
+.dotlive{animation:mlpulse 2s infinite}
+/* sidebar active accent + smoother */
+.nav button{transition:background .15s ease,color .15s ease;position:relative}
+.nav button.on::before{content:"";position:absolute;inset-inline-start:-.8rem;top:.35rem;bottom:.35rem;width:.28rem;border-radius:0 3px 3px 0;background:var(--orange)}
+/* buttons micro-interactions */
+.btn{transition:transform .12s ease,box-shadow .12s ease,filter .12s ease}
+.btn:not(:disabled):active{transform:translateY(1px)}
+.btn:not(.ghost):not(:disabled):hover{filter:brightness(1.05)}
+/* nicer scrollbars */
+.qwrap::-webkit-scrollbar,.tablewrap::-webkit-scrollbar,.slides::-webkit-scrollbar,.side::-webkit-scrollbar{height:.5rem;width:.5rem}
+.qwrap::-webkit-scrollbar-thumb,.tablewrap::-webkit-scrollbar-thumb,.slides::-webkit-scrollbar-thumb{background:#e0d3dd;border-radius:999px}
+/* live agenda / top rows hover */
+.agrow{transition:background .12s ease;border-radius:8px;padding:.35rem .4rem}
+.agrow:hover,.toprow:hover{background:#fbf5f9}
+.montab{transition:background .15s ease,color .15s ease,border-color .15s ease}
+.montab:hover:not(.on){border-color:var(--orange);color:var(--orange)}
 </style></head><body>
 <div class="app">
   <main class="main">
