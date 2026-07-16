@@ -68,6 +68,29 @@ export function deriveNeeds(ctx = {}) {
   return N;
 }
 
+// ── performance ── rank published posts + summarize what works, for the plan ─
+export function topPosts(published = [], n = 5) {
+  return [...published]
+    .map((m) => ({ ...m, eng: (m.likes || 0) + (m.comments || 0) + (m.saved || 0) + (m.shares || 0) }))
+    .sort((a, b) => b.eng - a.eng)
+    .slice(0, n);
+}
+// A one-line summary of which format performs best — injected into the planner
+// prompt so each month's plan learns from real engagement (closed loop).
+export function perfSummary(published = []) {
+  if (!published.length) return "";
+  const byType = {};
+  for (const m of published) {
+    const t = m.type === "VIDEO" ? "ريلز" : m.type === "CAROUSEL_ALBUM" ? "كاروسيل" : "منشور مفرد";
+    (byType[t] = byType[t] || []).push((m.likes || 0) + (m.comments || 0) + (m.saved || 0));
+  }
+  const avg = Object.entries(byType).map(([t, xs]) => [t, xs.reduce((a, b) => a + b, 0) / xs.length]).sort((a, b) => b[1] - a[1]);
+  if (!avg.length) return "";
+  const best = avg[0][0];
+  const top = topPosts(published, 3).map((m) => `«${(m.t || "").slice(0, 30)}» (${m.eng} تفاعل)`).join("، ");
+  return `الأداء الفعلي الشهر الماضي: الأعلى تفاعلاً هو نوع «${best}». أفضل المنشورات: ${top}. رجّح ما ينجح.`;
+}
+
 // ── live agent status ── wire seeded agents to what's really happening ───────
 export function deriveAgents(agents = [], ctx = {}) {
   const { queue = [], notes = {}, publishedLog = {}, insights = null, comments = [], messages = [], plan = null, reconcile: rec = null, connectivity = {} } = ctx;

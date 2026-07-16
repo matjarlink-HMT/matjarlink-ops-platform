@@ -88,11 +88,11 @@ export async function expandIdea(text = "") {
 }
 
 // Generate next month's plan: goal + pillars + 12 dated concepts (no full captions yet).
-export async function generatePlan(monthLabel = "", year = 2026, month = 1, lang = "ar") {
+export async function generatePlan(monthLabel = "", year = 2026, month = 1, lang = "ar", perf = "") {
   if (!claudeReady()) return null;
   const system = `${BRAND}
 
-أنت وكيل التخطيط في متجرلينك. ضع خطة محتوى إنستغرام لشهر «${monthLabel}» — ١٢ منشوراً موزّعة كل ~يومين بفترات مسائية، تدوّر الأعمدة وتنهي الشهر بكاروسيل فاخر.
+أنت وكيل التخطيط في متجرلينك. ضع خطة محتوى إنستغرام لشهر «${monthLabel}» — ١٢ منشوراً موزّعة كل ~يومين بفترات مسائية، تدوّر الأعمدة وتنهي الشهر بكاروسيل فاخر.${perf ? `\n${perf}` : ""}
 أعد **JSON فقط** بهذا الشكل:
 {"goal":"<هدف الشهر بجملة>","pillars":["...","...","...","...","..."],"concepts":[{"t":"<عنوان>","ty":"<نوع>","pillar":"<العمود>","day":<رقم اليوم>,"hook":"<هوك قصير يوقف السكرول>","cap":"<كابشن مختصر جاهز باللهجة العُمانية، سطر أو سطران>"},... 12 عنصر]}`;
   const out = parseJSON(await chat([{ role: "user", text: "ضع الخطة الآن. JSON فقط." }], system));

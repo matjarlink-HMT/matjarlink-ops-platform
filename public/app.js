@@ -434,9 +434,16 @@ function ovv() {
   const sched = `<div class="card"><div class="sec-h"><h2>${T("dash_upcoming")}</h2></div>
     <div class="agenda">${up.map(x => `<div class="agrow"><span class="agd">${x.date}</span><span class="agc">${chan(x.ch)}</span><span class="agt">${escapeHtml(x.t)}</span>${((S.notes && S.notes[x.id]) || {}).status === "معتمد" ? `<span class="pill p-ok">✓</span>` : `<span class="pill p-warn">${T("s_review")}</span>`}</div>`).join("") || `<div class="mut">—</div>`}</div></div>`;
   const cmp = (A && A.platforms) ? `<div class="card"><div class="sec-h"><h2>${T("comparison")}</h2></div>${compareBars()}</div>` : "";
+  // 🏆 top performing posts (live, from real Instagram engagement)
+  const tp = S.topPosts || [];
+  const topCard = tp.length ? `<div class="card"><div class="sec-h"><h2>🏆 ${T("dash_top")}</h2><span class="pill p-ok">live</span></div>
+    <div class="toplist">${tp.map((m, i) => `<div class="toprow"><span class="topr">${i + 1}</span>
+      <span class="topt">${m.url ? `<a class="link" target="_blank" href="${m.url}">${escapeHtml((m.t || "").slice(0, 42))} ↗</a>` : escapeHtml((m.t || "").slice(0, 42))}</span>
+      <span class="topm">❤ ${nf(m.likes)} · 💬 ${nf(m.comments)}${m.saved ? ` · 🔖 ${nf(m.saved)}` : ""}${m.reach != null ? ` · 👁 ${nf(m.reach)}` : ""}</span></div>`).join("")}</div></div>` : "";
   return `${briefCard()}<div class="grid g4" style="margin-top:1rem">${k}</div>
     <div class="grid g2" style="margin-top:1rem">${pipeHealth}${trend}</div>
-    <div class="grid g2" style="margin-top:1rem">${sched}${ins}</div>
+    <div class="grid g2" style="margin-top:1rem">${ins}${topCard || sched}</div>
+    ${topCard ? `<div style="margin-top:1rem">${sched}</div>` : ""}
     <div style="margin-top:1rem">${cmp}</div>`;
 }
 

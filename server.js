@@ -69,7 +69,16 @@ app.get("/api/state", async (req, res) => {
   if (comments.length) state.comments = comments;
   const merged = [...igMsgs, ...waMsgs];
   if (merged.length) state.messages = merged;
-  if (published.length) state.published = published;
+  // enrich each published post with reach/saved/shares (Insights edge), cached
+  if (published.length) {
+    const withInsights = await settle(cached("mediaInsights", 900, async () => {
+      const capped = published.slice(0, 8);
+      const ins = await Promise.all(capped.map((m) => meta.getMediaInsights(m.id).catch(() => null)));
+      return published.map((m, i) => (i < ins.length && ins[i]) ? { ...m, reach: ins[i].reach ?? null, saved: ins[i].saved ?? 0, shares: ins[i].shares ?? 0 } : m);
+    }), published);
+    state.published = withInsights;
+    state.topPosts = live.topPosts(withInsights, 5);
+  }
   if (insights) state.insights = insights;
   // Ensure the Publish Verifier is always on the roster (added dynamically).
   if (!state.agents.some((a) => a.n === "Publish Verifier")) state.agents = [...state.agents, { ...live.PUBLISH_VERIFIER }];
@@ -194,8 +203,11 @@ app.post("/api/plan/generate", async (req, res) => {
   let { year, month } = req.body || {}; // month: 1-12
   if (!year || !month) { const nm = (now.getMonth() + 1) % 12; year = now.getFullYear() + (nm === 0 ? 1 : 0); month = nm + 1; }
   const label = `${ARMONTHS[month - 1]} ${year}`;
+  // self-learning: feed last month's real engagement into the planner
+  let perf = "";
+  try { const pub = await cached("published", 120, () => meta.getPublished()); perf = live.perfSummary(pub || []); } catch (e) {}
   let out;
-  try { out = await generator.generatePlan(label, year, month); }
+  try { out = await generator.generatePlan(label, year, month, "ar", perf); }
   catch (e) { console.error("[plan]", e.message); return res.status(500).json({ ok: false, error: e.message }); }
   if (!out) return res.status(502).json({ ok: false, error: "plan generation failed" });
   const items = (out.concepts || []).slice(0, 16).map((c, i) => {
