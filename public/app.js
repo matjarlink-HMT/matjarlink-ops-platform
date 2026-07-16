@@ -394,7 +394,8 @@ function agentCard(a, i) {
   <div>${pill([a.st[1], STMAP[a.st[0]]])}</div><div class="task">${escapeHtml(a.task)}</div>
   ${a.sc > 0 ? `<div class="row"><span>${T("eval")}</span><span class="bar"><i style="width:${a.sc}%"></i></span><b>${a.sc}</b></div>` : `<div class="row">${pill([T("noScore"), "p-idle"])}</div>`}
   <div class="mut">${escapeHtml(a.ev)}</div>
-  <div class="sug"><div class="sugh"><b>${T("selfSug")}</b>${a.sug ? `<button class="sugok" data-improve="${i}" title="${T("agent_approve")}">✓</button>` : ""}</div><div class="sugt">${escapeHtml(a.sug)}</div></div></div>`;
+  <div class="sug"><div class="sugh"><b>${T("selfSug")}</b>${a.sug ? `<button class="sugok" data-improve="${i}" title="${T("agent_approve")}">✓</button>` : ""}</div><div class="sugt">${escapeHtml(a.sug)}</div></div>
+  ${(a.changelog && a.changelog.length) ? `<details class="chlog"><summary>${T("agent_changelog")} (${a.changelog.length})</summary>${a.changelog.map(c => `<div class="chrow"><span class="chd">${(c.at || "").slice(5, 10)}</span> ${escapeHtml(c.became || c.applied || "")}</div>`).join("")}</details>` : ""}</div>`;
 }
 function bindAgents() {
   document.querySelectorAll("[data-improve]").forEach(b => b.onclick = () => improveAgent(+b.dataset.improve, b));
@@ -405,7 +406,7 @@ async function improveAgent(i, btn) {
   try {
     const r = await fetch("/api/agent-improve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: a.n, lang }) }).then(r => r.json());
     if (r.ok && r.agent) {
-      S.agents[i] = { ...a, task: r.agent.task, ev: r.agent.ev, sug: r.agent.sug, sc: r.agent.sc, improved: true, improvements: r.agent.improvements };
+      S.agents[i] = { ...a, task: r.agent.task, ev: r.agent.ev, sug: r.agent.sug, sc: r.agent.sc, improved: true, improvements: r.agent.improvements, changelog: r.agent.changelog || [] };
       render("agents");
     } else { btn.textContent = "✓"; btn.disabled = false; }
   } catch (e) { btn.textContent = "✗"; setTimeout(() => { btn.textContent = "✓"; btn.disabled = false; }, 1200); }

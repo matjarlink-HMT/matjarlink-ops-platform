@@ -60,10 +60,21 @@ export async function getMessages(limit = 25) {
   }
   return out.slice(0, limit);
 }
-export async function getPublished(limit = 10) {
+export async function getPublished(limit = 12) {
   if (!metaReady() || !IG()) return [];
   const media = await g(`${IG()}/media`, { fields: "id,caption,media_type,permalink,timestamp,like_count,comments_count", limit });
-  return (media.data || []).map(m => ({ t: (m.caption || m.media_type).slice(0, 40), ch: "IG", d: (m.timestamp || "").slice(0, 16).replace("T", " · "), m: `${m.like_count ?? 0} إعجاب · ${m.comments_count ?? 0} تعليق`, url: m.permalink }));
+  return (media.data || []).map(m => ({ id: m.id, t: (m.caption || m.media_type).slice(0, 40), cap: m.caption || "", type: m.media_type, ch: "IG", d: (m.timestamp || "").slice(0, 16).replace("T", " · "), ts: m.timestamp || "", likes: m.like_count ?? 0, comments: m.comments_count ?? 0, m: `${m.like_count ?? 0} إعجاب · ${m.comments_count ?? 0} تعليق`, url: m.permalink }));
+}
+
+// Reach / impressions / saved / shares for one media (Insights edge).
+export async function getMediaInsights(mediaId) {
+  if (!metaReady() || !mediaId) return null;
+  try {
+    const r = await g(`${mediaId}/insights`, { metric: "reach,saved,shares,total_interactions" });
+    const out = {};
+    for (const it of r.data || []) out[it.name] = it.values?.[0]?.value ?? 0;
+    return out;
+  } catch (e) { return null; } // some metrics not available for older/di­fferent media types
 }
 export async function replyToComment(commentId, message) { return post(`${commentId}/replies`, { message }); }
 export async function sendMessage(recipientId, message) { return post(`me/messages`, { recipient: { id: recipientId }, message: { text: message }, messaging_type: "RESPONSE" }); }

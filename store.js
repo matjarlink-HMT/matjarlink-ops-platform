@@ -127,8 +127,13 @@ try { ag = JSON.parse(fs.readFileSync(AG_FILE, "utf8")); } catch (e) { ag = {}; 
 function persistAg() { try { writeDurable(AG_FILE, JSON.stringify(ag)); } catch (e) {} }
 export function getAgentState() { return ag; }
 export function applyAgentImprovement(name, patch) {
-  const cur = ag[name] || { improvements: 0 };
-  ag[name] = { ...cur, ...patch, improvements: (cur.improvements || 0) + 1, at: new Date().toISOString() };
+  const cur = ag[name] || { improvements: 0, changelog: [] };
+  const at = new Date().toISOString();
+  // Record what was actually applied so approval visibly changes state and the
+  // same suggestion is never re-requested (the changelog is the memory).
+  const changelog = [{ at, applied: patch.appliedFrom || cur.sug || "", became: patch.task || "" }, ...(cur.changelog || [])].slice(0, 12);
+  const { appliedFrom, ...clean } = patch;
+  ag[name] = { ...cur, ...clean, improvements: (cur.improvements || 0) + 1, at, changelog };
   persistAg();
   return ag[name];
 }

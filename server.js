@@ -16,6 +16,7 @@ import * as claude from "./integrations/claude.js";
 import * as metaPublish from "./integrations/metaPublish.js";
 import { fetchDrive } from "./integrations/driveMedia.js";
 import { managerSystem, demoReply, errReply, managerNoteSystem, demoNoteReply, agentImproveSystem, fallbackImprovement } from "./data/manager.js";
+import * as live from "./data/live.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -70,12 +71,14 @@ app.get("/api/state", async (req, res) => {
   if (merged.length) state.messages = merged;
   if (published.length) state.published = published;
   if (insights) state.insights = insights;
-  // Merge approved agent self-improvements (raised level, updated task/eval/suggestion).
+  // Ensure the Publish Verifier is always on the roster (added dynamically).
+  if (!state.agents.some((a) => a.n === "Publish Verifier")) state.agents = [...state.agents, { ...live.PUBLISH_VERIFIER }];
+  // Merge approved agent self-improvements (raised level, updated task/eval/suggestion + changelog).
   const agState = store.getAgentState();
   state.agents = state.agents.map((a) => {
     const o = agState[a.n];
     if (!o) return a;
-    return { ...a, task: o.task || a.task, ev: o.ev || a.ev, sug: o.sug || a.sug, sc: o.sc ?? a.sc, improved: true, improvements: o.improvements || 0 };
+    return { ...a, task: o.task || a.task, ev: o.ev || a.ev, sug: o.sug || a.sug, sc: o.sc ?? a.sc, improved: true, improvements: o.improvements || 0, changelog: o.changelog || [] };
   });
   state.notes = store.getNotes();
   state.publishReady = metaPublish.publishReady();
@@ -87,6 +90,17 @@ app.get("/api/state", async (req, res) => {
   const removed = new Set(store.getRemoved());
   if (removed.size) state.queue = state.queue.filter((q) => !removed.has(q.id));
   state.plan = (loadContent() || {}).plan || state.plan || null;
+
+  // ── live derivation: reconcile publishes, then derive needs + agent status ──
+  const rec = live.reconcile(state.publishedLog, published); // published = real IG media
+  rec.checkedAt = state.generatedAt;
+  state.reconcile = rec;
+  const liveCtx = { queue: state.queue, notes: state.notes, publishedLog: state.publishedLog, connectivity: conn, publishReady: state.publishReady, reconcile: rec, insights: state.insights, comments: state.comments || [], messages: state.messages || [], plan: state.plan };
+  state.agents = live.deriveAgents(state.agents, liveCtx);
+  // Needs = live auto-clearing tasks first, then any static forward-looking items
+  // from the seed that aren't condition-based (e.g. future hires).
+  const staticNeeds = (state.needs || []).filter((n) => /توظيف|مونتاج|جدولة/.test(n.ti || ""));
+  state.needs = [...live.deriveNeeds(liveCtx), ...staticNeeds];
   // Live KPIs computed from real state (no static/fake numbers).
   const followers = state.insights?.followers ?? 558;
   const pending = state.queue.filter((q) => !state.publishedLog[q.id] && state.notes[q.id]?.status !== "معتمد").length;
@@ -508,6 +522,7 @@ app.post("/api/agent-improve", async (req, res) => {
     }
   } catch (e) { console.error("[agent-improve]", e.message); }
   if (!patch) patch = fallbackImprovement(cur);
+  patch.appliedFrom = cur.sug || ""; // remember which suggestion this resolved
   const saved = store.applyAgentImprovement(name, patch);
   res.json({ ok: true, agent: { ...cur, ...saved } });
 });
