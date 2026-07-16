@@ -251,7 +251,7 @@ app.post("/api/plan/generate", async (req, res) => {
   catch (e) { console.error("[plan]", e.message); return res.status(500).json({ ok: false, error: e.message }); }
   if (!out) return res.status(502).json({ ok: false, error: "plan generation failed" });
   const items = (out.concepts || []).slice(0, 16).map((c, i) => {
-    const day = Math.min(Math.max(parseInt(c.day, 10) || (2 + i * 2), 1), 28);
+    const day = Math.min(Math.max(parseInt(c.day, 10) || (2 + i * 2), 1), new Date(year, month, 0).getDate());
     return { key: `${year}-${month}-${i}`, day, time: i % 2 ? "20:30" : "20:00", t: String(c.t || ""), ty: String(c.ty || "منشور علامة"), pillar: String(c.pillar || ""), hook: String(c.hook || ""), cap: String(c.cap || ""), status: "draft", id: null };
   });
   const plan = store.setPlan({ label, year, month, goal: String(out.goal || ""), pillars: (out.pillars || []).map(String).slice(0, 6), items, generatedAt: new Date().toISOString() });
@@ -282,7 +282,8 @@ app.post("/api/plan/idea", async (req, res) => {
   catch (e) { return res.status(500).json({ ok: false, error: e.message }); }
   if (!c) return res.status(502).json({ ok: false, error: "expansion failed" });
   const taken = new Set(plan.items.map((i) => +i.day));
-  let day = 2; while (taken.has(day) && day < 28) day++;
+  const dim = new Date(plan.year, plan.month, 0).getDate();
+  let day = 2; while (taken.has(day) && day < dim) day++;
   plan.items.push({ key: `idea-${Date.now()}`, day, time: "20:00", t: c.t, ty: c.ty, pillar: c.pillar, status: "draft", id: null, fromIdea: text.slice(0, 120) });
   store.setPlan(plan);
   res.json({ ok: true, plan });

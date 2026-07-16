@@ -138,7 +138,7 @@ let planViewMode = "table"; // "table" | "calendar"
 function planCalendar(plan) {
   const y = plan.year, m = plan.month;
   const first = new Date(y, m - 1, 1).getDay(); // 0=Sun
-  const daysIn = Math.min(new Date(y, m, 0).getDate(), 28); // plans cap the day at 28 everywhere
+  const daysIn = new Date(y, m, 0).getDate(); // real length of the month (28–31)
   const byDay = {}; (plan.items || []).forEach(it => { (byDay[+it.day] = byDay[+it.day] || []).push(it); });
   const wd = WEEKDAYS_CLIENT[lang] || WEEKDAYS_CLIENT.ar;
   const head = wd.map(d => `<div class="calhd">${d}</div>`).join("");
@@ -256,12 +256,13 @@ async function renderPlan(C) {
 
   // ── editable draft plan ──
   const applied = plan.items.filter(i => i.status === "applied").length;
+  const dim = new Date(plan.year, plan.month, 0).getDate(); // days in this month
   const rows = plan.items.map((it) => {
     const dis = it.status === "applied" ? "disabled" : "";
     const detail = (it.hook || it.cap) ? `<button class="btn ghost sm pdet" data-cap="${attrSafe([it.hook ? "🎣 " + it.hook : "", it.cap].filter(Boolean).join("\n\n"))}">📄</button>` : "";
     return `<tr data-key="${escapeHtml(it.key)}" class="${it.status === "applied" ? "applied" : ""}">
       <td class="pdate">${escapeHtml(fullDate(plan, it))}</td>
-      <td><input class="pinput pday" type="number" min="1" max="28" value="${it.day}" ${dis}></td>
+      <td><input class="pinput pday" type="number" min="1" max="${dim}" value="${it.day}" ${dis}></td>
       <td><select class="psel ptime" ${dis}>${["19:30", "20:00", "20:30", "21:00"].map(t => `<option ${t === (it.time || "20:00") ? "selected" : ""}>${t}</option>`).join("")}</select></td>
       <td><input class="pinput pt" value="${escapeHtml(it.t).replace(/"/g, "&quot;")}" ${dis}></td>
       <td><select class="psel pty" ${dis}>${PLAN_TYPES.map(t => `<option ${t === it.ty ? "selected" : ""}>${t}</option>`).join("")}</select></td>
@@ -299,7 +300,7 @@ async function renderPlan(C) {
     if (planViewMode === "calendar") return { ...plan };
     return { ...plan, items: [...C.querySelectorAll("tbody tr")].map(tr => {
       const key = tr.dataset.key, old = plan.items.find(i => i.key === key) || {};
-      return { ...old, key, day: Math.min(Math.max(parseInt(tr.querySelector(".pday").value, 10) || old.day || 1, 1), 28),
+      return { ...old, key, day: Math.min(Math.max(parseInt(tr.querySelector(".pday").value, 10) || old.day || 1, 1), dim),
         time: tr.querySelector(".ptime").value, t: tr.querySelector(".pt").value.trim(),
         ty: tr.querySelector(".pty").value, pillar: tr.querySelector(".ppl").value.trim() };
     }) };
@@ -325,8 +326,8 @@ async function renderPlan(C) {
     let day = 2;
     C.querySelectorAll("tbody tr").forEach(tr => {
       if (tr.classList.contains("applied")) return;
-      while (taken.has(day) && day < 28) day += 1;
-      tr.querySelector(".pday").value = Math.min(day, 28);
+      while (taken.has(day) && day < dim) day += 1;
+      tr.querySelector(".pday").value = Math.min(day, dim);
       taken.add(day); day += 2;
       const ty = tr.querySelector(".pty").value;
       const t = Object.entries(TIME_BY_TYPE).find(([k]) => ty.includes(k));
