@@ -157,7 +157,7 @@ async function renderPlan(C) {
         <td class="pdate">${escapeHtml(fullDate(current, it))}</td>
         <td>${escapeHtml(it.t)}</td><td><span class="pill p-idle">${escapeHtml(it.ty)}</span></td>
         <td class="pstat">${it.status === "published" ? (it.permalink ? `<a class="pill p-ok" target="_blank" href="${it.permalink}">📤 ${T("s_published")} ↗</a>` : `<span class="pill p-ok">📤 ${T("s_published")}</span>`) : `<span class="pill p-info">🗓 ${T("plan_scheduled")}</span>`}</td>
-        <td>${it.cap ? `<button class="btn ghost sm pdet" data-cap="${escapeHtml(it.cap).replace(/"/g, "&quot;")}">📄</button>` : ""}</td>
+        <td>${it.cap ? `<button class="btn ghost sm pdet" data-cap="${attrSafe(it.cap)}">📄</button>` : ""}</td>
       </tr>`).join("");
     C.innerHTML = `<div class="planwrap">${tabBar}
       <div class="pcard nofloat planhead"><div><div class="ptitle">🗓 ${escapeHtml(current.label)}</div>
@@ -191,7 +191,7 @@ async function renderPlan(C) {
   const applied = plan.items.filter(i => i.status === "applied").length;
   const rows = plan.items.map((it) => {
     const dis = it.status === "applied" ? "disabled" : "";
-    const detail = (it.hook || it.cap) ? `<button class="btn ghost sm pdet" data-cap="${escapeHtml([it.hook ? "🎣 " + it.hook : "", it.cap].filter(Boolean).join("\n\n")).replace(/"/g, "&quot;")}">📄</button>` : "";
+    const detail = (it.hook || it.cap) ? `<button class="btn ghost sm pdet" data-cap="${attrSafe([it.hook ? "🎣 " + it.hook : "", it.cap].filter(Boolean).join("\n\n"))}">📄</button>` : "";
     return `<tr data-key="${escapeHtml(it.key)}" class="${it.status === "applied" ? "applied" : ""}">
       <td class="pdate">${escapeHtml(fullDate(plan, it))}</td>
       <td><input class="pinput pday" type="number" min="1" max="28" value="${it.day}" ${dis}></td>
@@ -297,11 +297,15 @@ async function renderPlan(C) {
     const m = $("#planmsg"); if (m) m.textContent = `✓ ${T("plan_done")}: ${done}` + (fail ? ` · ✗ ${fail}` : "");
   };
 }
-// caption/detail popup reusing the media lightbox frame
+// Attribute-safe escape that PRESERVES newlines (escapeHtml turns \n into <br>,
+// which double-escapes inside a pre-wrap popup). Only neutralizes & " < >.
+const attrSafe = (s) => (s || "").replace(/[&"<>]/g, c => ({ "&": "&amp;", '"': "&quot;", "<": "&lt;", ">": "&gt;" }[c]));
+// caption/detail popup reusing the media lightbox frame (real newlines via pre-wrap)
 function openCap(text) {
   $("#mvtitle").textContent = T("plan_caption");
   const f = $("#mvframe"); f.style.aspectRatio = ""; f.classList.add("imgfit");
-  f.innerHTML = `<div style="background:#fff;color:#2b1622;padding:1.4rem;max-width:34rem;white-space:pre-wrap;line-height:1.7;text-align:start;border-radius:.6rem;max-height:80vh;overflow:auto">${escapeHtml(text || "")}</div>`;
+  f.innerHTML = `<div class="capbox" style="background:#fff;color:#2b1622;padding:1.4rem;max-width:34rem;white-space:pre-wrap;line-height:1.7;text-align:start;border-radius:.6rem;max-height:80vh;overflow:auto"></div>`;
+  f.querySelector(".capbox").textContent = text || ""; // textContent → no double-escape, no injection
   $("#mvhint").innerHTML = ""; $("#mv").classList.add("on");
 }
 

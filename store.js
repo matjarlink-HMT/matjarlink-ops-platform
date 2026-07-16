@@ -122,7 +122,7 @@ function persistPlans() { try { writeDurable(PLANS_FILE, JSON.stringify(plans));
 const planKey = (p) => `${p.year}-${String(p.month).padStart(2, "0")}`;
 export function getPlans() { return plans; }
 export function getPlan(key) {
-  if (key) return plans[key] || null;
+  if (key) { const m = String(key).match(/^(\d{4})-(\d{1,2})$/); const norm = m ? `${m[1]}-${m[2].padStart(2, "0")}` : key; return plans[norm] || plans[key] || null; }
   const keys = Object.keys(plans).sort(); // no key → latest month
   return keys.length ? plans[keys[keys.length - 1]] : null;
 }

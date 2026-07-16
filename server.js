@@ -69,13 +69,8 @@ app.get("/api/state", async (req, res) => {
   if (comments.length) state.comments = comments;
   const merged = [...igMsgs, ...waMsgs];
   if (merged.length) state.messages = merged;
-  // enrich each published post with reach/saved/shares (Insights edge), cached
   if (published.length) {
-    const withInsights = await settle(cached("mediaInsights", 900, async () => {
-      const capped = published.slice(0, 8);
-      const ins = await Promise.all(capped.map((m) => meta.getMediaInsights(m.id).catch(() => null)));
-      return published.map((m, i) => (i < ins.length && ins[i]) ? { ...m, reach: ins[i].reach ?? null, saved: ins[i].saved ?? 0, shares: ins[i].shares ?? 0 } : m);
-    }), published);
+    const withInsights = await enrichPublished(published);
     state.published = withInsights;
     state.topPosts = live.topPosts(withInsights, 5);
   }
@@ -205,7 +200,7 @@ app.post("/api/plan/generate", async (req, res) => {
   const label = `${ARMONTHS[month - 1]} ${year}`;
   // self-learning: feed last month's real engagement into the planner
   let perf = "";
-  try { const pub = await cached("published", 120, () => meta.getPublished()); perf = live.perfSummary(pub || []); } catch (e) {}
+  try { const pub = await enrichPublished(await cached("published", 120, () => meta.getPublished())); perf = live.perfSummary(pub || []); } catch (e) {}
   let out;
   try { out = await generator.generatePlan(label, year, month, "ar", perf); }
   catch (e) { console.error("[plan]", e.message); return res.status(500).json({ ok: false, error: e.message }); }
@@ -314,6 +309,24 @@ function cached(key, ttlSec, fn) {
   _memo[key] = { at: now, p };
   p.catch(() => { if (_memo[key]?.p === p) delete _memo[key]; }); // don't cache failures
   return p;
+}
+
+// Merge per-media Insights (reach/saved/shares) onto a FRESH published array.
+// The insights map is cached by media id (900s); the published array itself is
+// fresh (120s) — so a just-published post appears immediately (with its
+// likes/comments) and gains reach/saved once its insights are fetched. This
+// avoids the stale-snapshot bug of caching the whole merged array.
+async function enrichPublished(published) {
+  const byId = await (async () => {
+    try {
+      return await cached("mediaInsightsMap", 900, async () => {
+        const capped = (published || []).slice(0, 8);
+        const pairs = await Promise.all(capped.map((m) => meta.getMediaInsights(m.id).then((v) => [m.id, v]).catch(() => [m.id, null])));
+        return Object.fromEntries(pairs);
+      });
+    } catch (e) { return {}; }
+  })();
+  return (published || []).map((m) => byId[m.id] ? { ...m, reach: byId[m.id].reach ?? null, saved: byId[m.id].saved ?? 0, shares: byId[m.id].shares ?? 0 } : m);
 }
 
 // Resolve a queue item to publish input. Priority: explicit images[]/mediaUrl,
@@ -646,16 +659,17 @@ async function autoPublishTick() {
     const when = parseWhen(q.date);
     if (held || !when) continue;
     const dueAgo = now - when.getTime();
-    // 10-minute heads-up: as a post enters its final window, alert the owner on
-    // WhatsApp ONCE so they always have ~10 min to hit ⏸ before it goes live.
+    const input = resolveMedia(q, publicBase());
+    if (!input) continue; // needs media (also: don't alert about a post that can't publish)
+    // 10-minute heads-up: as a publishable post enters its final window, alert the
+    // owner on WhatsApp ONCE so they always have ~10 min to hit ⏸. Only mark it
+    // announced if the alert actually SENT — otherwise retry next tick.
     if (dueAgo < 0 && dueAgo > -10 * 60000 && !store.wasAnnounced(q.id)) {
-      store.markAnnounced(q.id);
       const mins = Math.max(1, Math.ceil(-dueAgo / 60000));
-      notifyOwner(`⏰ متجرلينك: «${q.t}» سيُنشر تلقائياً خلال ~${mins} دقيقة. لإيقافه افتح اللوحة واضغط ⏸ على المنشور.`);
+      const sent = await notifyOwner(`⏰ متجرلينك: «${q.t}» سيُنشر تلقائياً خلال ~${mins} دقيقة. لإيقافه افتح اللوحة واضغط ⏸ على المنشور.`);
+      if (sent) store.markAnnounced(q.id);
     }
     if (dueAgo < 0 || dueAgo > STALE_MS) continue; // not due yet, or too stale (publish manually)
-    const input = resolveMedia(q, publicBase());
-    if (!input) continue; // needs media
     if (publishingNow.has(q.id)) continue; // a manual publish is already in flight
     publishingNow.add(q.id);
     try { const r = await metaPublish.publish(input); store.markPublished(q.id, r); console.log(`[auto-publish] ${q.id} → ${r.permalink || r.id}`); publishCompanionStory(q, input.kind, publicBase()); }
