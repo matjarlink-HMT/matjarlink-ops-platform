@@ -125,6 +125,16 @@ table{width:100%;border-collapse:collapse;font-size:.83rem}th,td{text-align:star
 .calchip.locked{cursor:default;opacity:.75}
 .calchip.dragging{opacity:.4}
 .calchip .calct{font-size:.62rem;opacity:.85;font-weight:600}
+/* design templates */
+.tplcard{display:flex;flex-direction:column;gap:.6rem;background:#fff;border:2px solid var(--line);border-radius:14px;padding:.9rem;box-shadow:var(--shadow);transition:border-color .15s ease,box-shadow .15s ease}
+.tplcard.on{border-color:var(--ok)}
+.tplcard:hover{box-shadow:var(--shadow-lg)}
+.tplhd{display:flex;align-items:center;justify-content:space-between;gap:.5rem}
+.tplname{font-weight:800;font-size:1rem}
+.tpldesc{font-size:.8rem;color:var(--muted);min-height:2.4rem}
+.tplshots{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}
+.tplshots img{width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:9px;border:1px solid var(--line);background:var(--ground)}
+.tplcard .btn{align-self:flex-start}
 .toplist{display:flex;flex-direction:column;gap:.5rem;margin-top:.4rem}
 .toprow{display:flex;align-items:center;gap:.6rem}
 .toprow .topr{width:1.5rem;height:1.5rem;border-radius:50%;background:#6E1444;color:#fff;display:grid;place-items:center;font-size:.78rem;font-weight:800;flex:none}

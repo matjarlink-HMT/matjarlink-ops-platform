@@ -127,8 +127,8 @@ function drawWhatsApp(ctx, x, y, s, color = MAGENTA) {
   ctx.restore();
 }
 // "اسحب لليسار" swipe hint with an orange triangle, centered.
-function drawSwipe(ctx, W, y) {
-  ctx.direction = "rtl"; ctx.textAlign = "center"; ctx.font = "34px TajawalXB"; ctx.fillStyle = PLUM;
+function drawSwipe(ctx, W, y, light = false) {
+  ctx.direction = "rtl"; ctx.textAlign = "center"; ctx.font = "34px TajawalXB"; ctx.fillStyle = light ? "#FBE3C8" : PLUM;
   const label = "اسحب لليسار"; const lw = ctx.measureText(label).width;
   ctx.fillText(label, W / 2, y);
   ctx.fillStyle = ORANGE; const tx = W / 2 - lw / 2 - 24;
@@ -177,7 +177,8 @@ function drawPhotoWindow(ctx, img, x, y, w, h, r = 40) {
 // role: "single" | "cover" | "slide". index/carousel/last drive the number circle + swipe.
 // headline2: second line rendered in ORANGE (the original two-tone style,
 // e.g. "٥ أخطاء" plum + "تقتل مبيعاتك" orange). cta: rotated plum pill text.
-export async function renderDesign({ headline = "", headline2 = "", cta = "", body = "", kicker = "", accent = ORANGE, role = "single", index = 0, carousel = false, last = false, photo = null } = {}) {
+// template: "classic" (white pro) | "luxe" (dark plum premium) | "spotlight" (full-bleed photo)
+export async function renderDesign({ headline = "", headline2 = "", cta = "", body = "", kicker = "", accent = ORANGE, role = "single", index = 0, carousel = false, last = false, photo = null, template = "classic" } = {}) {
   const W = 1080, H = 1350, CX = W / 2;
   const cv = createCanvas(W, H);
   const ctx = cv.getContext("2d");
@@ -211,14 +212,34 @@ export async function renderDesign({ headline = "", headline2 = "", cta = "", bo
     return cv.toBuffer("image/png");
   }
 
-  ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, W, H);
-  drawFrame(ctx, W, H);
-  drawLogo(ctx, await getLogo());
-  ctx.textAlign = "center"; ctx.direction = "rtl";
-
   const isSlide = role === "slide";
   let photoImg = null;
   if (photo && !isSlide) { try { photoImg = await loadImage(photo); } catch (e) { console.error("[design] photo:", e.message); } }
+
+  // ── template background ──────────────────────────────────────────────────
+  const TPL = template || "classic";
+  const darkBg = TPL === "luxe" || TPL === "spotlight"; // spotlight is dark-themed even if the photo fails
+  if (TPL === "spotlight" && photoImg) {
+    const ir = photoImg.width / photoImg.height, cr = W / H; let dw, dh, dx, dy;
+    if (ir > cr) { dh = H; dw = H * ir; dx = (W - dw) / 2; dy = 0; } else { dw = W; dh = W / ir; dx = 0; dy = (H - dh) / 2; }
+    ctx.drawImage(photoImg, dx, dy, dw, dh);
+    ctx.fillStyle = "rgba(62,10,38,0.55)"; ctx.fillRect(0, 0, W, H);
+    const gg = ctx.createLinearGradient(0, H * 0.35, 0, H); gg.addColorStop(0, "rgba(45,8,30,0)"); gg.addColorStop(1, "rgba(45,8,30,0.92)");
+    ctx.fillStyle = gg; ctx.fillRect(0, 0, W, H);
+    pill(ctx, 940, 70, 360, 74, -33, ORANGE);
+    photoImg = null; // consumed as the background — skip the inset window
+  } else if (TPL === "luxe" || TPL === "spotlight") {
+    const g = ctx.createLinearGradient(0, 0, W * 0.5, H); g.addColorStop(0, MAGENTA); g.addColorStop(1, DEEP);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    pill(ctx, 905, 84, 460, 80, -33, ORANGE); pill(ctx, 150, H - 100, 360, 66, -33, "#7A0F45"); pill(ctx, 250, H - 12, 320, 66, -33, ORANGE);
+    sparkle(ctx, 190, 430, 26, ORANGE); sparkle(ctx, 905, 720, 18, CREAM);
+  } else {
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, W, H);
+    drawFrame(ctx, W, H);
+  }
+  drawLogo(ctx, darkBg ? await getTintedLogo("#ffffff") : await getLogo());
+  ctx.textAlign = "center"; ctx.direction = "rtl";
+  const HEAD = darkBg ? "#ffffff" : PLUM, SUB = darkBg ? CREAM : GRAY;
   let y;
 
   if (isSlide && index) {
@@ -233,7 +254,7 @@ export async function renderDesign({ headline = "", headline2 = "", cta = "", bo
     y = 660;
   } else {
     const kickY = photoImg ? 396 : 470;
-    if (kicker) { ctx.fillStyle = GRAY; ctx.font = "38px TajawalB"; ctx.fillText(kicker, CX, kickY); }
+    if (kicker) { ctx.fillStyle = SUB; ctx.font = "38px TajawalB"; ctx.fillText(kicker, CX, kickY); }
     y = photoImg ? 440 : 560;
   }
 
@@ -245,7 +266,7 @@ export async function renderDesign({ headline = "", headline2 = "", cta = "", bo
   while (lines.length > maxLines && size > 46) { size -= 6; lines = wrapLines((ctx.font = size + "px TajawalXB", ctx), headline, maxW); }
   lines = lines.slice(0, isSlide ? 3 : photoImg ? 3 : 5);
   const lh = size * 1.28;
-  ctx.fillStyle = PLUM; ctx.font = size + "px TajawalXB";
+  ctx.fillStyle = HEAD; ctx.font = size + "px TajawalXB";
   y += size;
   for (const ln of lines) { ctx.fillText(ln, CX, y); y += lh; }
 
@@ -284,15 +305,15 @@ export async function renderDesign({ headline = "", headline2 = "", cta = "", bo
 
   // body (carousel slide detail), centered, regular weight
   if (body && !photoImg) {
-    ctx.fillStyle = INK; ctx.font = "40px Tajawal";
+    ctx.fillStyle = darkBg ? "#F3DCE8" : INK; ctx.font = "40px Tajawal";
     const blines = wrapLines(ctx, body, W - 220).slice(0, 4); const blh = 40 * 1.5;
     y += 22;
     for (const ln of blines) { ctx.fillText(ln, CX, y); y += blh; }
   }
 
   // swipe hint for carousels (not on the final slide)
-  if (carousel && !last) drawSwipe(ctx, W, H - 210);
-  drawFooter(ctx, W, H);
+  if (carousel && !last) drawSwipe(ctx, W, H - 210, darkBg);
+  drawFooter(ctx, W, H, darkBg);
   return cv.toBuffer("image/png");
 }
 

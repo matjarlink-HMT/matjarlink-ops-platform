@@ -23,7 +23,7 @@ const STMAP = { online: "p-ok", working: "p-info", scheduled: "p-info", idle: "p
 const GROUPS = [
   { items: ["overview"] },
   { label: "g_manage", items: ["manager", "agents", "needs"] },
-  { label: "g_content", items: ["pipeline", "plan"] },
+  { label: "g_content", items: ["pipeline", "plan", "templates"] },
   { label: "g_engage", items: ["comments", "messages", "leads"] },
   { label: "g_perf", items: ["analytics", "camp"] },
   { label: "g_settings", items: ["settings"] }
@@ -118,6 +118,7 @@ function render(p) {
   else if (p === "needs") C.innerHTML = `<div class="grid g2">${S.needs.map(needCard).join("")}</div>`;
   else if (p === "pipeline") renderPipeline(C);
   else if (p === "plan") renderPlan(C);
+  else if (p === "templates") renderTemplates(C);
   else if (p === "analytics") renderAnalytics(C);
   else if (p === "camp") C.innerHTML = campView();
   else if (p === "comments") { C.innerHTML = feed(S.comments, "c", "comment"); bindReply(); }
@@ -383,6 +384,43 @@ function openCap(text) {
   f.innerHTML = `<div class="capbox" style="background:#fff;color:#2b1622;padding:1.4rem;max-width:34rem;white-space:pre-wrap;line-height:1.7;text-align:start;border-radius:.6rem;max-height:80vh;overflow:auto"></div>`;
   f.querySelector(".capbox").textContent = text || ""; // textContent → no double-escape, no injection
   $("#mvhint").innerHTML = ""; $("#mv").classList.add("on");
+}
+
+// ── design templates (قوالب التصميم) ── choose the active brand template ──
+const TEMPLATE_META = {
+  classic: { emoji: "🤍", tag: "p-idle" },
+  luxe: { emoji: "👑", tag: "p-new" },
+  spotlight: { emoji: "🖼", tag: "p-info" },
+};
+async function renderTemplates(C) {
+  C.innerHTML = `<div class="loading">…</div>`;
+  let data = { templates: ["classic", "luxe", "spotlight"], active: "classic" };
+  try { data = await fetch("/api/templates").then(r => r.json()); } catch (e) {}
+  const cards = data.templates.map(t => {
+    const m = TEMPLATE_META[t] || { emoji: "🎨", tag: "p-idle" };
+    const on = t === data.active;
+    const v = Date.now();
+    return `<div class="tplcard ${on ? "on" : ""}" data-tpl="${t}">
+      <div class="tplhd"><span class="tplname">${m.emoji} ${T("tpl_" + t)}</span>${on ? `<span class="pill p-ok">✓ ${T("tpl_active")}</span>` : ""}</div>
+      <div class="tpldesc">${T("tpl_" + t + "_d")}</div>
+      <div class="tplshots">
+        <img loading="lazy" src="/media/template/${t}/cover?v=${v}" alt="cover">
+        <img loading="lazy" src="/media/template/${t}/slide?v=${v}" alt="slide">
+      </div>
+      ${on ? `<button class="btn ok sm" disabled>✓ ${T("tpl_active")}</button>` : `<button class="btn sm tplpick" data-tpl="${t}">${T("tpl_use")}</button>`}
+    </div>`;
+  }).join("");
+  C.innerHTML = `<div class="note-info">🎨 ${T("tpl_hint")}</div>
+    <div class="grid g3 tplgrid">${cards}</div>
+    <div class="mut" id="tplmsg" style="margin-top:.8rem"></div>`;
+  C.querySelectorAll(".tplpick").forEach(b => b.onclick = async () => {
+    const t = b.dataset.tpl;
+    if (!confirm(T("tpl_confirm").replace("{t}", T("tpl_" + t)))) return;
+    b.disabled = true; b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
+    const r = await fetch("/api/templates/set", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ template: t }) }).then(x => x.json()).catch(() => null);
+    if (r && r.ok) { renderTemplates(C); const m = $("#tplmsg"); if (m) m.textContent = "✓ " + T("tpl_saved"); }
+    else { b.disabled = false; b.textContent = T("tpl_use"); }
+  });
 }
 
 // ── manager chat (CAIMO) ──────────────────────────────────────────

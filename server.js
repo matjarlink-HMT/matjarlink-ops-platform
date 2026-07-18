@@ -394,11 +394,14 @@ function resolveMedia(q, base) {
 // ── Live design engine ── render + serve on-brand post images (Volume-backed) ──
 function designsDir() { const v = process.env.RAILWAY_VOLUME_MOUNT_PATH || (fs.existsSync("/data") ? "/data" : ""); return v ? path.join(v, "designs") : path.join(__dirname, "data", "designs"); }
 const arDigits = (n) => String(n).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[d]);
+const DESIGN_TEMPLATES = ["classic", "luxe", "spotlight"];
+const activeTemplate = () => { const t = store.cfgGet("DESIGN_TEMPLATE"); return DESIGN_TEMPLATES.includes(t) ? t : "classic"; };
 async function renderAndSaveDesign(item, content = {}) {
   const { renderDesign } = await import("./data/designEngine.js");
   const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
   const headline = content.t || item.t || "", kicker = content.kicker || "";
   const headline2 = content.t2 || item.t2 || "", cta = content.cta || item.cta || "";
+  const template = activeTemplate();
   const ts = Date.now();
   const save = (name, buf) => { const fd = fs.openSync(path.join(dir, name + ".png"), "w"); try { fs.writeSync(fd, buf); fs.fsyncSync(fd); } finally { fs.closeSync(fd); } };
   // Topical photo (Pexels) — used when the owner asks for one or CAIMO deems it fitting.
@@ -412,21 +415,50 @@ async function renderAndSaveDesign(item, content = {}) {
   const isCarousel = (item.ty || "").includes("كاروسيل") && slides.length;
   if (isCarousel) {
     const n = slides.length;
-    const bufs = [await renderDesign({ role: "cover", headline, headline2, cta, kicker, carousel: true, photo })]; // cover
+    const bufs = [await renderDesign({ role: "cover", headline, headline2, cta, kicker, carousel: true, photo, template })]; // cover
     for (let i = 0; i < n; i++) {
       const s = slides[i], isLast = i === n - 1;
       // the final slide renders as the inverted brand "reveal" (like the originals)
       bufs.push(isLast
         ? await renderDesign({ role: "reveal", headline: s.t, body: s.body, headline2: s.t2 || "", cta: s.cta || "" })
-        : await renderDesign({ role: "slide", headline: s.t, body: s.body, index: i + 1, carousel: true }));
+        : await renderDesign({ role: "slide", headline: s.t, body: s.body, index: i + 1, carousel: true, template }));
     }
     const images = [];
     for (let i = 0; i < bufs.length; i++) { save(`${item.id}-${i}`, bufs[i]); images.push(`/media/design/${item.id}-${i}?v=${ts}`); }
     return { mediaUrl: images[0], images };
   }
-  save(item.id, await renderDesign({ role: "single", headline, headline2, cta, kicker, photo }));
+  save(item.id, await renderDesign({ role: "single", headline, headline2, cta, kicker, photo, template }));
   return { mediaUrl: `/media/design/${item.id}?v=${ts}`, images: [] };
 }
+
+// ── Design templates ── list / select / sample-preview ──────────────────────
+app.get("/api/templates", (req, res) => res.json({ ok: true, templates: DESIGN_TEMPLATES, active: activeTemplate() }));
+app.post("/api/templates/set", (req, res) => {
+  const t = (req.body || {}).template;
+  if (!DESIGN_TEMPLATES.includes(t)) return res.status(400).json({ ok: false, error: "unknown template" });
+  store.cfgSet({ DESIGN_TEMPLATE: t });
+  res.json({ ok: true, active: t });
+});
+// Sample preview for a template (cover + a numbered slide), rendered once + cached.
+app.get("/media/template/:tpl/:kind", async (req, res) => {
+  const tpl = DESIGN_TEMPLATES.includes(req.params.tpl) ? req.params.tpl : "classic";
+  const kind = req.params.kind === "slide" ? "slide" : "cover";
+  const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
+  const f = path.join(dir, `_sample-${tpl}-${kind}.png`);
+  try {
+    if (!fs.existsSync(f)) {
+      const { renderDesign } = await import("./data/designEngine.js");
+      let photo = null;
+      if (tpl === "spotlight") { try { const { fetchPhoto } = await import("./data/stockPhoto.js"); photo = await fetchPhoto("omani merchant store"); } catch (e) {} }
+      const buf = kind === "cover"
+        ? await renderDesign({ role: "cover", headline: "٥ أخطاء", headline2: "تقتل مبيعاتك", cta: "احفظها قبل لا تبدأ", kicker: "قبل ما تفتح متجرك", carousel: true, template: tpl, photo })
+        : await renderDesign({ role: "slide", headline: "يبدأ بدون خطة للشحن", body: "العميل يشتري.. وبعدها تبدأ الفوضى: مين يوصل؟ بكم؟ متى؟", index: 1, carousel: true, template: tpl });
+      const fd = fs.openSync(f, "w"); try { fs.writeSync(fd, buf); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    }
+    res.setHeader("Content-Type", "image/png"); res.setHeader("Cache-Control", "public, max-age=300");
+    fs.createReadStream(f).pipe(res);
+  } catch (e) { console.error("[template-sample]", e.message); res.status(500).send("sample failed"); }
+});
 
 // After a feed post publishes, optionally publish a branded companion Story
 // ("جديد في البروفايل ↑") — doubles daily presence with zero owner effort.
