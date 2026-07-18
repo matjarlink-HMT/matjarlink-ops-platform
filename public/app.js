@@ -411,8 +411,12 @@ async function renderTemplates(C) {
     </div>`;
   }).join("");
   C.innerHTML = `<div class="note-info">🎨 ${T("tpl_hint")}</div>
+    <div class="pcard nofloat" style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem">
+      <div style="flex:1;min-width:12rem"><b>🖼 ${T("canva_title")}</b><div class="mut">${T("canva_hint")}</div></div>
+      <button class="btn" id="canvabtn">🎨 ${T("canva_btn")}</button></div>
     <div class="grid g3 tplgrid">${cards}</div>
     <div class="mut" id="tplmsg" style="margin-top:.8rem"></div>`;
+  const cb = $("#canvabtn"); if (cb) cb.onclick = () => openCanva();
   C.querySelectorAll(".tplpick").forEach(b => b.onclick = async () => {
     const t = b.dataset.tpl;
     if (!confirm(T("tpl_confirm").replace("{t}", T("tpl_" + t)))) return;
@@ -421,6 +425,27 @@ async function renderTemplates(C) {
     if (r && r.ok) { renderTemplates(C); const m = $("#tplmsg"); if (m) m.textContent = "✓ " + T("tpl_saved"); }
     else { b.disabled = false; b.textContent = T("tpl_use"); }
   });
+}
+
+// Build a ready Canva "Magic Design" brief (Omani characters + brand colors),
+// copy it to the clipboard, and open Canva so the owner pastes it in.
+function canvaBrief(q) {
+  const head = q ? q.t : "تجارتك كلها في مكان واحد";
+  const kind = q ? (q.ty || "") : "منشور علامة";
+  return `منشور إنستغرام لعلامة «متجرلينك» (منصة عُمانية للتجار: متجر إلكتروني + كاشير + محاسبة في تطبيق واحد).
+الشخصية إلزامية: صورة فوتوغرافية واقعية عالية الجودة (photorealistic, DSLR) لشخص عُماني حقيقي بالزيّ العُماني الأصيل — الدشداشة العُمانية بالفراخة/الشرّابة، وعلى الرأس الكُمّة العُمانية المطرّزة أو المصر العُماني الملفوف. مهم: زيّ عُماني وليس خليجياً — لا غترة بيضاء ولا عقال أسود إطلاقاً.
+النوع: ${kind}.
+ألوان الهوية إلزامية: خلفية خمري غامق #6E1444 + لمسات وشريط برتقالي #E8890F. نص أبيض.
+العنوان: «${head}».
+شريط الميزات: متجر إلكتروني · كاشير ذكي · محاسبة تلقائية.
+التذييل: «متجرلينك · قريبًا في سلطنة عُمان».
+أسلوب حديث نظيف احترافي، إضاءة استوديو ناعمة.`;
+}
+async function openCanva(q) {
+  const brief = canvaBrief(q);
+  try { await navigator.clipboard.writeText(brief); alert(T("canva_copied")); }
+  catch (e) { prompt(T("canva_manual"), brief); }
+  window.open("https://www.canva.com/create/instagram-posts/", "_blank");
 }
 
 // ── manager chat (CAIMO) ──────────────────────────────────────────
@@ -677,6 +702,7 @@ function pdetailMain(q) {
         ${pub ? "" : `<button class="btn ghost sm regenbtn ${hasNote ? "hot" : ""}" data-regen="${q.id}">♻️ ${T("regen")}</button>`}
         ${pub ? "" : `<button class="btn ghost sm" data-alt="${q.id}">🅰🅱 ${T("alt_hooks")}</button>`}
         ${!pub && (q.ty || "").includes("ريل") ? `<button class="btn ghost sm" data-livereel="${q.id}">🎬 ${T("live_reel")}</button>` : ""}
+        ${pub ? "" : `<button class="btn ghost sm" data-canva="${q.id}">🎨 Canva</button>`}
         ${!pub && q.regenerated && (q.drive || (q.driveSlides && q.driveSlides.length)) ? `<button class="btn ghost sm" data-restore="${q.id}">↺ ${T("restore_orig")}</button>` : ""}
         ${approved || pub ? "" : `<button class="btn ok sm" data-approve="${q.id}">✓ ${T("approve")}</button>`}
         ${pubBtn}${stopBtn}
@@ -742,6 +768,7 @@ function bindDetail(list) {
   host.querySelectorAll("[data-pub]").forEach(b => b.onclick = () => publishPost(b.dataset.pub, b));
   host.querySelectorAll("[data-play2]").forEach(b => b.onclick = () => openDrivePlay(b.dataset.play2, host.querySelector(".ptitle")?.textContent || "", b.dataset.reel === "1"));
   host.querySelectorAll("[data-playvid]").forEach(b => b.onclick = () => openVideo(b.dataset.playvid, host.querySelector(".ptitle")?.textContent || ""));
+  host.querySelectorAll("[data-canva]").forEach(b => b.onclick = () => openCanva((list || S.queue || []).find(x => x.id === b.dataset.canva)));
   host.querySelectorAll("[data-livereel]").forEach(b => b.onclick = async () => {
     const url = prompt(T("live_reel_ask"));
     if (!url || !/^https?:\/\//.test(url)) { if (url) alert(T("live_reel_url")); return; }
