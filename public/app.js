@@ -415,7 +415,8 @@ async function renderTemplates(C) {
       <div style="flex:1;min-width:12rem"><b>🖼 ${T("canva_title")}</b><div class="mut">${T("canva_hint")}</div></div>
       <button class="btn" id="canvabtn">🎨 ${T("canva_btn")}</button></div>
     <div class="grid g3 tplgrid">${cards}</div>
-    <div class="mut" id="tplmsg" style="margin-top:.8rem"></div>`;
+    <div class="mut" id="tplmsg" style="margin-top:.8rem"></div>
+    <div id="charsec" style="margin-top:1.6rem"></div>`;
   const cb = $("#canvabtn"); if (cb) cb.onclick = () => openCanva();
   C.querySelectorAll(".tplpick").forEach(b => b.onclick = async () => {
     const t = b.dataset.tpl;
@@ -424,6 +425,43 @@ async function renderTemplates(C) {
     const r = await fetch("/api/templates/set", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ template: t }) }).then(x => x.json()).catch(() => null);
     if (r && r.ok) { renderTemplates(C); const m = $("#tplmsg"); if (m) m.textContent = "✓ " + T("tpl_saved"); }
     else { b.disabled = false; b.textContent = T("tpl_use"); }
+  });
+  renderCharacters($("#charsec"), data.active);
+}
+
+// Brand characters — authentic Omani people (Gemini-generated, owner-adopted).
+// Selecting one makes every "spotlight" design use it as the full-bleed hero.
+async function renderCharacters(host, activeTpl) {
+  if (!host) return;
+  let d = null;
+  try { d = await fetch("/api/characters").then(r => r.json()); } catch (e) {}
+  if (!d || !d.ok || !d.characters.length) { host.innerHTML = ""; return; }
+  const v = Date.now();
+  const noneOn = !d.active;
+  const cards = d.characters.map(c => {
+    const on = c.id === d.active;
+    return `<div class="tplcard ${on ? "on" : ""}" data-char="${c.id}">
+      <div class="tplhd"><span class="tplname">🧑🏻 ${escapeHtml(c.label)}</span>${on ? `<span class="pill p-ok">✓ ${T("tpl_active")}</span>` : ""}</div>
+      <div class="tpldesc">${escapeHtml(c.dress)}</div>
+      <div class="tplshots"><img loading="lazy" src="${c.thumb}?v=${v}" alt="character" style="grid-column:span 2;object-fit:cover;max-height:16rem"></div>
+      ${on ? `<button class="btn ok sm" disabled>✓ ${T("tpl_active")}</button>` : `<button class="btn sm charpick" data-char="${c.id}">${T("char_use")}</button>`}
+    </div>`;
+  }).join("");
+  host.innerHTML = `<h3 style="margin:.2rem 0 .5rem">🧑🏻 ${T("char_title")}</h3>
+    <div class="note-info">${T("char_hint")}${activeTpl !== "spotlight" ? ` <b>${T("char_needspotlight")}</b>` : ""}</div>
+    <div class="grid g3 tplgrid">${cards}
+      <div class="tplcard ${noneOn ? "on" : ""}">
+        <div class="tplhd"><span class="tplname">🚫 ${T("char_none")}</span>${noneOn ? `<span class="pill p-ok">✓</span>` : ""}</div>
+        <div class="tpldesc">${T("char_none_d")}</div>
+        <div class="tplshots" style="min-height:6rem;display:flex;align-items:center;justify-content:center;color:var(--mut)">—</div>
+        ${noneOn ? `<button class="btn ok sm" disabled>✓ ${T("tpl_active")}</button>` : `<button class="btn sm charpick" data-char="">${T("char_use")}</button>`}
+      </div>
+    </div><div class="mut" id="charmsg" style="margin-top:.6rem"></div>`;
+  host.querySelectorAll(".charpick").forEach(b => b.onclick = async () => {
+    b.disabled = true; b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
+    const r = await fetch("/api/characters/set", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ character: b.dataset.char }) }).then(x => x.json()).catch(() => null);
+    if (r && r.ok) { renderCharacters(host, activeTpl); const m = $("#charmsg"); if (m) m.textContent = "✓ " + T("char_saved"); }
+    else { b.disabled = false; b.textContent = T("char_use"); }
   });
 }
 

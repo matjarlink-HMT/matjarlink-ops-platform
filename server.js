@@ -17,6 +17,7 @@ import * as metaPublish from "./integrations/metaPublish.js";
 import { fetchDrive } from "./integrations/driveMedia.js";
 import { managerSystem, demoReply, errReply, managerNoteSystem, demoNoteReply, agentImproveSystem, fallbackImprovement } from "./data/manager.js";
 import * as live from "./data/live.js";
+import * as charMod from "./data/characters.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -396,6 +397,13 @@ function designsDir() { const v = process.env.RAILWAY_VOLUME_MOUNT_PATH || (fs.e
 const arDigits = (n) => String(n).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[d]);
 const DESIGN_TEMPLATES = ["classic", "luxe", "spotlight"];
 const activeTemplate = () => { const t = store.cfgGet("DESIGN_TEMPLATE"); return DESIGN_TEMPLATES.includes(t) ? t : "classic"; };
+// Active brand character (authentic Omani person) used as the hero photo for the
+// spotlight template. "" / unknown → none (spotlight falls back to a stock photo).
+const activeCharacterPath = () => {
+  const id = store.cfgGet("BRAND_CHARACTER");
+  if (!id) return null;
+  try { return charMod.characterPath(id); } catch (e) { return null; }
+};
 async function renderAndSaveDesign(item, content = {}) {
   const { renderDesign } = await import("./data/designEngine.js");
   const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
@@ -411,6 +419,9 @@ async function renderAndSaveDesign(item, content = {}) {
     try { const { fetchPhoto } = await import("./data/stockPhoto.js"); photo = await fetchPhoto(query); }
     catch (e) { console.error("[pexels]", e.message); }
   }
+  // Spotlight template with no explicit topical photo → use the adopted brand
+  // character (authentic Omani person) as the full-bleed hero.
+  if (!photo && template === "spotlight") { const cp = activeCharacterPath(); if (cp) photo = cp; }
   const slides = content.slides || item.slides || [];
   const isCarousel = (item.ty || "").includes("كاروسيل") && slides.length;
   if (isCarousel) {
@@ -444,12 +455,17 @@ app.get("/media/template/:tpl/:kind", async (req, res) => {
   const tpl = DESIGN_TEMPLATES.includes(req.params.tpl) ? req.params.tpl : "classic";
   const kind = req.params.kind === "slide" ? "slide" : "cover";
   const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
-  const f = path.join(dir, `_sample-${tpl}-${kind}.png`);
+  const charSuffix = tpl === "spotlight" ? `-${store.cfgGet("BRAND_CHARACTER") || "stock"}` : "";
+  const f = path.join(dir, `_sample-${tpl}${charSuffix}-${kind}.png`);
   try {
     if (!fs.existsSync(f)) {
       const { renderDesign } = await import("./data/designEngine.js");
       let photo = null;
-      if (tpl === "spotlight") { try { const { fetchPhoto } = await import("./data/stockPhoto.js"); photo = await fetchPhoto("omani merchant store"); } catch (e) {} }
+      if (tpl === "spotlight") {
+        const cp = activeCharacterPath();
+        if (cp) photo = cp;
+        else { try { const { fetchPhoto } = await import("./data/stockPhoto.js"); photo = await fetchPhoto("omani merchant store"); } catch (e) {} }
+      }
       const buf = kind === "cover"
         ? await renderDesign({ role: "cover", headline: "٥ أخطاء", headline2: "تقتل مبيعاتك", cta: "احفظها قبل لا تبدأ", kicker: "قبل ما تفتح متجرك", carousel: true, template: tpl, photo })
         : await renderDesign({ role: "slide", headline: "يبدأ بدون خطة للشحن", body: "العميل يشتري.. وبعدها تبدأ الفوضى: مين يوصل؟ بكم؟ متى؟", index: 1, carousel: true, template: tpl });
@@ -458,6 +474,26 @@ app.get("/media/template/:tpl/:kind", async (req, res) => {
     res.setHeader("Content-Type", "image/png"); res.setHeader("Cache-Control", "public, max-age=300");
     fs.createReadStream(f).pipe(res);
   } catch (e) { console.error("[template-sample]", e.message); res.status(500).send("sample failed"); }
+});
+
+// ── Brand characters ── authentic Omani people used as the spotlight hero ────
+app.get("/api/characters", (req, res) => res.json({
+  ok: true,
+  active: store.cfgGet("BRAND_CHARACTER") || "",
+  characters: charMod.CHARACTERS.map((c) => ({ id: c.id, label: c.label, dress: c.dress, thumb: `/media/character/${c.id}`, sample: `/media/template/spotlight/cover` })),
+}));
+app.post("/api/characters/set", (req, res) => {
+  const id = ((req.body || {}).character || "").trim();
+  if (id && !charMod.characterById(id)) return res.status(400).json({ ok: false, error: "unknown character" });
+  store.cfgSet({ BRAND_CHARACTER: id }); // "" clears → spotlight falls back to stock photo
+  res.json({ ok: true, active: id });
+});
+// Public thumbnail of a character asset (auth-exempt like other /media routes).
+app.get("/media/character/:id", (req, res) => {
+  const p = charMod.characterPath(req.params.id);
+  if (!p) return res.status(404).send("no character");
+  res.setHeader("Content-Type", "image/png"); res.setHeader("Cache-Control", "public, max-age=86400");
+  fs.createReadStream(p).pipe(res);
 });
 
 // After a feed post publishes, optionally publish a branded companion Story
