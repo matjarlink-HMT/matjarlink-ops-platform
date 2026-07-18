@@ -419,9 +419,10 @@ async function renderAndSaveDesign(item, content = {}) {
     try { const { fetchPhoto } = await import("./data/stockPhoto.js"); photo = await fetchPhoto(query); }
     catch (e) { console.error("[pexels]", e.message); }
   }
-  // Spotlight template with no explicit topical photo → use the adopted brand
-  // character (authentic Omani person) as the full-bleed hero.
-  if (!photo && template === "spotlight") { const cp = activeCharacterPath(); if (cp) photo = cp; }
+  // No explicit topical photo → use the adopted brand character (authentic Omani
+  // person). Spotlight bakes it full-bleed; classic/luxe seat it in the branded
+  // photo window (face-anchored). Applies to single posts + carousel covers.
+  if (!photo && activeCharacterPath()) photo = activeCharacterPath();
   const slides = content.slides || item.slides || [];
   const isCarousel = (item.ty || "").includes("كاروسيل") && slides.length;
   if (isCarousel) {

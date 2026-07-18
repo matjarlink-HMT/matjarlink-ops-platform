@@ -147,12 +147,15 @@ function wrapLines(ctx, text, maxW) {
 // Cover-fit an image inside a rounded-rect window (the MJ-003/MJ-011 photo
 // style) with brand treatment: unified vibrance, a subtle plum wash, a top
 // depth gradient tying it to the headline, and a warm glow at the base.
-function drawPhotoWindow(ctx, img, x, y, w, h, r = 40) {
+// focusY: vertical crop anchor when the image is taller than the window
+// (0 = keep the top, 0.5 = center). Portrait PEOPLE need a top bias so the
+// face/headdress survives the crop instead of the chest.
+function drawPhotoWindow(ctx, img, x, y, w, h, r = 40, focusY = 0.5) {
   ctx.save();
   ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.clip();
   const ir = img.width / img.height, cr = w / h;
   let dw, dh, dx, dy;
-  if (ir > cr) { dh = h; dw = h * ir; dx = x + (w - dw) / 2; dy = y; } else { dw = w; dh = w / ir; dx = x; dy = y + (h - dh) / 2; }
+  if (ir > cr) { dh = h; dw = h * ir; dx = x + (w - dw) / 2; dy = y; } else { dw = w; dh = w / ir; dx = x; dy = y + (h - dh) * focusY; }
   ctx.filter = "saturate(1.08) contrast(1.06) brightness(1.02)"; // evens out mixed stock
   ctx.drawImage(img, dx, dy, dw, dh);
   ctx.filter = "none";
@@ -297,9 +300,13 @@ export async function renderDesign({ headline = "", headline2 = "", cta = "", bo
 
   // topical photo in a rounded window (the professional MJ-003/MJ-011 layout)
   if (photoImg) {
+    // A portrait PERSON (a brand character) keeps the same window but anchors the
+    // crop near the face so the head/headdress survive instead of the chest; a
+    // landscape stock photo stays centered.
+    const isPortrait = photoImg.height > photoImg.width * 1.15;
     const px = 120, pw = W - 240, pTop = y + 26;
     const pBottom = H - (carousel && !last ? 260 : 190); // keep clear of swipe hint / footer
-    if (pBottom - pTop > 260) drawPhotoWindow(ctx, photoImg, px, pTop, pw, pBottom - pTop, 44);
+    if (pBottom - pTop > 260) drawPhotoWindow(ctx, photoImg, px, pTop, pw, pBottom - pTop, 44, isPortrait ? 0.17 : 0.5);
     y = pBottom;
   }
 

@@ -448,7 +448,7 @@ async function renderCharacters(host, activeTpl) {
     </div>`;
   }).join("");
   host.innerHTML = `<h3 style="margin:.2rem 0 .5rem">🧑🏻 ${T("char_title")}</h3>
-    <div class="note-info">${T("char_hint")}${activeTpl !== "spotlight" ? ` <b>${T("char_needspotlight")}</b>` : ""}</div>
+    <div class="note-info">${T("char_hint")}</div>
     <div class="grid g3 tplgrid">${cards}
       <div class="tplcard ${noneOn ? "on" : ""}">
         <div class="tplhd"><span class="tplname">🚫 ${T("char_none")}</span>${noneOn ? `<span class="pill p-ok">✓</span>` : ""}</div>
