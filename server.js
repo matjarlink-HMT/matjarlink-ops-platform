@@ -501,9 +501,29 @@ async function renderAndSaveReel(item, content = {}) {
     ];
   }
   const out = path.join(dir, `${item.id}.mp4`);
-  await renderReel(scenes, out);
+  await renderReel(scenes, out, activeTemplate());
   return { mediaUrl: `/media/design/${item.id}.mp4?v=${Date.now()}`, images: [] };
 }
+
+// LIVE-ACTION: wrap the owner's filmed footage with a branded intro + outro.
+// Body: { id, footageUrl, hook?, cta?, ctaBody? } → produces a branded reel and
+// sets it as the post's video. The owner films (real people); we brand it.
+app.post("/api/live-reel", async (req, res) => {
+  const { id, footageUrl, hook, cta, ctaBody } = req.body || {};
+  if (!id || !footageUrl || !/^https?:\/\//.test(footageUrl)) return res.status(400).json({ ok: false, error: "id + public footageUrl required" });
+  const item = fullQueue().find((q) => q.id === id);
+  if (!item) return res.status(404).json({ ok: false, error: "post not found" });
+  try {
+    const { renderLiveReel } = await import("./data/reelEngine.js");
+    const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
+    const out = path.join(dir, `${id}-live.mp4`);
+    await renderLiveReel(footageUrl, { hook: hook || item.t || "", cta: cta || "قريبًا", ctaBody: ctaBody || "" }, out, activeTemplate());
+    const mediaUrl = `/media/design/${id}-live.mp4?v=${Date.now()}`;
+    const saved = store.setOverride(id, { mediaUrl, images: [] });
+    store.addPostNote(id, "manager", `🎬 لفّيتُ فيديوك الحقيقي بمقدّمة وخاتمة مُبرندة — صار ريل لايف-أكشن جاهز للنشر.`);
+    res.json({ ok: true, mediaUrl, override: saved });
+  } catch (e) { console.error("[live-reel]", e.message); res.status(500).json({ ok: false, error: e.message }); }
+});
 app.get("/media/design/:id", (req, res) => {
   const id = (req.params.id || "").replace(/[^A-Za-z0-9._-]/g, "").replace(/\.\.+/g, ".");
   const isVideo = id.endsWith(".mp4");

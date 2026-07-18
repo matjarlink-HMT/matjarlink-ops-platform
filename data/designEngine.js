@@ -357,37 +357,41 @@ export async function renderStory({ title = "", badge = "جديد في البر�
 // ── Reel frames ── 1080x1920 (9:16) scenes for the generated motion reel ─────
 // kind: "hook" (kicker + big headline) | "body" (headline + supporting line)
 //       | "cta" (big logo + قريبًا + handle)
-export async function renderReelFrame({ kind = "hook", headline = "", body = "", kicker = "" } = {}) {
+export async function renderReelFrame({ kind = "hook", headline = "", body = "", kicker = "", template = "classic" } = {}) {
   const W = 1080, H = 1920, CX = W / 2;
   const cv = createCanvas(W, H);
   const ctx = cv.getContext("2d");
-  ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, W, H);
-  // brand frame, spread for the taller canvas
-  pill(ctx, 892, 66, 560, 82, -33, PLUM);
-  pill(ctx, 1016, 198, 250, 82, -33, ORANGE);
-  pill(ctx, 60, 828, 340, 60, -33, CREAM);
-  pill(ctx, 40, 932, 300, 60, -33, ORANGE);
-  pill(ctx, 92, 1036, 322, 60, -33, PINK);
-  pill(ctx, 1020, 1520, 320, 66, -33, CREAM);
-  sparkle(ctx, 190, 512, 26, ORANGE);
-  sparkle(ctx, 905, 795, 18, PINK);
-  sparkle(ctx, 170, 1330, 16, PINK);
-  const logo = await getLogo();
+  const dark = template === "luxe" || template === "spotlight";
+  if (dark) {
+    const g = ctx.createLinearGradient(0, 0, W * 0.5, H); g.addColorStop(0, MAGENTA); g.addColorStop(1, DEEP);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    pill(ctx, 905, 84, 460, 82, -33, ORANGE); pill(ctx, 60, 828, 340, 60, -33, "#7A0F45");
+    pill(ctx, 40, 932, 300, 60, -33, ORANGE); pill(ctx, 1020, 1560, 320, 66, -33, "#7A0F45");
+    sparkle(ctx, 190, 512, 26, ORANGE); sparkle(ctx, 905, 795, 18, CREAM); sparkle(ctx, 170, 1330, 16, CREAM);
+  } else {
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, W, H);
+    pill(ctx, 892, 66, 560, 82, -33, PLUM); pill(ctx, 1016, 198, 250, 82, -33, ORANGE);
+    pill(ctx, 60, 828, 340, 60, -33, CREAM); pill(ctx, 40, 932, 300, 60, -33, ORANGE); pill(ctx, 92, 1036, 322, 60, -33, PINK);
+    pill(ctx, 1020, 1520, 320, 66, -33, CREAM);
+    sparkle(ctx, 190, 512, 26, ORANGE); sparkle(ctx, 905, 795, 18, PINK); sparkle(ctx, 170, 1330, 16, PINK);
+  }
+  const HEAD = dark ? "#ffffff" : PLUM, SUB = dark ? CREAM : GRAY, BODY = dark ? "#F3DCE8" : INK;
+  const logo = dark ? await getTintedLogo("#ffffff") : await getLogo();
   ctx.textAlign = "center"; ctx.direction = "rtl";
 
   if (kind === "cta") {
     if (logo) ctx.drawImage(logo, CX - 290, 470, 580, 580);
-    ctx.fillStyle = PLUM; ctx.font = "104px TajawalXB";
+    ctx.fillStyle = HEAD; ctx.font = "104px TajawalXB";
     ctx.fillText(headline || "قريبًا", CX, 1180);
     ctx.fillStyle = ORANGE; ctx.beginPath(); ctx.roundRect(CX - 80, 1216, 160, 12, 6); ctx.fill();
     if (body) {
-      ctx.fillStyle = INK; ctx.font = "44px Tajawal";
+      ctx.fillStyle = BODY; ctx.font = "44px Tajawal";
       const bl = wrapLines(ctx, body, W - 240).slice(0, 2);
       let yy = 1330; for (const ln of bl) { ctx.fillText(ln, CX, yy); yy += 66; }
     }
   } else {
     drawLogo(ctx, logo);
-    if (kicker) { ctx.fillStyle = GRAY; ctx.font = "44px TajawalB"; ctx.fillText(kicker, CX, 700); }
+    if (kicker) { ctx.fillStyle = SUB; ctx.font = "44px TajawalB"; ctx.fillText(kicker, CX, 700); }
     let size = kind === "hook" ? 104 : 84;
     const maxW = W - 200;
     let lines = wrapLines((ctx.font = size + "px TajawalXB", ctx), headline, maxW);
@@ -395,15 +399,15 @@ export async function renderReelFrame({ kind = "hook", headline = "", body = "",
     lines = lines.slice(0, 4);
     const lh = size * 1.3;
     let y = 800 + size;
-    ctx.fillStyle = PLUM; ctx.font = size + "px TajawalXB";
+    ctx.fillStyle = HEAD; ctx.font = size + "px TajawalXB";
     for (const ln of lines) { ctx.fillText(ln, CX, y); y += lh; }
     ctx.fillStyle = ORANGE; ctx.beginPath(); ctx.roundRect(CX - 80, y - lh + size + 20, 160, 12, 6); ctx.fill();
     if (body) {
-      y += 60; ctx.fillStyle = INK; ctx.font = "46px Tajawal";
+      y += 60; ctx.fillStyle = BODY; ctx.font = "46px Tajawal";
       const bl = wrapLines(ctx, body, W - 220).slice(0, 4); const blh = 46 * 1.5;
       for (const ln of bl) { ctx.fillText(ln, CX, y); y += blh; }
     }
   }
-  drawFooter(ctx, W, H);
+  drawFooter(ctx, W, H, dark);
   return cv.toBuffer("image/png");
 }

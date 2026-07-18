@@ -676,6 +676,7 @@ function pdetailMain(q) {
       <div class="pactions">
         ${pub ? "" : `<button class="btn ghost sm regenbtn ${hasNote ? "hot" : ""}" data-regen="${q.id}">♻️ ${T("regen")}</button>`}
         ${pub ? "" : `<button class="btn ghost sm" data-alt="${q.id}">🅰🅱 ${T("alt_hooks")}</button>`}
+        ${!pub && (q.ty || "").includes("ريل") ? `<button class="btn ghost sm" data-livereel="${q.id}">🎬 ${T("live_reel")}</button>` : ""}
         ${!pub && q.regenerated && (q.drive || (q.driveSlides && q.driveSlides.length)) ? `<button class="btn ghost sm" data-restore="${q.id}">↺ ${T("restore_orig")}</button>` : ""}
         ${approved || pub ? "" : `<button class="btn ok sm" data-approve="${q.id}">✓ ${T("approve")}</button>`}
         ${pubBtn}${stopBtn}
@@ -741,6 +742,14 @@ function bindDetail(list) {
   host.querySelectorAll("[data-pub]").forEach(b => b.onclick = () => publishPost(b.dataset.pub, b));
   host.querySelectorAll("[data-play2]").forEach(b => b.onclick = () => openDrivePlay(b.dataset.play2, host.querySelector(".ptitle")?.textContent || "", b.dataset.reel === "1"));
   host.querySelectorAll("[data-playvid]").forEach(b => b.onclick = () => openVideo(b.dataset.playvid, host.querySelector(".ptitle")?.textContent || ""));
+  host.querySelectorAll("[data-livereel]").forEach(b => b.onclick = async () => {
+    const url = prompt(T("live_reel_ask"));
+    if (!url || !/^https?:\/\//.test(url)) { if (url) alert(T("live_reel_url")); return; }
+    b.disabled = true; b.innerHTML = `🎬 <span class="dots"><i></i><i></i><i></i></span>`;
+    const r = await fetch("/api/live-reel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: b.dataset.livereel, footageUrl: url }) }).then(x => x.json()).catch(() => null);
+    if (r && r.ok) { try { S = await fetch("/api/state").then(x => x.json()); } catch (e) {} renderPipeline($("#content")); }
+    else { alert((r && r.error) || "!"); b.disabled = false; b.innerHTML = `🎬 ${T("live_reel")}`; }
+  });
   host.querySelectorAll("[data-restore]").forEach(b => b.onclick = async () => {
     if (!confirm(T("restore_confirm"))) return;
     b.disabled = true; b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;

@@ -13,6 +13,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { renderReelFrame } from "./designEngine.js";
+import https from "node:https";
+import http from "node:http";
 
 // Scene pacing by role: tight hook, readable body, confident close (~8.4s total).
 const SEC = { hook: 2.4, body: 3.2, cta: 2.8 };
@@ -64,12 +66,65 @@ function segArgs(framePng, i, n, sec, outSeg) {
 // Serialize renders — two concurrent encodes would double peak memory.
 let busy = false;
 
+function download(url, dest) {
+  return new Promise((resolve, reject) => {
+    const mod = url.startsWith("https") ? https : http;
+    const file = fs.createWriteStream(dest);
+    mod.get(url, (r) => {
+      if (r.statusCode >= 300 && r.statusCode < 400 && r.headers.location) { file.close(); return download(r.headers.location, dest).then(resolve, reject); }
+      if (r.statusCode !== 200) { file.close(); return reject(new Error(`download ${r.statusCode}`)); }
+      r.pipe(file); file.on("finish", () => file.close(resolve));
+    }).on("error", (e) => { try { fs.unlinkSync(dest); } catch (x) {} reject(e); });
+  });
+}
+
+// ── LIVE-ACTION pipeline ── wrap the owner's OWN filmed footage (a skit like the
+// competitors' reels) with a branded hook intro + CTA outro, normalized to a
+// clean 1080x1920 IG reel. This is the software half of a live-action workflow:
+// the owner films with real people; the platform brands it consistently.
+// footageSrc: a public URL or local path to the owner's video (must have audio).
+export async function renderLiveReel(footageSrc, { hook = "", cta = "قريبًا", ctaBody = "" } = {}, outPath, template = "classic") {
+  if (busy) throw new Error("reel engine busy — try again in a minute");
+  busy = true;
+  const dir = path.dirname(outPath); fs.mkdirSync(dir, { recursive: true });
+  const base = path.join(dir, `.live-${path.basename(outPath, ".mp4")}`);
+  const tmp = [];
+  const V = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23", "-threads", "1", "-x264-params", "ref=1:bframes=0:rc-lookahead=0:keyint=50", "-pix_fmt", "yuv420p", "-r", "25"];
+  const A = ["-c:a", "aac", "-ar", "44100", "-ac", "2", "-b:a", "96k"];
+  try {
+    const bin = await ffmpegPath();
+    // 1) fetch footage if it's a URL
+    let footage = footageSrc;
+    if (/^https?:\/\//.test(footageSrc)) { footage = `${base}-src.mp4`; tmp.push(footage); await download(footageSrc, footage); }
+    // 2) branded intro (1.6s) + outro (2.2s), each with silent audio
+    const introPng = `${base}-intro.png`, outroPng = `${base}-outro.png`, intro = `${base}-intro.mp4`, outro = `${base}-outro.mp4`, mid = `${base}-mid.mp4`;
+    tmp.push(introPng, outroPng, intro, outro, mid);
+    fs.writeFileSync(introPng, await renderReelFrame({ kind: "hook", headline: hook, template }));
+    fs.writeFileSync(outroPng, await renderReelFrame({ kind: "cta", headline: cta, body: ctaBody, template }));
+    const still = (png, sec, out) => run(bin, ["-y", "-loop", "1", "-t", String(sec), "-i", png, "-f", "lavfi", "-t", String(sec), "-i", "anullsrc=channel_layout=stereo:sample_rate=44100", "-vf", "scale=1080:1920,format=yuv420p,fade=t=in:st=0:d=0.3", ...V, ...A, "-shortest", out]);
+    await still(introPng, 1.6, intro);
+    await still(outroPng, 2.2, outro);
+    // 3) normalize the owner's footage to 1080x1920 (letterbox on brand plum), keep its audio
+    await run(bin, ["-y", "-i", footage, "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=0x2D081E,format=yuv420p", ...V, ...A, "-map", "0:v:0", "-map", "0:a:0?", mid]);
+    // 4) concat intro + footage + outro (re-encode-free)
+    const listFile = `${base}.txt`; tmp.push(listFile);
+    fs.writeFileSync(listFile, [intro, mid, outro].map((s) => `file '${s}'`).join("\n"));
+    await run(bin, ["-y", "-f", "concat", "-safe", "0", "-i", listFile, "-c", "copy", "-movflags", "+faststart", outPath]);
+    const fd = fs.openSync(outPath, "r+"); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    return outPath;
+  } finally {
+    busy = false;
+    for (const f of tmp) { try { fs.unlinkSync(f); } catch (e) {} }
+  }
+}
+
 // scenes: [{kind, headline, body, kicker}, ...] (2-4). Writes outPath (.mp4).
-export async function renderReel(scenes, outPath) {
+// template applies the active brand template (classic/luxe/spotlight) to frames.
+export async function renderReel(scenes, outPath, template = "classic") {
   if (!Array.isArray(scenes) || scenes.length < 2) throw new Error("need at least 2 scenes");
   if (busy) throw new Error("reel engine busy — try again in a minute");
   busy = true;
-  scenes = scenes.slice(0, 4);
+  scenes = scenes.slice(0, 4).map((s) => ({ ...s, template }));
   const dir = path.dirname(outPath);
   fs.mkdirSync(dir, { recursive: true });
   const base = path.join(dir, `.seg-${path.basename(outPath, ".mp4")}`);
