@@ -872,11 +872,14 @@ app.get("/api/connections", (req, res) => {
       fields: [f("WINDSOR_API_KEY", "API Key", true)] },
     { key: "whatsapp", name: "WhatsApp Cloud API", icon: "WA", connected: wa.whatsappReady(),
       help: "https://developers.facebook.com", desc: "استقبال رسائل واتساب والرد عليها.",
-      fields: [f("WHATSAPP_TOKEN", "Access Token", true), f("WHATSAPP_PHONE_ID", "Phone Number ID")] }
+      fields: [f("WHATSAPP_TOKEN", "Access Token", true), f("WHATSAPP_PHONE_ID", "Phone Number ID")] },
+    { key: "gemini", name: "Gemini — توليد الشخصيات (Nano Banana)", icon: "GM", connected: gemini.geminiReady(),
+      help: "https://aistudio.google.com/apikey", desc: "توليد شخصيات عُمانية أصيلة تلقائياً كل ليلة (١–٥ص) لصفحة القوالب.",
+      fields: [f("GEMINI_API_KEY", "API Key", true)] }
   ]});
 });
 app.post("/api/connections", (req, res) => {
-  const allowed = ["META_ACCESS_TOKEN", "META_IG_USER_ID", "META_PAGE_ID", "WINDSOR_API_KEY", "WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "META_GRAPH_VERSION", "AUTO_PUBLISH"];
+  const allowed = ["META_ACCESS_TOKEN", "META_IG_USER_ID", "META_PAGE_ID", "WINDSOR_API_KEY", "WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "META_GRAPH_VERSION", "AUTO_PUBLISH", "GEMINI_API_KEY", "GEMINI_IMAGE_MODEL"];
   const clean = {}; for (const k of allowed) if (k in (req.body || {})) clean[k] = req.body[k];
   store.cfgSet(clean);
   res.json({ ok: true, connectivity: { meta: meta.metaReady(), whatsapp: wa.whatsappReady(), windsor: windsor.windsorReady() } });
