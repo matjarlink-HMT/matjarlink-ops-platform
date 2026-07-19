@@ -71,7 +71,7 @@ async function refresh() {
   const active = document.querySelector("#nav button.on")?.dataset.go;
   // don't blow away pages holding live input / typed notes
   // pages with live text inputs must not be re-rendered under the user's fingers
-  if (active && !["pipeline", "manager", "settings", "comments", "messages", "leads", "plan"].includes(active)) render(active);
+  if (active && !["studio", "pipeline", "manager", "settings", "comments", "messages", "leads", "plan"].includes(active)) render(active);
 }
 function applyLang() {
   const L = LANGS[lang]; document.documentElement.lang = lang; document.documentElement.dir = L.dir;
