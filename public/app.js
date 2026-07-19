@@ -23,7 +23,7 @@ const STMAP = { online: "p-ok", working: "p-info", scheduled: "p-info", idle: "p
 const GROUPS = [
   { items: ["overview"] },
   { label: "g_manage", items: ["manager", "agents", "needs"] },
-  { label: "g_content", items: ["pipeline", "plan", "templates"] },
+  { label: "g_content", items: ["studio", "pipeline", "plan", "templates"] },
   { label: "g_engage", items: ["comments", "messages", "leads"] },
   { label: "g_perf", items: ["analytics", "camp"] },
   { label: "g_settings", items: ["settings"] }
@@ -116,6 +116,7 @@ function render(p) {
   }
   else if (p === "agents") { C.innerHTML = `<div class="note-info">🚀 ${T("agent_improve_hint")}</div><div class="grid g3">${S.agents.map((a, i) => agentCard(a, i)).join("")}</div>`; bindAgents(); }
   else if (p === "needs") C.innerHTML = `<div class="grid g2">${S.needs.map(needCard).join("")}</div>`;
+  else if (p === "studio") renderStudio(C);
   else if (p === "pipeline") renderPipeline(C);
   else if (p === "plan") renderPlan(C);
   else if (p === "templates") renderTemplates(C);
@@ -126,6 +127,124 @@ function render(p) {
   else if (p === "leads") C.innerHTML = leadsView();
   else if (p === "manager") renderManager(C);
   else if (p === "settings") renderSettings(C);
+}
+
+// ── Studio ── instant design creation → live preview → publish / schedule / download ──
+const STUDIO_TYPE_LIST = [{ id: "post", e: "🖼" }, { id: "carousel", e: "🎠" }, { id: "reel", e: "🎬" }, { id: "story", e: "📲" }];
+const STUDIO_PLATFORMS = ["instagram", "facebook", "tiktok", "snapchat", "x"];
+let studioDraft = null; // last generated draft (for regenerate / actions)
+
+async function renderStudio(C) {
+  C.innerHTML = `<div class="loading">…</div>`;
+  let meta = { characters: [], templates: ["classic", "luxe", "spotlight"], drafts: [] };
+  try { meta = await fetch("/api/studio/drafts").then(r => r.json()); } catch (e) {}
+  const chars = meta.characters || [], tpls = meta.templates || ["classic", "luxe", "spotlight"];
+  const charOpts = `<option value="">${T("studio_char_none")}</option>` + chars.map(c => `<option value="${c.id}">${escapeHtml(c.label)}</option>`).join("");
+  const typeCards = STUDIO_TYPE_LIST.map((t, i) => `<button type="button" class="seg ${i === 0 ? "on" : ""}" data-stype="${t.id}">${t.e} ${T("studio_type_" + t.id)}</button>`).join("");
+  const tplCards = tpls.map((t, i) => `<button type="button" class="seg ${i === 0 ? "on" : ""}" data-stpl="${t}">${T("tpl_" + t)}</button>`).join("");
+  const platOpts = STUDIO_PLATFORMS.map((p, i) => `<option value="${p}" ${i === 0 ? "selected" : ""}>${T("plat_" + p)}</option>`).join("");
+  C.innerHTML = `<div class="note-info">🎨 ${T("studio_hint")}</div>
+    <div class="grid g2">
+      <div class="pcard nofloat">
+        <label class="slbl">${T("studio_type")}</label><div class="segrow" id="stypes">${typeCards}</div>
+        <label class="slbl">${T("studio_template")}</label><div class="segrow" id="stpls">${tplCards}</div>
+        <div class="grid g2" style="gap:.6rem">
+          <div><label class="slbl">${T("studio_platform")}</label><select id="splatform" class="sinput">${platOpts}</select></div>
+          <div><label class="slbl">${T("studio_character")}</label><select id="schar" class="sinput">${charOpts}</select></div>
+        </div>
+        <label class="slbl">${T("studio_idea")}</label><input id="sidea" class="sinput" placeholder="${T("studio_idea_ph")}">
+        <label class="slbl">${T("studio_headline")} <span class="mut">· ${T("studio_optional")}</span></label><input id="shead" class="sinput" placeholder="${T("studio_headline_ph")}">
+        <label class="slbl">${T("studio_desc")} <span class="mut">· ${T("studio_optional")}</span></label><textarea id="sdesc" class="sinput" rows="2" placeholder="${T("studio_desc_ph")}"></textarea>
+        <button class="btn" id="sgen" style="margin-top:.9rem;width:100%">✨ ${T("studio_generate")}</button>
+        <div class="mut" id="smsg" style="margin-top:.5rem"></div>
+      </div>
+      <div class="pcard nofloat" id="spreview"><div class="mut" style="text-align:center;padding:2.5rem 0">${T("studio_preview_empty")}</div></div>
+    </div>
+    <h3 style="margin:1.4rem 0 .6rem">🗂 ${T("studio_recent")}</h3>
+    <div class="grid g3" id="sdrafts">${(meta.drafts || []).map(studioDraftCard).join("") || `<div class="mut">${T("studio_no_drafts")}</div>`}</div>`;
+  C.querySelectorAll("[data-stype]").forEach(b => b.onclick = () => { C.querySelectorAll("[data-stype]").forEach(x => x.classList.remove("on")); b.classList.add("on"); });
+  C.querySelectorAll("[data-stpl]").forEach(b => b.onclick = () => { C.querySelectorAll("[data-stpl]").forEach(x => x.classList.remove("on")); b.classList.add("on"); });
+  $("#sgen").onclick = () => studioGenerate(C);
+  bindStudioDrafts(C);
+}
+function studioSel(C) {
+  return {
+    type: C.querySelector("[data-stype].on")?.dataset.stype || "post",
+    template: C.querySelector("[data-stpl].on")?.dataset.stpl || "classic",
+    platform: $("#splatform")?.value || "instagram", character: $("#schar")?.value || "",
+    idea: $("#sidea")?.value || "", headline: $("#shead")?.value || "", description: $("#sdesc")?.value || "", lang,
+  };
+}
+async function studioGenerate(C) {
+  const sel = studioSel(C);
+  if (!sel.idea.trim() && !sel.headline.trim()) { const m = $("#smsg"); if (m) m.textContent = "⚠ " + T("studio_need_idea"); return; }
+  const btn = $("#sgen"); btn.disabled = true; const old = btn.innerHTML; btn.innerHTML = `<span class="dots"><i></i><i></i><i></i></span> ${T("studio_generating")}`;
+  const pv = $("#spreview"); pv.innerHTML = `<div class="mut" style="text-align:center;padding:2.5rem 0"><span class="dots"><i></i><i></i><i></i></span><br>${T("studio_generating")}</div>`;
+  try {
+    const r = await fetch("/api/studio/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...sel, draftId: studioDraft?.id }) }).then(x => x.json());
+    if (!r.ok) pv.innerHTML = `<div class="mut" style="padding:1rem">${escapeHtml(r.error || "failed")}</div>`;
+    else { studioDraft = r.draft; renderStudioPreview(r.draft); refreshStudioDrafts(); }
+  } catch (e) { pv.innerHTML = `<div class="mut">${escapeHtml(String(e))}</div>`; }
+  btn.disabled = false; btn.innerHTML = old;
+}
+function studioMedia(d) {
+  if ((d.mediaUrl || "").includes(".mp4")) return `<video src="${d.mediaUrl}" controls playsinline style="width:100%;border-radius:12px"></video>`;
+  if (d.images && d.images.length > 1) return `<div style="display:flex;gap:.4rem;overflow-x:auto">${d.images.map(u => `<img src="${u}" style="height:16rem;border-radius:10px">`).join("")}</div>`;
+  return `<img src="${d.mediaUrl}" style="width:100%;border-radius:12px">`;
+}
+function renderStudioPreview(d) {
+  const pv = $("#spreview"); if (!pv) return;
+  const dl = (d.id || "design") + ((d.mediaUrl || "").includes(".mp4") ? ".mp4" : ".png");
+  pv.innerHTML = `${studioMedia(d)}
+    <div style="margin-top:.7rem;display:flex;gap:.5rem;flex-wrap:wrap">
+      <button class="btn ok sm" id="spub">🚀 ${T("studio_publish")}</button>
+      <button class="btn sm" id="ssched">🗓 ${T("studio_schedule")}</button>
+      <a class="btn ghost sm" href="${d.mediaUrl}" download="${dl}" target="_blank">⬇ ${T("studio_download")}</a>
+    </div>
+    <div id="sschedbox" style="display:none;margin-top:.6rem">
+      <input type="datetime-local" id="sdate" class="sinput" style="max-width:15rem;display:inline-block">
+      <button class="btn sm" id="sschedgo">${T("studio_confirm_schedule")}</button>
+    </div>
+    <div class="mut" id="sactmsg" style="margin-top:.5rem"></div>`;
+  $("#spub").onclick = () => studioPublish(d);
+  $("#ssched").onclick = () => { const b = $("#sschedbox"); b.style.display = b.style.display === "none" ? "block" : "none"; };
+  $("#sschedgo").onclick = () => studioSchedule(d);
+}
+async function studioPublish(d) {
+  if (!confirm(T("studio_publish_confirm"))) return;
+  const m = $("#sactmsg"); m.textContent = "…";
+  const r = await fetch("/api/studio/publish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: d.id }) }).then(x => x.json()).catch(() => null);
+  if (r && r.ok) { m.textContent = "✓ " + T("studio_published"); studioDraft = null; refreshStudioDrafts(); }
+  else m.textContent = "⚠ " + ((r && r.error) || T("studio_failed"));
+}
+async function studioSchedule(d) {
+  const v = $("#sdate")?.value; if (!v) { $("#sactmsg").textContent = "⚠ " + T("studio_pick_date"); return; }
+  const date = v.replace("T", " "); const m = $("#sactmsg"); m.textContent = "…";
+  const r = await fetch("/api/studio/schedule", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: d.id, date }) }).then(x => x.json()).catch(() => null);
+  if (r && r.ok) { m.textContent = "✓ " + T("studio_scheduled") + " — " + date; studioDraft = null; refreshStudioDrafts(); }
+  else m.textContent = "⚠ " + ((r && r.error) || T("studio_failed"));
+}
+function studioDraftCard(d) {
+  const thumb = (d.mediaUrl || "").includes(".mp4") ? `<video src="${d.mediaUrl}" muted style="width:100%;border-radius:8px"></video>` : `<img src="${d.mediaUrl}" style="width:100%;border-radius:8px">`;
+  return `<div class="tplcard"><div class="tplshots" style="grid-template-columns:1fr">${thumb}</div>
+    <div class="tpldesc">${escapeHtml((d.t || "").slice(0, 50))}</div>
+    <div style="display:flex;gap:.4rem;margin-top:.3rem"><button class="btn sm sdload" data-draft="${d.id}">↺ ${T("studio_reopen")}</button><button class="btn ghost sm sddel" data-draft="${d.id}">🗑</button></div></div>`;
+}
+async function refreshStudioDrafts() {
+  try { const m = await fetch("/api/studio/drafts").then(r => r.json()); const host = $("#sdrafts");
+    if (host) { host.innerHTML = (m.drafts || []).map(studioDraftCard).join("") || `<div class="mut">${T("studio_no_drafts")}</div>`; bindStudioDrafts(document); }
+  } catch (e) {}
+}
+function bindStudioDrafts(C) {
+  (C || document).querySelectorAll(".sdload").forEach(b => b.onclick = async () => {
+    const m = await fetch("/api/studio/drafts").then(r => r.json()).catch(() => null);
+    const d = m && (m.drafts || []).find(x => x.id === b.dataset.draft);
+    if (d) { studioDraft = d; renderStudioPreview(d); window.scrollTo(0, 0); }
+  });
+  (C || document).querySelectorAll(".sddel").forEach(b => b.onclick = async () => {
+    await fetch("/api/studio/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: b.dataset.draft }) }).catch(() => {});
+    if (studioDraft?.id === b.dataset.draft) studioDraft = null; refreshStudioDrafts();
+  });
 }
 
 // ── content plan (خطة المحتوى) ── month tabs · editable table · one-click apply ──

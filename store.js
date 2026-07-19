@@ -154,6 +154,24 @@ export function getRemoved() { return rm; }
 export function removePost(id) { if (id && !rm.includes(id)) rm.push(id); persistRm(); return rm; }
 export function restorePost(id) { rm = rm.filter((x) => x !== id); persistRm(); return rm; }
 
+// ── Studio drafts ── instantly-designed posts awaiting publish/schedule/download.
+// Kept out of the main queue so regenerating doesn't clutter it; committed to the
+// queue only when the owner publishes or schedules. Capped to the last 40.
+const STU_FILE = sp("studio.json");
+let stu = {};
+try { stu = JSON.parse(fs.readFileSync(STU_FILE, "utf8")); } catch (e) { stu = {}; }
+function persistStu() { try { writeDurable(STU_FILE, JSON.stringify(stu)); } catch (e) {} }
+export function getStudioDrafts() { return stu; }
+export function getStudioDraft(id) { return stu[id] || null; }
+export function saveStudioDraft(d) {
+  if (!d || !d.id) return d;
+  stu[d.id] = { ...d, at: d.at || new Date().toISOString() };
+  const ids = Object.keys(stu);
+  if (ids.length > 40) { ids.sort((a, b) => (stu[a].at || "").localeCompare(stu[b].at || "")); for (const id of ids.slice(0, ids.length - 40)) delete stu[id]; }
+  persistStu(); return stu[d.id];
+}
+export function deleteStudioDraft(id) { if (stu[id]) { delete stu[id]; persistStu(); } return true; }
+
 // ── Agent self-improvement state ── approved suggestions raise the agent's level.
 const AG_FILE = sp("agents_state.json");
 let ag = {};

@@ -404,12 +404,12 @@ const activeCharacterPath = () => {
   if (!id) return null;
   try { return charMod.characterPath(id); } catch (e) { return null; }
 };
-async function renderAndSaveDesign(item, content = {}) {
+async function renderAndSaveDesign(item, content = {}, opts = {}) {
   const { renderDesign } = await import("./data/designEngine.js");
   const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
   const headline = content.t || item.t || "", kicker = content.kicker || "";
   const headline2 = content.t2 || item.t2 || "", cta = content.cta || item.cta || "";
-  const template = activeTemplate();
+  const template = (opts.template && DESIGN_TEMPLATES.includes(opts.template)) ? opts.template : activeTemplate();
   const ts = Date.now();
   const save = (name, buf) => { const fd = fs.openSync(path.join(dir, name + ".png"), "w"); try { fs.writeSync(fd, buf); fs.fsyncSync(fd); } finally { fs.closeSync(fd); } };
   // Topical photo (Pexels) — used when the owner asks for one or CAIMO deems it fitting.
@@ -419,10 +419,11 @@ async function renderAndSaveDesign(item, content = {}) {
     try { const { fetchPhoto } = await import("./data/stockPhoto.js"); photo = await fetchPhoto(query); }
     catch (e) { console.error("[pexels]", e.message); }
   }
-  // No explicit topical photo → use the adopted brand character (authentic Omani
-  // person). Spotlight bakes it full-bleed; classic/luxe seat it in the branded
-  // photo window (face-anchored). Applies to single posts + carousel covers.
-  if (!photo && activeCharacterPath()) photo = activeCharacterPath();
+  // No explicit topical photo → use a brand character (authentic Omani person).
+  // A per-request character (Studio) wins over the globally-adopted one. Spotlight
+  // bakes it full-bleed; classic/luxe seat it in the face-anchored photo window.
+  if (!photo && opts.characterId) { const cp = charMod.characterPath(opts.characterId); if (cp) photo = cp; }
+  if (!photo && !opts.noCharacter && activeCharacterPath()) photo = activeCharacterPath();
   const slides = content.slides || item.slides || [];
   const isCarousel = (item.ty || "").includes("كاروسيل") && slides.length;
   if (isCarousel) {
@@ -497,6 +498,94 @@ app.get("/media/character/:id", (req, res) => {
   fs.createReadStream(p).pipe(res);
 });
 
+// ── Studio ── instant design creation: pick type/template/character/idea →
+// render on the spot → preview → publish now / schedule / download. Drafts live
+// outside the queue until the owner acts, so regenerating never clutters it.
+const STUDIO_TYPES = { post: "منشور", carousel: "كاروسيل", reel: "ريل", story: "ستوري" };
+// Convert a studio draft into a real queue post (keeps the id so its already-
+// rendered media at /media/design/<id> resolves). regenerated=true so publishing
+// uses the freshly generated media rather than any Drive original.
+function studioToPost(d, date) {
+  return { id: d.id, t: d.t, t2: d.t2 || "", cta: d.cta || "", cap: d.cap || d.description || "", ty: d.ty, date, mediaUrl: d.mediaUrl, images: d.images || [], regenerated: true, studio: true };
+}
+app.get("/api/studio/drafts", (req, res) => {
+  const drafts = Object.values(store.getStudioDrafts()).sort((a, b) => (b.at || "").localeCompare(a.at || ""));
+  res.json({ ok: true, drafts, types: STUDIO_TYPES, templates: DESIGN_TEMPLATES, characters: charMod.CHARACTERS.map((c) => ({ id: c.id, label: c.label })) });
+});
+app.post("/api/studio/generate", async (req, res) => {
+  const b = req.body || {};
+  const type = STUDIO_TYPES[b.type] ? b.type : "post";
+  const template = DESIGN_TEMPLATES.includes(b.template) ? b.template : activeTemplate();
+  const character = b.character && charMod.characterById(b.character) ? b.character : "";
+  const lang = b.lang || "ar";
+  const idea = (b.idea || "").trim();
+  const description = (b.description || "").trim();
+  const id = (b.draftId && store.getStudioDraft(b.draftId)) ? b.draftId : "STU-" + Date.now().toString(36).toUpperCase();
+  const content = { t: (b.headline || "").trim(), t2: (b.subheadline || "").trim(), cta: (b.cta || "").trim(), cap: description, kicker: (b.kicker || "").trim() };
+  let scenes = null;
+  // Derive copy from the idea when the owner didn't type a headline (AI optional).
+  if (!content.t && generator.claudeReady() && (idea || description)) {
+    try {
+      const g = await generator.generatePost({ idNum: 0, date: "", prompt: [idea, description].filter(Boolean).join("\n"), prefLine: store.hookPrefLine() }, lang);
+      if (g) { content.t = g.t || ""; content.t2 = content.t2 || g.t2 || ""; content.cta = content.cta || g.cta || ""; content.cap = content.cap || g.cap || ""; scenes = g.scenes || null; }
+    } catch (e) { console.error("[studio gen]", e.message); }
+  }
+  if (!content.t) content.t = idea || description || "منشور جديد";
+  if (!content.cta) content.cta = "قريبًا في عُمان";
+  const ty = STUDIO_TYPES[type];
+  const item = { id, t: content.t, t2: content.t2, cta: content.cta, cap: content.cap, ty };
+  try {
+    if (type === "reel") {
+      const r = await renderAndSaveReel(item, { ...content, scenes: scenes || content.scenes }, { template });
+      item.mediaUrl = r.mediaUrl; item.images = [];
+    } else if (type === "story") {
+      const { renderStory } = await import("./data/designEngine.js");
+      const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
+      const buf = await renderStory({ title: content.t, badge: content.cta });
+      const fd = fs.openSync(path.join(dir, id + ".png"), "w"); try { fs.writeSync(fd, buf); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+      item.mediaUrl = `/media/design/${id}?v=${Date.now()}`; item.images = [];
+    } else {
+      const cnt = { ...content };
+      if (type === "carousel" && scenes && scenes.length) cnt.slides = scenes.map((s) => ({ t: s.headline || s.t || "", body: s.body || "" }));
+      const d = await renderAndSaveDesign({ ...item, ty }, cnt, { template, characterId: character });
+      item.mediaUrl = d.mediaUrl; item.images = d.images || [];
+    }
+  } catch (e) { console.error("[studio render]", e.message); return res.status(500).json({ ok: false, error: e.message }); }
+  const draft = store.saveStudioDraft({ ...item, type, template, character, platform: b.platform || "instagram", idea, description });
+  res.json({ ok: true, draft });
+});
+app.post("/api/studio/publish", async (req, res) => {
+  const d = store.getStudioDraft((req.body || {}).id);
+  if (!d) return res.status(404).json({ ok: false, error: "draft not found" });
+  if (!metaPublish.publishReady()) return res.status(400).json({ ok: false, error: "Meta publishing not configured (add META_ACCESS_TOKEN + META_IG_USER_ID)" });
+  const post = studioToPost(d, d.date || defaultNextSlot());
+  appendPost(post);
+  const input = resolveMedia(post, publicBase(req));
+  if (!input) return res.status(400).json({ ok: false, error: "no media for this draft" });
+  if (publishingNow.has(post.id)) return res.status(409).json({ ok: false, error: "publish already in progress" });
+  publishingNow.add(post.id);
+  try {
+    const result = await metaPublish.publish(input);
+    store.markPublished(post.id, result);
+    store.deleteStudioDraft(d.id);
+    res.json({ ok: true, result });
+    publishCompanionStory(post, input.kind, publicBase(req)); // fire-and-forget
+  } catch (e) { console.error("[studio publish]", e.message); res.status(500).json({ ok: false, error: e.message }); }
+  finally { publishingNow.delete(post.id); }
+});
+app.post("/api/studio/schedule", (req, res) => {
+  const b = req.body || {};
+  const d = store.getStudioDraft(b.id);
+  if (!d) return res.status(404).json({ ok: false, error: "draft not found" });
+  if (!b.date || !parseWhen(b.date)) return res.status(400).json({ ok: false, error: "valid date required (YYYY-MM-DD HH:mm)" });
+  const post = studioToPost(d, b.date);
+  appendPost(post);
+  store.approve(post.id); // approved → auto-publish scheduler will post it at its time
+  store.deleteStudioDraft(d.id);
+  res.json({ ok: true, id: post.id, date: post.date });
+});
+app.post("/api/studio/delete", (req, res) => { store.deleteStudioDraft((req.body || {}).id); res.json({ ok: true }); });
+
 // After a feed post publishes, optionally publish a branded companion Story
 // ("جديد في البروفايل ↑") — doubles daily presence with zero owner effort.
 // Toggle with AUTO_STORY. Never throws into the publish path.
@@ -525,7 +614,7 @@ async function notifyOwner(text) {
 }
 
 // Generate a REAL new reel video (1080x1920 MP4) from CAIMO's scenes.
-async function renderAndSaveReel(item, content = {}) {
+async function renderAndSaveReel(item, content = {}, opts = {}) {
   const { renderReel } = await import("./data/reelEngine.js");
   const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
   let scenes = content.scenes || [];
@@ -534,11 +623,12 @@ async function renderAndSaveReel(item, content = {}) {
     scenes = [
       { kind: "hook", kicker: item.ty || "", headline: content.t || item.t || "" },
       { kind: "body", headline: "", body: (content.cap || item.cap || "").slice(0, 160) },
-      { kind: "cta", headline: "قريبًا" }
+      { kind: "cta", headline: content.cta || "قريبًا" }
     ];
   }
   const out = path.join(dir, `${item.id}.mp4`);
-  await renderReel(scenes, out, activeTemplate());
+  const template = (opts.template && DESIGN_TEMPLATES.includes(opts.template)) ? opts.template : activeTemplate();
+  await renderReel(scenes, out, template);
   return { mediaUrl: `/media/design/${item.id}.mp4?v=${Date.now()}`, images: [] };
 }
 
