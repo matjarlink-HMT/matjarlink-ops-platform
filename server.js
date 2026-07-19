@@ -521,13 +521,16 @@ app.post("/api/studio/generate", async (req, res) => {
   const idea = (b.idea || "").trim();
   const description = (b.description || "").trim();
   const id = (b.draftId && store.getStudioDraft(b.draftId)) ? b.draftId : "STU-" + Date.now().toString(36).toUpperCase();
+  const notes = (b.notes || "").trim();
   const content = { t: (b.headline || "").trim(), t2: (b.subheadline || "").trim(), cta: (b.cta || "").trim(), cap: description, kicker: (b.kicker || "").trim() };
   let scenes = null;
   // Derive copy from the idea when the owner didn't type a headline (AI optional).
-  if (!content.t && generator.claudeReady() && (idea || description)) {
+  // Regenerate-with-notes always re-runs the model, feeding the owner's edit notes.
+  if ((!content.t || notes) && generator.claudeReady() && (idea || description || notes)) {
     try {
-      const g = await generator.generatePost({ idNum: 0, date: "", prompt: [idea, description].filter(Boolean).join("\n"), prefLine: store.hookPrefLine() }, lang);
-      if (g) { content.t = g.t || ""; content.t2 = content.t2 || g.t2 || ""; content.cta = content.cta || g.cta || ""; content.cap = content.cap || g.cap || ""; scenes = g.scenes || null; }
+      const prompt = [idea, description, notes ? `ملاحظات المالك للتعديل (طبّقها): ${notes}` : ""].filter(Boolean).join("\n");
+      const g = await generator.generatePost({ idNum: 0, date: "", prompt, prefLine: store.hookPrefLine() }, lang);
+      if (g) { content.t = notes ? (g.t || content.t) : (content.t || g.t || ""); content.t2 = g.t2 || content.t2 || ""; content.cta = content.cta || g.cta || ""; content.cap = g.cap || content.cap || ""; scenes = g.scenes || null; }
     } catch (e) { console.error("[studio gen]", e.message); }
   }
   if (!content.t) content.t = idea || description || "منشور جديد";
@@ -551,8 +554,16 @@ app.post("/api/studio/generate", async (req, res) => {
       item.mediaUrl = d.mediaUrl; item.images = d.images || [];
     }
   } catch (e) { console.error("[studio render]", e.message); return res.status(500).json({ ok: false, error: e.message }); }
-  const draft = store.saveStudioDraft({ ...item, type, template, character, platform: b.platform || "instagram", idea, description });
+  const draft = store.saveStudioDraft({ ...item, type, template, character, platform: b.platform || "instagram", idea, description, notes, approved: false });
   res.json({ ok: true, draft });
+});
+// Approve a studio draft → it graduates to the "recent designs" list where it can
+// be published, scheduled or downloaded.
+app.post("/api/studio/approve", (req, res) => {
+  const d = store.getStudioDraft((req.body || {}).id);
+  if (!d) return res.status(404).json({ ok: false, error: "draft not found" });
+  store.saveStudioDraft({ ...d, approved: true });
+  res.json({ ok: true });
 });
 app.post("/api/studio/publish", async (req, res) => {
   const d = store.getStudioDraft((req.body || {}).id);
