@@ -558,37 +558,76 @@ async function renderTemplates(C) {
   C.innerHTML = `<div class="loading">…</div>`;
   let data = { templates: ["classic", "luxe", "spotlight"], active: "classic" };
   try { data = await fetch("/api/templates").then(r => r.json()); } catch (e) {}
-  const cards = data.templates.map(t => {
-    const m = TEMPLATE_META[t] || { emoji: "🎨", tag: "p-idle" };
-    const on = t === data.active;
-    const v = Date.now();
-    return `<div class="tplcard ${on ? "on" : ""}" data-tpl="${t}">
-      <div class="tplhd"><span class="tplname">${m.emoji} ${T("tpl_" + t)}</span>${on ? `<span class="pill p-ok">✓ ${T("tpl_active")}</span>` : ""}</div>
-      <div class="tpldesc">${T("tpl_" + t + "_d")}</div>
+  const v = Date.now();
+  const tcard = (id, name, on) => `<div class="tplcard ${on ? "on" : ""}" data-tpl="${id}" data-tplname="${escapeHtml(name)}">
+      <div class="tplhd"><span class="tplname">${name}</span>${on ? `<span class="pill p-ok">✓ ${T("tpl_active")}</span>` : ""}</div>
       <div class="tplshots">
-        <img loading="lazy" src="/media/template/${t}/cover?v=${v}" alt="cover">
-        <img loading="lazy" src="/media/template/${t}/slide?v=${v}" alt="slide">
+        <img loading="lazy" src="/media/template/${id}/cover?v=${v}" alt="cover">
+        <img loading="lazy" src="/media/template/${id}/slide?v=${v}" alt="slide">
       </div>
-      ${on ? `<button class="btn ok sm" disabled>✓ ${T("tpl_active")}</button>` : `<button class="btn sm tplpick" data-tpl="${t}">${T("tpl_use")}</button>`}
+      ${on ? `<button class="btn ok sm" disabled>✓ ${T("tpl_active")}</button>` : `<button class="btn sm tplpick" data-tpl="${id}" data-tplname="${escapeHtml(name)}">${T("tpl_use")}</button>`}
     </div>`;
-  }).join("");
+  const cards = data.templates.map(t => tcard(t, (TEMPLATE_META[t]?.emoji || "🎨") + " " + T("tpl_" + t), t === data.active)).join("")
+    + (data.custom || []).map(c => tcard(c.id, "🌙 " + escapeHtml(c.name), c.id === data.active)).join("");
   C.innerHTML = `<div class="note-info">🎨 ${T("tpl_hint")}</div>
     <div class="pcard nofloat" style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem">
       <div style="flex:1;min-width:12rem"><b>🖼 ${T("canva_title")}</b><div class="mut">${T("canva_hint")}</div></div>
       <button class="btn" id="canvabtn">🎨 ${T("canva_btn")}</button></div>
     <div class="grid g3 tplgrid">${cards}</div>
     <div class="mut" id="tplmsg" style="margin-top:.8rem"></div>
+    <div id="propsec" style="margin-top:1.6rem"></div>
     <div id="charsec" style="margin-top:1.6rem"></div>`;
   const cb = $("#canvabtn"); if (cb) cb.onclick = () => openCanva();
   C.querySelectorAll(".tplpick").forEach(b => b.onclick = async () => {
     const t = b.dataset.tpl;
-    if (!confirm(T("tpl_confirm").replace("{t}", T("tpl_" + t)))) return;
+    if (!confirm(T("tpl_confirm").replace("{t}", b.dataset.tplname || t))) return;
     b.disabled = true; b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
     const r = await fetch("/api/templates/set", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ template: t }) }).then(x => x.json()).catch(() => null);
     if (r && r.ok) { renderTemplates(C); const m = $("#tplmsg"); if (m) m.textContent = "✓ " + T("tpl_saved"); }
     else { b.disabled = false; b.textContent = T("tpl_use"); }
   });
+  renderProposals($("#propsec"), C);
   renderCharacters($("#charsec"), data.active);
+}
+
+// Nightly-invented proposals (templates + characters) awaiting the owner's approval.
+async function renderProposals(host, C) {
+  if (!host) return;
+  let d = null;
+  try { d = await fetch("/api/proposals").then(r => r.json()); } catch (e) {}
+  if (!d || !d.ok) { host.innerHTML = ""; return; }
+  const card = (p, kind) => `<div class="tplcard" data-prop="${p.id}">
+      <div class="tplhd"><span class="tplname">${kind === "template" ? "🌙 " : "🧑🏻 "}${escapeHtml(p.name || p.label || "")}</span></div>
+      <div class="tplshots" style="grid-template-columns:1fr"><img loading="lazy" src="${p.previewUrl}"></div>
+      <div style="display:flex;gap:.4rem;margin-top:.3rem">
+        <button class="btn ok sm papprove" data-prop="${p.id}">✓ ${T("prop_approve")}</button>
+        <button class="btn ghost sm preject" data-prop="${p.id}">✕ ${T("prop_reject")}</button>
+      </div></div>`;
+  const tpls = d.templates || [], chars = d.characters || [];
+  host.innerHTML = `<div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.5rem">
+      <h3 style="margin:0">🌙 ${T("prop_title")}</h3>
+      <button class="btn sm" id="proprun">⚡ ${T("prop_run")}</button>
+      <span class="mut">${T("prop_schedule_note")}${d.geminiReady ? "" : " · " + T("prop_no_gemini")}</span>
+    </div>
+    <div class="mut" id="propmsg" style="margin-bottom:.6rem"></div>
+    ${tpls.length ? `<div class="mut" style="margin:.3rem 0">${T("prop_templates")} (${tpls.length})</div><div class="grid g3">${tpls.map(p => card(p, "template")).join("")}</div>` : ""}
+    ${chars.length ? `<div class="mut" style="margin:.7rem 0 .3rem">${T("prop_characters")} (${chars.length})</div><div class="grid g3">${chars.map(p => card(p, "character")).join("")}</div>` : ""}
+    ${!tpls.length && !chars.length ? `<div class="mut">${T("prop_empty")}</div>` : ""}`;
+  const run = $("#proprun");
+  if (run) run.onclick = async () => {
+    run.disabled = true; run.innerHTML = `<span class="dots"><i></i><i></i><i></i></span> ${T("prop_running")}`;
+    const r = await fetch("/api/proposals/run-now", { method: "POST" }).then(x => x.json()).catch(() => null);
+    const m = $("#propmsg"); if (m && r) m.textContent = `✓ ${r.templates || 0} ${T("prop_templates")} · ${r.characters || 0} ${T("prop_characters")}` + (r.errors?.length ? " · " + r.errors.join("; ") : "");
+    renderProposals(host, C);
+  };
+  host.querySelectorAll(".papprove").forEach(b => b.onclick = async () => {
+    await fetch("/api/proposals/approve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: b.dataset.prop }) }).catch(() => {});
+    renderTemplates(C); // approved template/character now appears in the selectable lists
+  });
+  host.querySelectorAll(".preject").forEach(b => b.onclick = async () => {
+    await fetch("/api/proposals/reject", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: b.dataset.prop }) }).catch(() => {});
+    renderProposals(host, C);
+  });
 }
 
 // Brand characters — authentic Omani people (Gemini-generated, owner-adopted).

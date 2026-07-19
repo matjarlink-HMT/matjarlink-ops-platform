@@ -204,12 +204,12 @@ export async function renderDesign({ headline = "", headline2 = "", cta = "", bo
     let y = 640;
     for (const ln of lines.slice(0, 3)) { ctx.fillText(ln, CX, y); y += size * 1.3; }
     if (body) { ctx.fillStyle = CREAM; ctx.font = "42px Tajawal"; for (const ln of wrapLines(ctx, body, W - 240).slice(0, 2)) { ctx.fillText(ln, CX, y + 14); y += 66; } y += 22; }
-    if (headline2) { ctx.fillStyle = ORANGE; ctx.font = "64px TajawalXB"; for (const ln of wrapLines(ctx, headline2, W - 200).slice(0, 2)) { ctx.fillText(ln, CX, y + 34); y += 86; } y += 20; }
+    if (headline2) { ctx.fillStyle = accent; ctx.font = "64px TajawalXB"; for (const ln of wrapLines(ctx, headline2, W - 200).slice(0, 2)) { ctx.fillText(ln, CX, y + 34); y += 86; } y += 20; }
     const pillTxt = cta || "قريبًا في سلطنة عُمان";
     ctx.font = "46px TajawalXB";
     const tw = ctx.measureText(pillTxt).width, pw2 = tw + 130, ph2 = 96, py = Math.max(y + 30, 940);
     ctx.strokeStyle = "#fff"; ctx.lineWidth = 5; ctx.beginPath(); ctx.roundRect(CX - pw2 / 2 - 7, py - 7, pw2 + 14, ph2 + 14, (ph2 + 14) / 2); ctx.stroke();
-    ctx.fillStyle = ORANGE; ctx.beginPath(); ctx.roundRect(CX - pw2 / 2, py, pw2, ph2, ph2 / 2); ctx.fill();
+    ctx.fillStyle = accent; ctx.beginPath(); ctx.roundRect(CX - pw2 / 2, py, pw2, ph2, ph2 / 2); ctx.fill();
     ctx.fillStyle = "#fff"; ctx.fillText(pillTxt, CX, py + 62);
     drawFooter(ctx, W, H, true);
     return cv.toBuffer("image/png");
@@ -276,7 +276,7 @@ export async function renderDesign({ headline = "", headline2 = "", cta = "", bo
   // second headline line in orange (the original two-tone hierarchy)
   if (headline2 && !isSlide) {
     const s2 = Math.round(size * 0.86);
-    ctx.fillStyle = ORANGE; ctx.font = s2 + "px TajawalXB";
+    ctx.fillStyle = accent; ctx.font = s2 + "px TajawalXB";
     const l2 = wrapLines(ctx, headline2, maxW).slice(0, 2);
     y += 8;
     for (const ln of l2) { ctx.fillText(ln, CX, y); y += s2 * 1.3; }

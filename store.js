@@ -172,6 +172,41 @@ export function saveStudioDraft(d) {
 }
 export function deleteStudioDraft(id) { if (stu[id]) { delete stu[id]; persistStu(); } return true; }
 
+// ── Nightly proposals ── template + character ideas invented 1–5AM for approval.
+// A proposal: { id, kind:'template'|'character', status:'pending'|'approved'|'rejected',
+//   createdAt, previewUrl, ...(template: base,accent,name) | (character: label,dress,prompt,file) }
+const PROP_FILE = sp("proposals.json");
+let props = {};
+try { props = JSON.parse(fs.readFileSync(PROP_FILE, "utf8")); } catch (e) { props = {}; }
+function persistProps() { try { writeDurable(PROP_FILE, JSON.stringify(props)); } catch (e) {} }
+export function getProposals() { return props; }
+export function saveProposal(p) {
+  if (!p || !p.id) return p;
+  props[p.id] = { status: "pending", createdAt: new Date().toISOString(), ...props[p.id], ...p };
+  // keep only the last 60 to bound the file
+  const ids = Object.keys(props);
+  if (ids.length > 60) { ids.sort((a, b) => (props[a].createdAt || "").localeCompare(props[b].createdAt || "")); for (const id of ids.slice(0, ids.length - 60)) delete props[id]; }
+  persistProps(); return props[p.id];
+}
+export function setProposalStatus(id, status) { if (props[id]) { props[id].status = status; persistProps(); } return props[id]; }
+export function nightlyRanOn() { return cfgGet("NIGHTLY_LAST") || ""; }
+export function markNightlyRan(dateStr) { cfgSet({ NIGHTLY_LAST: dateStr }); }
+
+// ── Custom (approved) templates & characters ── data-driven, layered on the builtins.
+const CTPL_FILE = sp("custom_templates.json");
+let ctpl = [];
+try { ctpl = JSON.parse(fs.readFileSync(CTPL_FILE, "utf8")); } catch (e) { ctpl = []; }
+function persistCtpl() { try { writeDurable(CTPL_FILE, JSON.stringify(ctpl)); } catch (e) {} }
+export function getCustomTemplates() { return ctpl; }
+export function addCustomTemplate(t) { if (t && t.id && !ctpl.find((x) => x.id === t.id)) { ctpl.push(t); persistCtpl(); } return ctpl; }
+
+const CCHAR_FILE = sp("custom_characters.json");
+let cchar = [];
+try { cchar = JSON.parse(fs.readFileSync(CCHAR_FILE, "utf8")); } catch (e) { cchar = []; }
+function persistCchar() { try { writeDurable(CCHAR_FILE, JSON.stringify(cchar)); } catch (e) {} }
+export function getCustomCharacters() { return cchar; }
+export function addCustomCharacter(c) { if (c && c.id && !cchar.find((x) => x.id === c.id)) { cchar.push(c); persistCchar(); } return cchar; }
+
 // ── Agent self-improvement state ── approved suggestions raise the agent's level.
 const AG_FILE = sp("agents_state.json");
 let ag = {};

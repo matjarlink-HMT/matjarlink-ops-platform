@@ -18,6 +18,7 @@ import { fetchDrive } from "./integrations/driveMedia.js";
 import { managerSystem, demoReply, errReply, managerNoteSystem, demoNoteReply, agentImproveSystem, fallbackImprovement } from "./data/manager.js";
 import * as live from "./data/live.js";
 import * as charMod from "./data/characters.js";
+import * as gemini from "./integrations/gemini.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -396,20 +397,35 @@ function resolveMedia(q, base) {
 function designsDir() { const v = process.env.RAILWAY_VOLUME_MOUNT_PATH || (fs.existsSync("/data") ? "/data" : ""); return v ? path.join(v, "designs") : path.join(__dirname, "data", "designs"); }
 const arDigits = (n) => String(n).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[d]);
 const DESIGN_TEMPLATES = ["classic", "luxe", "spotlight"];
-const activeTemplate = () => { const t = store.cfgGet("DESIGN_TEMPLATE"); return DESIGN_TEMPLATES.includes(t) ? t : "classic"; };
-// Active brand character (authentic Omani person) used as the hero photo for the
-// spotlight template. "" / unknown → none (spotlight falls back to a stock photo).
-const activeCharacterPath = () => {
-  const id = store.cfgGet("BRAND_CHARACTER");
+// Brand-kit accent palette used to vary nightly template proposals (stays on-brand).
+const ACCENTS = { orange: "#E8890F", magenta: "#9D1F60", plum: "#6E1444", gold: "#C8901F" };
+const customTpl = (id) => store.getCustomTemplates().find((t) => t.id === id);
+const isValidTemplate = (id) => DESIGN_TEMPLATES.includes(id) || Boolean(customTpl(id));
+// Resolve a template id (builtin or custom) → { base, accent, character } the engine uses.
+function resolveTemplate(id) {
+  const c = customTpl(id);
+  if (c) return { base: DESIGN_TEMPLATES.includes(c.base) ? c.base : "classic", accent: c.accent || ACCENTS.orange, character: c.character || "" };
+  return { base: DESIGN_TEMPLATES.includes(id) ? id : "classic", accent: ACCENTS.orange, character: "" };
+}
+const activeTemplate = () => { const t = store.cfgGet("DESIGN_TEMPLATE"); return isValidTemplate(t) ? t : "classic"; };
+// Resolve a character id to a file path: builtin (repo assets) or custom (Volume).
+function charPathAny(id) {
   if (!id) return null;
-  try { return charMod.characterPath(id); } catch (e) { return null; }
-};
+  try { const p = charMod.characterPath(id); if (p) return p; } catch (e) {}
+  const c = store.getCustomCharacters().find((x) => x.id === id);
+  if (c) { const f = path.join(designsDir(), c.file); return fs.existsSync(f) ? f : null; }
+  return null;
+}
+// Active brand character used as the hero photo when a design has no topical photo.
+const activeCharacterPath = () => charPathAny(store.cfgGet("BRAND_CHARACTER"));
 async function renderAndSaveDesign(item, content = {}, opts = {}) {
   const { renderDesign } = await import("./data/designEngine.js");
   const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
   const headline = content.t || item.t || "", kicker = content.kicker || "";
   const headline2 = content.t2 || item.t2 || "", cta = content.cta || item.cta || "";
-  const template = (opts.template && DESIGN_TEMPLATES.includes(opts.template)) ? opts.template : activeTemplate();
+  const tid = (opts.template && isValidTemplate(opts.template)) ? opts.template : activeTemplate();
+  const tconf = resolveTemplate(tid);
+  const template = tconf.base, accent = tconf.accent;
   const ts = Date.now();
   const save = (name, buf) => { const fd = fs.openSync(path.join(dir, name + ".png"), "w"); try { fs.writeSync(fd, buf); fs.fsyncSync(fd); } finally { fs.closeSync(fd); } };
   // Topical photo (Pexels) — used when the owner asks for one or CAIMO deems it fitting.
@@ -420,57 +436,61 @@ async function renderAndSaveDesign(item, content = {}, opts = {}) {
     catch (e) { console.error("[pexels]", e.message); }
   }
   // No explicit topical photo → use a brand character (authentic Omani person).
-  // A per-request character (Studio) wins over the globally-adopted one. Spotlight
-  // bakes it full-bleed; classic/luxe seat it in the face-anchored photo window.
-  if (!photo && opts.characterId) { const cp = charMod.characterPath(opts.characterId); if (cp) photo = cp; }
+  // Priority: per-request (Studio) → the template's own character → globally adopted.
+  if (!photo && opts.characterId) { const cp = charPathAny(opts.characterId); if (cp) photo = cp; }
+  if (!photo && tconf.character) { const cp = charPathAny(tconf.character); if (cp) photo = cp; }
   if (!photo && !opts.noCharacter && activeCharacterPath()) photo = activeCharacterPath();
   const slides = content.slides || item.slides || [];
   const isCarousel = (item.ty || "").includes("كاروسيل") && slides.length;
   if (isCarousel) {
     const n = slides.length;
-    const bufs = [await renderDesign({ role: "cover", headline, headline2, cta, kicker, carousel: true, photo, template })]; // cover
+    const bufs = [await renderDesign({ role: "cover", headline, headline2, cta, kicker, carousel: true, photo, template, accent })]; // cover
     for (let i = 0; i < n; i++) {
       const s = slides[i], isLast = i === n - 1;
       // the final slide renders as the inverted brand "reveal" (like the originals)
       bufs.push(isLast
-        ? await renderDesign({ role: "reveal", headline: s.t, body: s.body, headline2: s.t2 || "", cta: s.cta || "" })
-        : await renderDesign({ role: "slide", headline: s.t, body: s.body, index: i + 1, carousel: true, template }));
+        ? await renderDesign({ role: "reveal", headline: s.t, body: s.body, headline2: s.t2 || "", cta: s.cta || "", accent })
+        : await renderDesign({ role: "slide", headline: s.t, body: s.body, index: i + 1, carousel: true, template, accent }));
     }
     const images = [];
     for (let i = 0; i < bufs.length; i++) { save(`${item.id}-${i}`, bufs[i]); images.push(`/media/design/${item.id}-${i}?v=${ts}`); }
     return { mediaUrl: images[0], images };
   }
-  save(item.id, await renderDesign({ role: "single", headline, headline2, cta, kicker, photo, template }));
+  save(item.id, await renderDesign({ role: "single", headline, headline2, cta, kicker, photo, template, accent }));
   return { mediaUrl: `/media/design/${item.id}?v=${ts}`, images: [] };
 }
 
 // ── Design templates ── list / select / sample-preview ──────────────────────
-app.get("/api/templates", (req, res) => res.json({ ok: true, templates: DESIGN_TEMPLATES, active: activeTemplate() }));
+app.get("/api/templates", (req, res) => res.json({
+  ok: true, templates: DESIGN_TEMPLATES, active: activeTemplate(),
+  custom: store.getCustomTemplates().map((t) => ({ id: t.id, name: t.name, base: t.base, accent: t.accent })),
+}));
 app.post("/api/templates/set", (req, res) => {
   const t = (req.body || {}).template;
-  if (!DESIGN_TEMPLATES.includes(t)) return res.status(400).json({ ok: false, error: "unknown template" });
+  if (!isValidTemplate(t)) return res.status(400).json({ ok: false, error: "unknown template" });
   store.cfgSet({ DESIGN_TEMPLATE: t });
   res.json({ ok: true, active: t });
 });
-// Sample preview for a template (cover + a numbered slide), rendered once + cached.
+// Sample preview for any template id (builtin or custom), rendered once + cached.
 app.get("/media/template/:tpl/:kind", async (req, res) => {
-  const tpl = DESIGN_TEMPLATES.includes(req.params.tpl) ? req.params.tpl : "classic";
+  const tid = isValidTemplate(req.params.tpl) ? req.params.tpl : "classic";
+  const tconf = resolveTemplate(tid);
   const kind = req.params.kind === "slide" ? "slide" : "cover";
   const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
-  const charSuffix = tpl === "spotlight" ? `-${store.cfgGet("BRAND_CHARACTER") || "stock"}` : "";
-  const f = path.join(dir, `_sample-${tpl}${charSuffix}-${kind}.png`);
+  const charSuffix = tconf.base === "spotlight" ? `-${(tconf.character || store.cfgGet("BRAND_CHARACTER")) || "stock"}` : "";
+  const f = path.join(dir, `_sample-${tid}${charSuffix}-${kind}.png`);
   try {
     if (!fs.existsSync(f)) {
       const { renderDesign } = await import("./data/designEngine.js");
       let photo = null;
-      if (tpl === "spotlight") {
-        const cp = activeCharacterPath();
+      const cp = tconf.character ? charPathAny(tconf.character) : activeCharacterPath();
+      if (tconf.base === "spotlight") {
         if (cp) photo = cp;
         else { try { const { fetchPhoto } = await import("./data/stockPhoto.js"); photo = await fetchPhoto("omani merchant store"); } catch (e) {} }
-      }
+      } else if (cp) photo = cp;
       const buf = kind === "cover"
-        ? await renderDesign({ role: "cover", headline: "٥ أخطاء", headline2: "تقتل مبيعاتك", cta: "احفظها قبل لا تبدأ", kicker: "قبل ما تفتح متجرك", carousel: true, template: tpl, photo })
-        : await renderDesign({ role: "slide", headline: "يبدأ بدون خطة للشحن", body: "العميل يشتري.. وبعدها تبدأ الفوضى: مين يوصل؟ بكم؟ متى؟", index: 1, carousel: true, template: tpl });
+        ? await renderDesign({ role: "cover", headline: "٥ أخطاء", headline2: "تقتل مبيعاتك", cta: "احفظها قبل لا تبدأ", kicker: "قبل ما تفتح متجرك", carousel: true, template: tconf.base, accent: tconf.accent, photo })
+        : await renderDesign({ role: "slide", headline: "يبدأ بدون خطة للشحن", body: "العميل يشتري.. وبعدها تبدأ الفوضى: مين يوصل؟ بكم؟ متى؟", index: 1, carousel: true, template: tconf.base, accent: tconf.accent });
       const fd = fs.openSync(f, "w"); try { fs.writeSync(fd, buf); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
     }
     res.setHeader("Content-Type", "image/png"); res.setHeader("Cache-Control", "public, max-age=300");
@@ -478,25 +498,101 @@ app.get("/media/template/:tpl/:kind", async (req, res) => {
   } catch (e) { console.error("[template-sample]", e.message); res.status(500).send("sample failed"); }
 });
 
-// ── Brand characters ── authentic Omani people used as the spotlight hero ────
+// ── Brand characters ── authentic Omani people (builtin + nightly-approved) ──
+const allCharacters = () => [...charMod.CHARACTERS, ...store.getCustomCharacters()];
 app.get("/api/characters", (req, res) => res.json({
   ok: true,
   active: store.cfgGet("BRAND_CHARACTER") || "",
-  characters: charMod.CHARACTERS.map((c) => ({ id: c.id, label: c.label, dress: c.dress, thumb: `/media/character/${c.id}`, sample: `/media/template/spotlight/cover` })),
+  characters: allCharacters().map((c) => ({ id: c.id, label: c.label, dress: c.dress, thumb: `/media/character/${c.id}`, sample: `/media/template/spotlight/cover` })),
 }));
 app.post("/api/characters/set", (req, res) => {
   const id = ((req.body || {}).character || "").trim();
-  if (id && !charMod.characterById(id)) return res.status(400).json({ ok: false, error: "unknown character" });
+  if (id && !allCharacters().find((c) => c.id === id)) return res.status(400).json({ ok: false, error: "unknown character" });
   store.cfgSet({ BRAND_CHARACTER: id }); // "" clears → spotlight falls back to stock photo
   res.json({ ok: true, active: id });
 });
 // Public thumbnail of a character asset (auth-exempt like other /media routes).
 app.get("/media/character/:id", (req, res) => {
-  const p = charMod.characterPath(req.params.id);
+  const p = charPathAny(req.params.id);
   if (!p) return res.status(404).send("no character");
   res.setHeader("Content-Type", "image/png"); res.setHeader("Cache-Control", "public, max-age=86400");
   fs.createReadStream(p).pipe(res);
 });
+
+// ── Nightly invention ── 01:00–05:00 Asia/Muscat: propose new brand-kit templates
+// (server-side variations) + new authentic-Omani characters (Gemini), for approval.
+const TPL_BASE_NAME = { classic: "الأبيض", luxe: "الفخم", spotlight: "الحضور" };
+const ACCENT_NAME = { orange: "برتقالي", magenta: "أرجواني", plum: "خمري", gold: "ذهبي" };
+const NIGHTLY_CHAR_PROMPTS = [
+  { label: "تاجرة عُمانية · أزياء", text: "Photorealistic vertical portrait of an authentic Omani woman shop owner in a modern fashion boutique, wearing an elegant Omani abaya with a colourful embroidered Omani shela head covering (traditional Omani style, NOT a plain black Gulf look, NOT niqab), holding a tablet. Warm natural light, premium editorial photography, real skin texture, clean empty space top and bottom for text. Authentic Omani identity from Muscat, Oman." },
+  { label: "تاجر عُماني · مقهى مختص", text: "Photorealistic vertical portrait of an authentic Omani man owner in a specialty coffee shop, wearing a white Omani dishdasha with the furakha tassel and an embroidered Omani kummah cap (NOT a Gulf ghutra or egal). Warm light, real photography, space for text. Muscat, Oman." },
+  { label: "تاجر عُماني · تمور وحلوى", text: "Photorealistic vertical portrait of an authentic Omani man selling dates and Omani halwa in a traditional shop, wearing a white Omani dishdasha and an Omani massar (wrapped Kashmiri-paisley turban, NOT a Gulf ghutra/egal). Warm light, editorial photography, space for text. Oman." },
+  { label: "تاجرة عُمانية · عطور", text: "Photorealistic vertical portrait of an authentic Omani woman perfumer in an Omani perfume and bukhoor shop, wearing an elegant Omani abaya with a colourful embroidered Omani head covering, holding a bottle of Omani perfume. Warm light, premium photography, space for text. Muscat, Oman. Authentic Omani identity, not generic Gulf." },
+  { label: "تاجر عُماني · ذهب ومجوهرات", text: "Photorealistic vertical portrait of an authentic Omani man goldsmith in a jewellery shop, wearing a white Omani dishdasha with furakha and an embroidered Omani kummah (NOT ghutra/egal). Warm light, editorial photography, space for text. Oman." },
+  { label: "تاجر عُماني · إلكترونيات", text: "Photorealistic vertical portrait of a young authentic Omani man in a modern electronics and phone shop, wearing a white Omani dishdasha and Omani kummah, holding a smartphone. Warm light, real photography, space for text. Muscat, Oman. Authentic Omani, not Gulf ghutra/egal." },
+];
+let nightlyBusy = false, charPromptCursor = 0;
+async function makeTemplateProposal({ base, accent, accentName }) {
+  const { renderDesign } = await import("./data/designEngine.js");
+  const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
+  const id = "tpl-" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+  const cp = activeCharacterPath() || charPathAny(charMod.CHARACTERS[0]?.id);
+  const buf = await renderDesign({ role: "cover", kicker: "متجرلينك", headline: "تجارتك كلها", headline2: "في مكان واحد", cta: "قريبًا في عُمان", carousel: true, template: base, accent, photo: cp });
+  const name = `_prop-${id}`; // /media/design/:id appends .png, so the URL omits it
+  const fd = fs.openSync(path.join(dir, name + ".png"), "w"); try { fs.writeSync(fd, buf); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  store.saveProposal({ id, kind: "template", base, accent, name: `${TPL_BASE_NAME[base]} · ${ACCENT_NAME[accentName]}`, previewUrl: `/media/design/${name}?v=${Date.now()}` });
+}
+async function makeCharacterProposal() {
+  const p = NIGHTLY_CHAR_PROMPTS[charPromptCursor % NIGHTLY_CHAR_PROMPTS.length]; charPromptCursor++;
+  const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
+  const id = "char-" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+  const { buffer } = await gemini.generateImage(p.text);
+  const name = `_propchar-${id}`, file = `${name}.png`; // file (with .png) is what charPathAny reads
+  const fd = fs.openSync(path.join(dir, file), "w"); try { fs.writeSync(fd, buffer); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  store.saveProposal({ id, kind: "character", label: p.label, dress: p.label, prompt: p.text, file, previewUrl: `/media/design/${name}?v=${Date.now()}` });
+}
+async function generateNightlyBatch(n = { tpl: 3, char: 3 }) {
+  if (nightlyBusy) return { skipped: "busy" };
+  nightlyBusy = true;
+  const out = { templates: 0, characters: 0, errors: [] };
+  try {
+    const have = new Set(store.getCustomTemplates().map((t) => `${t.base}|${t.accent}`));
+    Object.values(store.getProposals()).filter((p) => p.kind === "template" && p.status === "pending").forEach((p) => have.add(`${p.base}|${p.accent}`));
+    const combos = [];
+    for (const base of DESIGN_TEMPLATES) for (const [an, ac] of Object.entries(ACCENTS)) combos.push({ base, accent: ac, accentName: an });
+    const fresh = combos.filter((c) => !have.has(`${c.base}|${c.accent}`)).sort(() => Math.random() - 0.5).slice(0, n.tpl);
+    for (const c of fresh) { try { await makeTemplateProposal(c); out.templates++; } catch (e) { out.errors.push("tpl:" + e.message); } }
+    if (gemini.geminiReady()) { for (let i = 0; i < n.char; i++) { try { await makeCharacterProposal(); out.characters++; } catch (e) { out.errors.push("char:" + e.message); } } }
+    else out.errors.push("gemini key not set — characters skipped");
+  } finally { nightlyBusy = false; }
+  return out;
+}
+function muscatDateHour() { const m = new Date(Date.now() + 4 * 3600 * 1000); return { date: m.toISOString().slice(0, 10), hour: m.getUTCHours() }; }
+async function nightlyTick() {
+  const { date, hour } = muscatDateHour();
+  if (hour < 1 || hour >= 5) return;
+  if (store.nightlyRanOn() === date) return;
+  store.markNightlyRan(date); // set before running → once per night even across restarts
+  console.log(`[nightly] ${date} inventing templates + characters`);
+  try { const r = await generateNightlyBatch(); console.log("[nightly] done", r); } catch (e) { console.error("[nightly]", e.message); }
+}
+setInterval(nightlyTick, 15 * 60 * 1000);
+nightlyTick();
+// ── Proposals ── list / approve / reject + manual "run now" (for testing) ──
+app.get("/api/proposals", (req, res) => {
+  const all = Object.values(store.getProposals()).filter((p) => p.status === "pending").sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  res.json({ ok: true, templates: all.filter((p) => p.kind === "template"), characters: all.filter((p) => p.kind === "character"), geminiReady: gemini.geminiReady(), lastRun: store.nightlyRanOn() });
+});
+app.post("/api/proposals/approve", (req, res) => {
+  const p = store.getProposals()[(req.body || {}).id];
+  if (!p || p.status !== "pending") return res.status(404).json({ ok: false, error: "proposal not found" });
+  if (p.kind === "template") store.addCustomTemplate({ id: p.id, name: p.name, base: p.base, accent: p.accent });
+  else store.addCustomCharacter({ id: p.id, label: p.label, dress: p.dress, file: p.file });
+  store.setProposalStatus(p.id, "approved");
+  res.json({ ok: true });
+});
+app.post("/api/proposals/reject", (req, res) => { store.setProposalStatus((req.body || {}).id, "rejected"); res.json({ ok: true }); });
+app.post("/api/proposals/run-now", async (req, res) => { const r = await generateNightlyBatch(); res.json({ ok: true, ...r }); });
 
 // ── Studio ── instant design creation: pick type/template/character/idea →
 // render on the spot → preview → publish now / schedule / download. Drafts live
@@ -638,8 +734,8 @@ async function renderAndSaveReel(item, content = {}, opts = {}) {
     ];
   }
   const out = path.join(dir, `${item.id}.mp4`);
-  const template = (opts.template && DESIGN_TEMPLATES.includes(opts.template)) ? opts.template : activeTemplate();
-  await renderReel(scenes, out, template);
+  const tid = (opts.template && isValidTemplate(opts.template)) ? opts.template : activeTemplate();
+  await renderReel(scenes, out, resolveTemplate(tid).base);
   return { mediaUrl: `/media/design/${item.id}.mp4?v=${Date.now()}`, images: [] };
 }
 
