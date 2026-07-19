@@ -16,6 +16,9 @@ export const charDir = () => path.join(__dirname, "..", "public", "assets", "cha
 
 export const CHARACTERS = [
   { id: "omani-massar", label: "تاجر عُماني · مصر", file: "omani-massar-merchant.png", dress: "المصر العُماني الملفوف + دشداشة بيضاء" },
+  { id: "omani-kummah", label: "تاجر عُماني · كمة", file: "omani-kummah.png", dress: "الكمة العُمانية المطرزة + دشداشة (محل عطور)" },
+  { id: "omani-massar-tablet", label: "تاجر عُماني · مصر + جهاز", file: "omani-massar-tablet.png", dress: "المصر العُماني + دشداشة، يمسك تابلت" },
+  { id: "omani-shopkeeper", label: "صاحب بقالة عُماني · كمة", file: "omani-shopkeeper.png", dress: "الكمة العُمانية + دشداشة (بقالة تقليدية)" },
 ];
 
 export const characterById = (id) => CHARACTERS.find((c) => c.id === id) || null;
