@@ -592,6 +592,24 @@ app.post("/api/proposals/approve", (req, res) => {
   res.json({ ok: true });
 });
 app.post("/api/proposals/reject", (req, res) => { store.setProposalStatus((req.body || {}).id, "rejected"); res.json({ ok: true }); });
+// Hybrid design: Gemini generates a premium branded SCENE/background (no text),
+// then our engine overlays crisp Arabic headline + brand furniture on top.
+app.post("/api/hybrid-sample", async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (!gemini.geminiReady()) return res.status(400).json({ ok: false, error: "gemini not connected" });
+    const { buffer } = await gemini.generateImage(b.prompt || "premium abstract brand background, plum and orange, empty center, no text");
+    const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
+    const id = "hyb-" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+    const bgFile = path.join(dir, `_hybbg-${id}.png`);
+    const fd0 = fs.openSync(bgFile, "w"); try { fs.writeSync(fd0, buffer); fs.fsyncSync(fd0); } finally { fs.closeSync(fd0); }
+    const { renderDesign } = await import("./data/designEngine.js");
+    const png = await renderDesign({ role: "single", kicker: b.kicker || "متجرلينك", headline: b.headline || "", headline2: b.headline2 || "", cta: b.cta || "", template: "spotlight", photo: bgFile });
+    const name = `_hyb-${id}`;
+    const fd = fs.openSync(path.join(dir, name + ".png"), "w"); try { fs.writeSync(fd, png); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    res.json({ ok: true, url: `/media/design/${name}?v=${Date.now()}`, bg: `/media/design/_hybbg-${id}?v=${Date.now()}` });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
 app.post("/api/proposals/run-now", async (req, res) => { const r = await generateNightlyBatch(); res.json({ ok: true, ...r }); });
 
 // ── Studio ── instant design creation: pick type/template/character/idea →
