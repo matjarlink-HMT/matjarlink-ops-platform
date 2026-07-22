@@ -551,19 +551,38 @@ async function makeCharacterProposal() {
   const fd = fs.openSync(path.join(dir, file), "w"); try { fs.writeSync(fd, buffer); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
   store.saveProposal({ id, kind: "character", label: p.label, dress: p.label, prompt: p.text, file, previewUrl: `/media/design/${name}?v=${Date.now()}` });
 }
-async function generateNightlyBatch(n = { tpl: 3, char: 3 }) {
+// Ready editorial POSTS the owner wakes up to (adopted templates 6/7), alternating
+// dark/white, with a content-matched hero/place chosen from the headline.
+const NIGHTLY_POSTS = [
+  { headline: "تجارتك كلها في مكان واحد", pop: "بدون تعقيد", cta: "قريبًا في عُمان" },
+  { headline: "نقطة بيع ذكية", pop: "بلمسة واحدة", cta: "قريبًا في عُمان" },
+  { headline: "مدفوعاتك ومحاسبتك", pop: "تلقائياً", cta: "سجّل اهتمامك" },
+  { headline: "بِع في كل الأسواق", pop: "من نظام واحد", cta: "سجّل اهتمامك" },
+  { headline: "متجرك مفتوح دائماً", pop: "٢٤ ساعة", cta: "قريبًا في عُمان" },
+  { headline: "متجرك الإلكتروني", pop: "بدقائق", cta: "قريبًا في عُمان" },
+  { headline: "وصّل لكل عُمان", pop: "بسهولة", cta: "قريبًا في عُمان" },
+  { headline: "حساباتك تتحسب تلقائياً", pop: "وأنت مرتاح", cta: "سجّل اهتمامك" },
+  { headline: "كل تجارتك بجيبك", pop: "أينما كنت", cta: "سجّل اهتمامك" },
+  { headline: "ابدئي تجارتك بثقة", pop: "احنا معك", cta: "قريبًا في عُمان" },
+];
+let nightlyPostCursor = 0;
+async function makeEditorialPostProposal() {
+  const c = NIGHTLY_POSTS[nightlyPostCursor % NIGHTLY_POSTS.length]; nightlyPostCursor++;
+  const light = nightlyPostCursor % 2 === 0;              // alternate white (7) / dark (6)
+  const template = light ? "editorial-white" : "editorial-dark";
+  const id = "post-" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+  const sc = editorialScene(c.headline, light);
+  const ed = await makeEditorial({ light, layout: sc.layout, kicker: "متجرلينك", headline: c.headline, pop: c.pop, cta: c.cta, prompt: sc.prompt, id });
+  store.saveProposal({ id, kind: "post", template, t: c.headline, t2: c.pop, cta: c.cta, name: c.headline, previewUrl: ed.url });
+}
+async function generateNightlyBatch(n = { post: 4, char: 2 }) {
   if (nightlyBusy) return { skipped: "busy" };
   nightlyBusy = true;
-  const out = { templates: 0, characters: 0, errors: [] };
+  const out = { posts: 0, characters: 0, errors: [] };
   try {
-    const have = new Set(store.getCustomTemplates().map((t) => `${t.base}|${t.accent}`));
-    Object.values(store.getProposals()).filter((p) => p.kind === "template" && p.status === "pending").forEach((p) => have.add(`${p.base}|${p.accent}`));
-    const combos = [];
-    for (const base of DESIGN_TEMPLATES) for (const [an, ac] of Object.entries(ACCENTS)) combos.push({ base, accent: ac, accentName: an });
-    const fresh = combos.filter((c) => !have.has(`${c.base}|${c.accent}`)).sort(() => Math.random() - 0.5).slice(0, n.tpl);
-    for (const c of fresh) { try { await makeTemplateProposal(c); out.templates++; } catch (e) { out.errors.push("tpl:" + e.message); } }
-    if (gemini.geminiReady()) { for (let i = 0; i < n.char; i++) { try { await makeCharacterProposal(); out.characters++; } catch (e) { out.errors.push("char:" + e.message); } } }
-    else out.errors.push("gemini key not set — characters skipped");
+    if (!gemini.geminiReady()) { out.errors.push("gemini key not set"); return out; }
+    for (let i = 0; i < n.post; i++) { try { await makeEditorialPostProposal(); out.posts++; } catch (e) { out.errors.push("post:" + e.message); } }
+    for (let i = 0; i < n.char; i++) { try { await makeCharacterProposal(); out.characters++; } catch (e) { out.errors.push("char:" + e.message); } }
   } finally { nightlyBusy = false; }
   return out;
 }
@@ -581,17 +600,54 @@ nightlyTick();
 // ── Proposals ── list / approve / reject + manual "run now" (for testing) ──
 app.get("/api/proposals", (req, res) => {
   const all = Object.values(store.getProposals()).filter((p) => p.status === "pending").sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-  res.json({ ok: true, templates: all.filter((p) => p.kind === "template"), characters: all.filter((p) => p.kind === "character"), geminiReady: gemini.geminiReady(), lastRun: store.nightlyRanOn() });
+  res.json({ ok: true, posts: all.filter((p) => p.kind === "post"), templates: all.filter((p) => p.kind === "template"), characters: all.filter((p) => p.kind === "character"), geminiReady: gemini.geminiReady(), lastRun: store.nightlyRanOn() });
 });
 app.post("/api/proposals/approve", (req, res) => {
   const p = store.getProposals()[(req.body || {}).id];
   if (!p || p.status !== "pending") return res.status(404).json({ ok: false, error: "proposal not found" });
   if (p.kind === "template") store.addCustomTemplate({ id: p.id, name: p.name, base: p.base, accent: p.accent });
+  else if (p.kind === "post") store.saveStudioDraft({ id: p.id, t: p.t, t2: p.t2 || "", cta: p.cta || "", ty: STUDIO_TYPES.post, mediaUrl: (p.previewUrl || "").split("?")[0], images: [], type: "post", template: p.template, platform: "instagram", approved: true, at: new Date().toISOString() });
   else store.addCustomCharacter({ id: p.id, label: p.label, dress: p.dress, file: p.file });
   store.setProposalStatus(p.id, "approved");
   res.json({ ok: true });
 });
 app.post("/api/proposals/reject", (req, res) => { store.setProposalStatus((req.body || {}).id, "rejected"); res.json({ ok: true }); });
+// ── Editorial style (adopted templates 6 = dark, 7 = white) ──────────────────
+// Gemini generates a content-matched premium SCENE (person/device/card/place),
+// our engine overlays crisp Arabic text. Dynamic layout (side/center) + a hero
+// chosen from the headline so the imagery expresses the message.
+const EDITORIAL_TEMPLATES = ["editorial-dark", "editorial-white"];
+const isEditorial = (t) => EDITORIAL_TEMPLATES.includes(t);
+function editorialScene(text, light) {
+  const t = String(text || "");
+  const grade = light
+    ? "bright airy, clean white and warm-orange tones (brand colors #F5821F and #2D081E, NOT purple, NOT violet), subtle flowing orange glassmorphism accents"
+    : "deep AUBERGINE-PLUM and warm-ORANGE cinematic color grade (brand colors #2D081E and #F5821F, NOT purple, NOT violet), subtle flowing orange glassmorphism accents";
+  const rm = " Photorealistic editorial photograph, realistic detail, NOT 3D render, NOT AI illustration. No text, no words, no logos.";
+  const side = "on the FAR RIGHT third, large clean negative space on the LEFT for a headline.";
+  const has = (arr) => arr.some((w) => t.includes(w));
+  if (has(["كاشير", "نقطة بيع", "نقطة البيع"])) return { layout: "side", prompt: `A sleek modern POS cashier terminal with a glowing touchscreen showing a sale, ${light ? "soft studio spotlight and gentle reflection" : "dramatic cinematic spotlight and rim light"}, ${grade}, the device ${side}${rm}` };
+  if (has(["مدفوعات", "بطاقة", "الدفع", "محفظة", "فيزا"])) return { layout: "side", prompt: `A premium ${light ? "light cream" : "matte dark"} bank payment card floating at a dynamic angle with ${light ? "soft studio lighting and warm reflection" : "dramatic rim lighting and warm orange glow"}, ${grade}, the card ${side}${rm}` };
+  if (has(["محاسبة", "حسابات", "حساباتك", "تقارير", "أرباح"])) return { layout: "center", prompt: `A glowing modern accounting and finance dashboard on a laptop and tablet with charts on a premium ${light ? "bright" : "dark"} desk, focused lighting, ${grade}, clean empty area at the TOP for a headline.${rm}` };
+  if (has(["سوق", "أسواق", "وصّل", "توصيل", "كل مكان", "كل عُمان", "كل عمان"])) return { layout: "center", prompt: `A ${light ? "bright vibrant Omani marketplace / modern retail street with daylight and colorful shopfronts" : "warm cinematic Omani souq marketplace with lanterns and rich stalls"}, atmospheric depth, ${grade}, clean empty area at the TOP for a headline.${rm}` };
+  if (has(["محل", "المحل", "مفتوح", "متجرك", "فرع"])) return { layout: "center", prompt: `A beautiful modern premium Omani retail shop interior with elegant shelves and ${light ? "big windows, soft natural daylight, airy and clean" : "warm illuminated shelves at night, cinematic atmosphere"}, ${grade}, clean empty area at the TOP for a headline.${rm}` };
+  if (has(["جوال", "بجيبك", "تطبيق", "أينما", "موبايل"])) return { layout: "center", prompt: `A modern smartphone held in hand clearly showing an online store app with products, ${light ? "clean bright white background, soft warm light" : "dramatic spotlight on the phone, dark background"}, ${grade}, clean empty area at the TOP for a headline.${rm}` };
+  const woman = has(["ابدئي", "سيدة", "تاجرة", "بائعة"]);
+  const who = woman ? "an authentic Omani woman shop owner in an elegant Omani abaya with a colourful embroidered Omani shela head covering (NOT plain black Gulf, NOT niqab)" : "an authentic Omani man merchant (white Omani dishdasha with furakha tassel and an embroidered Omani kummah cap, NOT a Gulf ghutra or egal)";
+  return { layout: "side", prompt: `${who} holding a smartphone showing an online store app, ${light ? "clean bright WHITE studio background, soft studio light with gentle separation" : "dramatic spotlight and rim light separating them from the background"}, ${grade}, the subject ${side}${rm}` };
+}
+// Render an editorial design to /media/design/<id>. Returns { url }.
+async function makeEditorial({ light, layout, kicker, headline, pop, cta, prompt, id }) {
+  const { buffer } = await gemini.generateImage(prompt);
+  const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
+  const bgFile = path.join(dir, `_edbg-${id}.png`);
+  const fd0 = fs.openSync(bgFile, "w"); try { fs.writeSync(fd0, buffer); fs.fsyncSync(fd0); } finally { fs.closeSync(fd0); }
+  const eng = await import("./data/designEngine.js");
+  const png = await eng.renderEditorial({ bg: bgFile, kicker: kicker || "متجرلينك", headline: headline || "", pop: pop || "", cta: cta || "", light: !!light, layout: layout === "center" ? "center" : "side" });
+  const fd = fs.openSync(path.join(dir, id + ".png"), "w"); try { fs.writeSync(fd, png); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  return { url: `/media/design/${id}?v=${Date.now()}` };
+}
+
 // Hybrid design: Gemini generates a premium branded SCENE/background (no text),
 // then our engine overlays crisp Arabic headline + brand furniture on top.
 app.post("/api/hybrid-sample", async (req, res) => {
@@ -629,12 +685,12 @@ function studioToPost(d, date) {
 }
 app.get("/api/studio/drafts", (req, res) => {
   const drafts = Object.values(store.getStudioDrafts()).sort((a, b) => (b.at || "").localeCompare(a.at || ""));
-  res.json({ ok: true, drafts, types: STUDIO_TYPES, templates: DESIGN_TEMPLATES, characters: charMod.CHARACTERS.map((c) => ({ id: c.id, label: c.label })) });
+  res.json({ ok: true, drafts, types: STUDIO_TYPES, templates: [...EDITORIAL_TEMPLATES, ...DESIGN_TEMPLATES], characters: charMod.CHARACTERS.map((c) => ({ id: c.id, label: c.label })) });
 });
 app.post("/api/studio/generate", async (req, res) => {
   const b = req.body || {};
   const type = STUDIO_TYPES[b.type] ? b.type : "post";
-  const template = DESIGN_TEMPLATES.includes(b.template) ? b.template : activeTemplate();
+  const template = (DESIGN_TEMPLATES.includes(b.template) || isEditorial(b.template)) ? b.template : activeTemplate();
   const character = b.character && charMod.characterById(b.character) ? b.character : "";
   const lang = b.lang || "ar";
   const idea = (b.idea || "").trim();
@@ -657,7 +713,13 @@ app.post("/api/studio/generate", async (req, res) => {
   const ty = STUDIO_TYPES[type];
   const item = { id, t: content.t, t2: content.t2, cta: content.cta, cap: content.cap, ty };
   try {
-    if (type === "reel") {
+    if (isEditorial(template) && type === "post") {
+      if (!gemini.geminiReady()) throw new Error("قالب «الإعلاني» يحتاج ربط Gemini أولاً");
+      const light = template === "editorial-white";
+      const sc = editorialScene([content.t, idea, description].join(" "), light);
+      const ed = await makeEditorial({ light, layout: sc.layout, kicker: content.kicker || "متجرلينك", headline: content.t, pop: content.t2 || "", cta: content.cta, prompt: sc.prompt, id });
+      item.mediaUrl = ed.url; item.images = [];
+    } else if (type === "reel") {
       const r = await renderAndSaveReel(item, { ...content, scenes: scenes || content.scenes }, { template });
       item.mediaUrl = r.mediaUrl; item.images = [];
     } else if (type === "story") {

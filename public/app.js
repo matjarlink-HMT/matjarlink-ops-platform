@@ -596,28 +596,30 @@ async function renderProposals(host, C) {
   let d = null;
   try { d = await fetch("/api/proposals").then(r => r.json()); } catch (e) {}
   if (!d || !d.ok) { host.innerHTML = ""; return; }
+  const ICON = { post: "🖼 ", template: "🌙 ", character: "🧑🏻 " };
   const card = (p, kind) => `<div class="tplcard" data-prop="${p.id}">
-      <div class="tplhd"><span class="tplname">${kind === "template" ? "🌙 " : "🧑🏻 "}${escapeHtml(p.name || p.label || "")}</span></div>
+      <div class="tplhd"><span class="tplname">${ICON[kind] || ""}${escapeHtml(p.name || p.label || "")}</span></div>
       <div class="tplshots" style="grid-template-columns:1fr"><img loading="lazy" src="${p.previewUrl}"></div>
       <div style="display:flex;gap:.4rem;margin-top:.3rem">
         <button class="btn ok sm papprove" data-prop="${p.id}">✓ ${T("prop_approve")}</button>
         <button class="btn ghost sm preject" data-prop="${p.id}">✕ ${T("prop_reject")}</button>
       </div></div>`;
-  const tpls = d.templates || [], chars = d.characters || [];
+  const posts = d.posts || [], tpls = d.templates || [], chars = d.characters || [];
   host.innerHTML = `<div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.5rem">
       <h3 style="margin:0">🌙 ${T("prop_title")}</h3>
       <button class="btn sm" id="proprun">⚡ ${T("prop_run")}</button>
       <span class="mut">${T("prop_schedule_note")}${d.geminiReady ? "" : " · " + T("prop_no_gemini")}</span>
     </div>
     <div class="mut" id="propmsg" style="margin-bottom:.6rem"></div>
-    ${tpls.length ? `<div class="mut" style="margin:.3rem 0">${T("prop_templates")} (${tpls.length})</div><div class="grid g3">${tpls.map(p => card(p, "template")).join("")}</div>` : ""}
+    ${posts.length ? `<div class="mut" style="margin:.3rem 0">${T("prop_posts")} (${posts.length})</div><div class="grid g3">${posts.map(p => card(p, "post")).join("")}</div>` : ""}
+    ${tpls.length ? `<div class="mut" style="margin:.7rem 0 .3rem">${T("prop_templates")} (${tpls.length})</div><div class="grid g3">${tpls.map(p => card(p, "template")).join("")}</div>` : ""}
     ${chars.length ? `<div class="mut" style="margin:.7rem 0 .3rem">${T("prop_characters")} (${chars.length})</div><div class="grid g3">${chars.map(p => card(p, "character")).join("")}</div>` : ""}
-    ${!tpls.length && !chars.length ? `<div class="mut">${T("prop_empty")}</div>` : ""}`;
+    ${!posts.length && !tpls.length && !chars.length ? `<div class="mut">${T("prop_empty")}</div>` : ""}`;
   const run = $("#proprun");
   if (run) run.onclick = async () => {
     run.disabled = true; run.innerHTML = `<span class="dots"><i></i><i></i><i></i></span> ${T("prop_running")}`;
     const r = await fetch("/api/proposals/run-now", { method: "POST" }).then(x => x.json()).catch(() => null);
-    const m = $("#propmsg"); if (m && r) m.textContent = `✓ ${r.templates || 0} ${T("prop_templates")} · ${r.characters || 0} ${T("prop_characters")}` + (r.errors?.length ? " · " + r.errors.join("; ") : "");
+    const m = $("#propmsg"); if (m && r) m.textContent = `✓ ${r.posts || 0} ${T("prop_posts")} · ${r.characters || 0} ${T("prop_characters")}` + (r.errors?.length ? " · " + r.errors.join("; ") : "");
     renderProposals(host, C);
   };
   host.querySelectorAll(".papprove").forEach(b => b.onclick = async () => {
