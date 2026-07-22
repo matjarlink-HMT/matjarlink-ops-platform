@@ -606,7 +606,7 @@ app.post("/api/hybrid-sample", async (req, res) => {
     const eng = await import("./data/designEngine.js");
     let png;
     if ((b.style || "editorial") === "editorial") {
-      png = await eng.renderEditorial({ bg: bgFile, kicker: b.kicker || "متجرلينك", headline: b.headline || "", pop: b.pop || b.headline2 || "", cta: b.cta || "", light: !!b.light, layout: b.layout === "center" ? "center" : "side" });
+      png = await eng.renderEditorial({ bg: bgFile, kicker: b.kicker || "متجرلينك", headline: b.headline || "", pop: b.pop || b.headline2 || "", cta: b.cta || "", light: !!b.light, layout: b.layout === "center" ? "center" : "side", motif: !!b.motif });
     } else {
       png = await eng.renderDesign({ role: "single", kicker: b.kicker || "متجرلينك", headline: b.headline || "", headline2: b.headline2 || "", cta: b.cta || "", template: "spotlight", photo: bgFile });
     }

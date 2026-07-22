@@ -423,7 +423,23 @@ export async function renderReelFrame({ kind = "hook", headline = "", body = "",
 // (deep aubergine + orange), matching the AmwalPay/abed.des DNA. bg is a vivid
 // Gemini scene. light=true → bright/white variant. layout: "side" | "center".
 const AUB = "#2D081E", ORANGEB = "#F5821F";
-export async function renderEditorial({ bg = null, kicker = "متجرلينك", headline = "", pop = "", cta = "", light = false, layout = "side" } = {}) {
+// Subtle Omani 8-point-star lattice (khatam) — a faint brand texture accent.
+function drawOmaniLattice(ctx, x, y, w, h, color, alpha, cell = 118) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  for (let gy = y - cell; gy < y + h + cell; gy += cell) {
+    for (let gx = x - cell; gx < x + w + cell; gx += cell) {
+      const cx = gx + cell / 2, cy = gy + cell / 2, r = cell * 0.44;
+      for (let s = 0; s < 2; s++) {
+        ctx.beginPath();
+        for (let i = 0; i < 4; i++) { const a = Math.PI / 2 * i + (s ? Math.PI / 4 : 0); const px = cx + Math.cos(a) * r, py = cy + Math.sin(a) * r; i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+        ctx.closePath(); ctx.stroke();
+      }
+    }
+  }
+  ctx.restore(); ctx.globalAlpha = 1;
+}
+export async function renderEditorial({ bg = null, kicker = "متجرلينك", headline = "", pop = "", cta = "", light = false, layout = "side", motif = false } = {}) {
   const W = 1080, H = 1350;
   const cv = createCanvas(W, H); const ctx = cv.getContext("2d");
   ctx.fillStyle = light ? "#FBEEDF" : AUB; ctx.fillRect(0, 0, W, H);
@@ -453,6 +469,12 @@ export async function renderEditorial({ bg = null, kicker = "متجرلينك", 
     let tgrad = ctx.createLinearGradient(0, 0, 0, 240);
     tgrad.addColorStop(0, `rgba(${G},0.72)`); tgrad.addColorStop(1, `rgba(${G},0)`);
     ctx.fillStyle = tgrad; ctx.fillRect(0, 0, W, 240);
+  }
+  // Omani geometric lattice accent (fusion look) — subtle, over the text zone.
+  if (motif) {
+    const mc = light ? "#6E1444" : "#F5821F";
+    if (layout === "center") drawOmaniLattice(ctx, 0, 0, W, Math.round(H * 0.5), mc, light ? 0.08 : 0.1);
+    else drawOmaniLattice(ctx, 0, 0, Math.round(W * 0.52), H, mc, light ? 0.08 : 0.1);
   }
   const logo = light ? await getLogo() : await getTintedLogo("#ffffff");
   const drawPop = (rx, y, ps, center) => {
