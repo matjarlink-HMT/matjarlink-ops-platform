@@ -418,3 +418,71 @@ export async function renderReelFrame({ kind = "hook", headline = "", body = "",
   drawFooter(ctx, W, H, dark);
   return cv.toBuffer("image/png");
 }
+
+// ── EDITORIAL ── cinematic social-media AD style (the AmwalPay / abed.des DNA):
+// a vivid full-bleed hero image (kept saturated — NO flat plum wash), a localized
+// gradient only where text sits, side-anchored Arabic headline with a bold
+// colour-pop line, white logo, magenta CTA pill, footer. bg is a path/Buffer to a
+// vivid Gemini scene whose subject sits on the RIGHT with negative space at LEFT.
+export async function renderEditorial({ bg = null, kicker = "متجرلينك", headline = "", pop = "", cta = "", accent = ORANGE } = {}) {
+  const W = 1080, H = 1350;
+  const cv = createCanvas(W, H); const ctx = cv.getContext("2d");
+  ctx.fillStyle = "#140410"; ctx.fillRect(0, 0, W, H);
+  // 1) hero image, cover-fit, kept vivid
+  let img = null; if (bg) { try { img = await loadImage(bg); } catch (e) { console.error("[editorial] bg:", e.message); } }
+  if (img) {
+    const ir = img.width / img.height, cr = W / H; let dw, dh, dx, dy;
+    if (ir > cr) { dh = H; dw = H * ir; dx = (W - dw) / 2; dy = 0; } else { dw = W; dh = W / ir; dx = 0; dy = (H - dh) / 2; }
+    ctx.filter = "saturate(1.16) contrast(1.05) brightness(1.02)"; ctx.drawImage(img, dx, dy, dw, dh); ctx.filter = "none";
+  }
+  // 2) localized gradients — left column for text + bottom for footer (image stays vivid on the right)
+  const lg = ctx.createLinearGradient(0, 0, W * 0.66, 0);
+  lg.addColorStop(0, "rgba(18,4,14,0.94)"); lg.addColorStop(0.55, "rgba(18,4,14,0.62)"); lg.addColorStop(1, "rgba(18,4,14,0)");
+  ctx.fillStyle = lg; ctx.fillRect(0, 0, W, H);
+  const bgrad = ctx.createLinearGradient(0, H, 0, H - 300);
+  bgrad.addColorStop(0, "rgba(18,4,14,0.92)"); bgrad.addColorStop(1, "rgba(18,4,14,0)");
+  ctx.fillStyle = bgrad; ctx.fillRect(0, H - 300, W, 300);
+  const tgrad = ctx.createLinearGradient(0, 0, 0, 240);
+  tgrad.addColorStop(0, "rgba(18,4,14,0.7)"); tgrad.addColorStop(1, "rgba(18,4,14,0)");
+  ctx.fillStyle = tgrad; ctx.fillRect(0, 0, W, 240);
+  // 3) white logo, top-left
+  const wl = await getTintedLogo("#ffffff");
+  if (wl) ctx.drawImage(wl, 60, 40, 168, 168);
+  // 4) text block — right-aligned Arabic, anchored in the left 60% negative space
+  const RX = Math.round(W * 0.63); // right edge of the text column
+  const maxW = Math.round(W * 0.54);
+  ctx.direction = "rtl"; ctx.textAlign = "right";
+  let y = 560;
+  if (kicker) { ctx.font = "36px TajawalB"; ctx.fillStyle = accent; ctx.fillText(kicker, RX, y); y += 20; }
+  // headline (white, bold, large, auto-fit)
+  let size = 96; ctx.font = size + "px TajawalXB";
+  let lines = wrapLines(ctx, headline, maxW);
+  while (lines.length > 3 && size > 60) { size -= 6; ctx.font = size + "px TajawalXB"; lines = wrapLines(ctx, headline, maxW); }
+  lines = lines.slice(0, 3);
+  const lh = size * 1.2; y += size;
+  ctx.fillStyle = "#ffffff";
+  for (const ln of lines) {
+    ctx.shadowColor = "rgba(0,0,0,0.45)"; ctx.shadowBlur = 18; ctx.shadowOffsetY = 2;
+    ctx.fillText(ln, RX, y); y += lh;
+  }
+  ctx.shadowColor = "transparent"; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  // colour-pop line (the AmwalPay/abed.des punch): filled accent bar + dark text
+  if (pop) {
+    const ps = Math.round(size * 0.92); ctx.font = ps + "px TajawalXB";
+    const pw = ctx.measureText(pop).width, padx = 26, bh = ps * 1.14;
+    const bx = RX - pw - padx * 2, by = y - ps + 6;
+    ctx.fillStyle = accent; ctx.beginPath(); ctx.roundRect(bx, by, pw + padx * 2, bh, 16); ctx.fill();
+    ctx.fillStyle = "#1c0413"; ctx.fillText(pop, RX - padx, y);
+    y += lh * 0.9;
+  }
+  // CTA pill (magenta), right-aligned
+  if (cta) {
+    y += 24; ctx.font = "44px TajawalXB";
+    const tw = ctx.measureText(cta).width, pw = tw + 90, ph = 88;
+    ctx.fillStyle = MAGENTA; ctx.beginPath(); ctx.roundRect(RX - pw, y, pw, ph, ph / 2); ctx.fill();
+    ctx.textAlign = "center"; ctx.fillStyle = "#fff"; ctx.fillText(cta, RX - pw / 2, y + 58);
+    ctx.textAlign = "right";
+  }
+  drawFooter(ctx, W, H, true);
+  return cv.toBuffer("image/png");
+}

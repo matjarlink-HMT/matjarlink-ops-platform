@@ -603,8 +603,13 @@ app.post("/api/hybrid-sample", async (req, res) => {
     const id = "hyb-" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
     const bgFile = path.join(dir, `_hybbg-${id}.png`);
     const fd0 = fs.openSync(bgFile, "w"); try { fs.writeSync(fd0, buffer); fs.fsyncSync(fd0); } finally { fs.closeSync(fd0); }
-    const { renderDesign } = await import("./data/designEngine.js");
-    const png = await renderDesign({ role: "single", kicker: b.kicker || "متجرلينك", headline: b.headline || "", headline2: b.headline2 || "", cta: b.cta || "", template: "spotlight", photo: bgFile });
+    const eng = await import("./data/designEngine.js");
+    let png;
+    if ((b.style || "editorial") === "editorial") {
+      png = await eng.renderEditorial({ bg: bgFile, kicker: b.kicker || "متجرلينك", headline: b.headline || "", pop: b.pop || b.headline2 || "", cta: b.cta || "" });
+    } else {
+      png = await eng.renderDesign({ role: "single", kicker: b.kicker || "متجرلينك", headline: b.headline || "", headline2: b.headline2 || "", cta: b.cta || "", template: "spotlight", photo: bgFile });
+    }
     const name = `_hyb-${id}`;
     const fd = fs.openSync(path.join(dir, name + ".png"), "w"); try { fs.writeSync(fd, png); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
     res.json({ ok: true, url: `/media/design/${name}?v=${Date.now()}`, bg: `/media/design/_hybbg-${id}?v=${Date.now()}` });
