@@ -87,7 +87,7 @@ function drawFooter(ctx, W, H, light = false) {
   const y = H - 96;
   ctx.textAlign = "left"; ctx.direction = "ltr";
   ctx.font = "42px TajawalXB"; ctx.fillStyle = TXT;
-  const handle = "@matjarlink", phone = "97426620";
+  const handle = "matjarlink", phone = "97426620";
   const hw = ctx.measureText(handle).width, pw = ctx.measureText(phone).width;
   const igS = 44, waS = 44, gap = 22, dot = 8;
   const total = hw + gap + igS + gap + dot + gap + pw + gap + waS;
@@ -492,7 +492,7 @@ export async function renderEditorial({ bg = null, kicker = "متجرلينك", 
     ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.fillText(cta, bx + pw / 2, y + 58);
   };
   if (layout === "center") {
-    if (logo) ctx.drawImage(logo, W / 2 - 92, 40, 184, 184);
+    if (logo) ctx.drawImage(logo, W / 2 - 120, 30, 240, 240);
     ctx.textAlign = "center"; let y = 300;
     if (kicker) { ctx.font = "36px TajawalB"; ctx.fillStyle = ORANGEB; ctx.fillText(kicker, W / 2, y); y += 22; }
     let size = 92; ctx.font = size + "px TajawalXB";
@@ -503,8 +503,8 @@ export async function renderEditorial({ bg = null, kicker = "متجرلينك", 
     if (pop) { drawPop(0, y, Math.round(size * 0.9), true); }
     if (cta) drawCta(0, H - 196, true);
   } else {
-    if (logo) ctx.drawImage(logo, 60, 40, 168, 168);
-    const RX = Math.round(W * 0.63), maxW = Math.round(W * 0.54);
+    if (logo) ctx.drawImage(logo, 52, 30, 244, 244);
+    const RX = Math.round(W * 0.55), maxW = Math.round(W * 0.47); // keep text off the right-side hero
     ctx.textAlign = "right"; let y = 560;
     if (kicker) { ctx.font = "36px TajawalB"; ctx.fillStyle = ORANGEB; ctx.fillText(kicker, RX, y); y += 22; }
     let size = 96; ctx.font = size + "px TajawalXB";
