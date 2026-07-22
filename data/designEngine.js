@@ -419,70 +419,80 @@ export async function renderReelFrame({ kind = "hook", headline = "", body = "",
   return cv.toBuffer("image/png");
 }
 
-// ── EDITORIAL ── cinematic social-media AD style (the AmwalPay / abed.des DNA):
-// a vivid full-bleed hero image (kept saturated — NO flat plum wash), a localized
-// gradient only where text sits, side-anchored Arabic headline with a bold
-// colour-pop line, white logo, magenta CTA pill, footer. bg is a path/Buffer to a
-// vivid Gemini scene whose subject sits on the RIGHT with negative space at LEFT.
-export async function renderEditorial({ bg = null, kicker = "متجرلينك", headline = "", pop = "", cta = "", accent = ORANGE } = {}) {
+// ── EDITORIAL ── cinematic social-media AD style in the MatjarLink brand palette
+// (deep aubergine + orange), matching the AmwalPay/abed.des DNA. bg is a vivid
+// Gemini scene. light=true → bright/white variant. layout: "side" | "center".
+const AUB = "#2D081E", ORANGEB = "#F5821F";
+export async function renderEditorial({ bg = null, kicker = "متجرلينك", headline = "", pop = "", cta = "", light = false, layout = "side" } = {}) {
   const W = 1080, H = 1350;
   const cv = createCanvas(W, H); const ctx = cv.getContext("2d");
-  ctx.fillStyle = "#140410"; ctx.fillRect(0, 0, W, H);
-  // 1) hero image, cover-fit, kept vivid
+  ctx.fillStyle = light ? "#FBEEDF" : AUB; ctx.fillRect(0, 0, W, H);
   let img = null; if (bg) { try { img = await loadImage(bg); } catch (e) { console.error("[editorial] bg:", e.message); } }
   if (img) {
     const ir = img.width / img.height, cr = W / H; let dw, dh, dx, dy;
     if (ir > cr) { dh = H; dw = H * ir; dx = (W - dw) / 2; dy = 0; } else { dw = W; dh = W / ir; dx = 0; dy = (H - dh) / 2; }
-    ctx.filter = "saturate(1.16) contrast(1.05) brightness(1.02)"; ctx.drawImage(img, dx, dy, dw, dh); ctx.filter = "none";
+    ctx.filter = "saturate(1.12) contrast(1.05) brightness(1.02)"; ctx.drawImage(img, dx, dy, dw, dh); ctx.filter = "none";
   }
-  // 2) localized gradients — left column for text + bottom for footer (image stays vivid on the right)
-  const lg = ctx.createLinearGradient(0, 0, W * 0.66, 0);
-  lg.addColorStop(0, "rgba(18,4,14,0.94)"); lg.addColorStop(0.55, "rgba(18,4,14,0.62)"); lg.addColorStop(1, "rgba(18,4,14,0)");
-  ctx.fillStyle = lg; ctx.fillRect(0, 0, W, H);
-  const bgrad = ctx.createLinearGradient(0, H, 0, H - 300);
-  bgrad.addColorStop(0, "rgba(18,4,14,0.92)"); bgrad.addColorStop(1, "rgba(18,4,14,0)");
-  ctx.fillStyle = bgrad; ctx.fillRect(0, H - 300, W, 300);
-  const tgrad = ctx.createLinearGradient(0, 0, 0, 240);
-  tgrad.addColorStop(0, "rgba(18,4,14,0.7)"); tgrad.addColorStop(1, "rgba(18,4,14,0)");
-  ctx.fillStyle = tgrad; ctx.fillRect(0, 0, W, 240);
-  // 3) white logo, top-left
-  const wl = await getTintedLogo("#ffffff");
-  if (wl) ctx.drawImage(wl, 60, 40, 168, 168);
-  // 4) text block — right-aligned Arabic, anchored in the left 60% negative space
-  const RX = Math.round(W * 0.63); // right edge of the text column
-  const maxW = Math.round(W * 0.54);
-  ctx.direction = "rtl"; ctx.textAlign = "right";
-  let y = 560;
-  if (kicker) { ctx.font = "36px TajawalB"; ctx.fillStyle = accent; ctx.fillText(kicker, RX, y); y += 20; }
-  // headline (white, bold, large, auto-fit)
-  let size = 96; ctx.font = size + "px TajawalXB";
-  let lines = wrapLines(ctx, headline, maxW);
-  while (lines.length > 3 && size > 60) { size -= 6; ctx.font = size + "px TajawalXB"; lines = wrapLines(ctx, headline, maxW); }
-  lines = lines.slice(0, 3);
-  const lh = size * 1.2; y += size;
-  ctx.fillStyle = "#ffffff";
-  for (const ln of lines) {
-    ctx.shadowColor = "rgba(0,0,0,0.45)"; ctx.shadowBlur = 18; ctx.shadowOffsetY = 2;
-    ctx.fillText(ln, RX, y); y += lh;
+  const G = light ? "251,238,223" : "45,8,30";       // gradient rgb: cream vs aubergine
+  const HEAD = light ? "#3D0B26" : "#ffffff";
+  ctx.direction = "rtl";
+  if (layout === "center") {
+    let tg = ctx.createLinearGradient(0, 0, 0, H * 0.64);
+    tg.addColorStop(0, `rgba(${G},0.97)`); tg.addColorStop(0.62, `rgba(${G},0.5)`); tg.addColorStop(1, `rgba(${G},0)`);
+    ctx.fillStyle = tg; ctx.fillRect(0, 0, W, H * 0.64);
+    let bg2 = ctx.createLinearGradient(0, H, 0, H - 280);
+    bg2.addColorStop(0, `rgba(${G},0.92)`); bg2.addColorStop(1, `rgba(${G},0)`);
+    ctx.fillStyle = bg2; ctx.fillRect(0, H - 280, W, 280);
+  } else {
+    let lg = ctx.createLinearGradient(0, 0, W * 0.66, 0);
+    lg.addColorStop(0, `rgba(${G},0.95)`); lg.addColorStop(0.55, `rgba(${G},0.6)`); lg.addColorStop(1, `rgba(${G},0)`);
+    ctx.fillStyle = lg; ctx.fillRect(0, 0, W, H);
+    let bgrad = ctx.createLinearGradient(0, H, 0, H - 300);
+    bgrad.addColorStop(0, `rgba(${G},0.92)`); bgrad.addColorStop(1, `rgba(${G},0)`);
+    ctx.fillStyle = bgrad; ctx.fillRect(0, H - 300, W, 300);
+    let tgrad = ctx.createLinearGradient(0, 0, 0, 240);
+    tgrad.addColorStop(0, `rgba(${G},0.72)`); tgrad.addColorStop(1, `rgba(${G},0)`);
+    ctx.fillStyle = tgrad; ctx.fillRect(0, 0, W, 240);
   }
-  ctx.shadowColor = "transparent"; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
-  // colour-pop line (the AmwalPay/abed.des punch): filled accent bar + dark text
-  if (pop) {
-    const ps = Math.round(size * 0.92); ctx.font = ps + "px TajawalXB";
+  const logo = light ? await getLogo() : await getTintedLogo("#ffffff");
+  const drawPop = (rx, y, ps, center) => {
+    ctx.font = ps + "px TajawalXB";
     const pw = ctx.measureText(pop).width, padx = 26, bh = ps * 1.14;
-    const bx = RX - pw - padx * 2, by = y - ps + 6;
-    ctx.fillStyle = accent; ctx.beginPath(); ctx.roundRect(bx, by, pw + padx * 2, bh, 16); ctx.fill();
-    ctx.fillStyle = "#1c0413"; ctx.fillText(pop, RX - padx, y);
-    y += lh * 0.9;
+    const bx = center ? W / 2 - (pw + padx * 2) / 2 : rx - pw - padx * 2;
+    ctx.fillStyle = ORANGEB; ctx.beginPath(); ctx.roundRect(bx, y - ps + 6, pw + padx * 2, bh, 16); ctx.fill();
+    ctx.fillStyle = AUB; ctx.textAlign = center ? "center" : "right";
+    ctx.fillText(pop, center ? W / 2 : rx - padx, y);
+  };
+  const drawCta = (cx, y, center) => {
+    ctx.font = "44px TajawalXB"; const tw = ctx.measureText(cta).width, pw = tw + 90, ph = 88;
+    const bx = center ? W / 2 - pw / 2 : cx - pw;
+    ctx.fillStyle = MAGENTA; ctx.beginPath(); ctx.roundRect(bx, y, pw, ph, ph / 2); ctx.fill();
+    ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.fillText(cta, bx + pw / 2, y + 58);
+  };
+  if (layout === "center") {
+    if (logo) ctx.drawImage(logo, W / 2 - 92, 40, 184, 184);
+    ctx.textAlign = "center"; let y = 300;
+    if (kicker) { ctx.font = "36px TajawalB"; ctx.fillStyle = ORANGEB; ctx.fillText(kicker, W / 2, y); y += 22; }
+    let size = 92; ctx.font = size + "px TajawalXB";
+    let lines = wrapLines(ctx, headline, W - 200);
+    while (lines.length > 3 && size > 58) { size -= 6; ctx.font = size + "px TajawalXB"; lines = wrapLines(ctx, headline, W - 200); }
+    lines = lines.slice(0, 3); const lh = size * 1.2; y += size; ctx.fillStyle = HEAD;
+    for (const ln of lines) { ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.32)"; ctx.shadowBlur = 14; ctx.fillText(ln, W / 2, y); ctx.restore(); y += lh; }
+    if (pop) { drawPop(0, y, Math.round(size * 0.9), true); }
+    if (cta) drawCta(0, H - 196, true);
+  } else {
+    if (logo) ctx.drawImage(logo, 60, 40, 168, 168);
+    const RX = Math.round(W * 0.63), maxW = Math.round(W * 0.54);
+    ctx.textAlign = "right"; let y = 560;
+    if (kicker) { ctx.font = "36px TajawalB"; ctx.fillStyle = ORANGEB; ctx.fillText(kicker, RX, y); y += 22; }
+    let size = 96; ctx.font = size + "px TajawalXB";
+    let lines = wrapLines(ctx, headline, maxW);
+    while (lines.length > 3 && size > 60) { size -= 6; ctx.font = size + "px TajawalXB"; lines = wrapLines(ctx, headline, maxW); }
+    lines = lines.slice(0, 3); const lh = size * 1.2; y += size; ctx.fillStyle = HEAD;
+    for (const ln of lines) { ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.4)"; ctx.shadowBlur = 16; ctx.fillText(ln, RX, y); ctx.restore(); y += lh; }
+    if (pop) { drawPop(RX, y, Math.round(size * 0.9), false); y += lh * 0.95; }
+    if (cta) { y += 24; drawCta(RX, y, false); }
   }
-  // CTA pill (magenta), right-aligned
-  if (cta) {
-    y += 24; ctx.font = "44px TajawalXB";
-    const tw = ctx.measureText(cta).width, pw = tw + 90, ph = 88;
-    ctx.fillStyle = MAGENTA; ctx.beginPath(); ctx.roundRect(RX - pw, y, pw, ph, ph / 2); ctx.fill();
-    ctx.textAlign = "center"; ctx.fillStyle = "#fff"; ctx.fillText(cta, RX - pw / 2, y + 58);
-    ctx.textAlign = "right";
-  }
-  drawFooter(ctx, W, H, true);
+  drawFooter(ctx, W, H, !light);
   return cv.toBuffer("image/png");
 }
