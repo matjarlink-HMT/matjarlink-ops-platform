@@ -158,3 +158,33 @@ export async function renderReel(scenes, outPath, template = "classic") {
     for (const f of tmp) { try { fs.unlinkSync(f); } catch (e) {} }
   }
 }
+
+// Build a reel from PRE-RENDERED 1080x1920 frames (e.g. editorial Gemini scenes
+// + our text). Reuses the per-scene zoompan + lossless concat pipeline.
+export async function renderReelFromFrames(frames, outPath, secs = [2.6, 3.2, 3.0]) {
+  if (!Array.isArray(frames) || frames.length < 2) throw new Error("need at least 2 frames");
+  if (busy) throw new Error("reel engine busy — try again in a minute");
+  busy = true;
+  const dir = path.dirname(outPath); fs.mkdirSync(dir, { recursive: true });
+  const base = path.join(dir, `.efr-${path.basename(outPath, ".mp4")}`);
+  const tmp = [];
+  try {
+    const bin = await ffmpegPath();
+    const n = frames.length, segs = []; let total = 0;
+    for (let i = 0; i < n; i++) {
+      const sec = secs[i] ?? 3.0; total += sec;
+      const seg = `${base}-${i}.mp4`; tmp.push(seg);
+      await run(bin, segArgs(frames[i], i, n, sec, seg)); // sequential: one encoder at a time
+      segs.push(seg);
+    }
+    const listFile = `${base}.txt`; tmp.push(listFile);
+    fs.writeFileSync(listFile, segs.map((s) => `file '${s}'`).join("\n"));
+    await run(bin, [
+      "-y", "-f", "concat", "-safe", "0", "-i", listFile,
+      "-f", "lavfi", "-t", total.toFixed(2), "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+      "-c:v", "copy", "-c:a", "aac", "-b:a", "96k", "-shortest", "-movflags", "+faststart", outPath,
+    ]);
+    const fd = fs.openSync(outPath, "r+"); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    return outPath;
+  } finally { busy = false; for (const f of tmp) { try { fs.unlinkSync(f); } catch (e) {} } }
+}

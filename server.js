@@ -647,6 +647,41 @@ async function makeEditorial({ light, layout, kicker, headline, pop, cta, prompt
   const fd = fs.openSync(path.join(dir, id + ".png"), "w"); try { fs.writeSync(fd, png); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
   return { url: `/media/design/${id}?v=${Date.now()}` };
 }
+// Editorial REEL: 3 vertical (9:16) Gemini cinematic scenes + our text, animated
+// (Ken Burns per scene, lossless concat). Returns { url } (.mp4).
+async function makeEditorialReel({ id, light = false, headline, pop, cta, valueLine }) {
+  if (!gemini.geminiReady()) throw new Error("قالب «الإعلاني» يحتاج ربط Gemini أولاً");
+  const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
+  const eng = await import("./data/designEngine.js");
+  const { renderReelFromFrames } = await import("./data/reelEngine.js");
+  const grade = light ? "bright airy, clean white and warm-orange tones (brand colors #F5821F and #2D081E, NOT purple)" : "deep AUBERGINE-PLUM and warm-ORANGE cinematic color grade (brand colors #2D081E and #F5821F, NOT purple)";
+  const rm = " Photorealistic cinematic vertical composition, realistic, NOT 3D render, NOT AI illustration. No text, no words, no logos.";
+  const scenePrompts = [
+    `Cinematic VERTICAL 9:16 portrait of an authentic Omani man merchant (white Omani dishdasha with furakha and an embroidered Omani kummah cap, NOT a Gulf ghutra or egal) in his elegant modern shop, dramatic warm rim lighting, ${grade}, the subject centered with clean space at the TOP and BOTTOM for text.${rm}`,
+    `Cinematic VERTICAL 9:16 close-up of a modern smartphone and a glowing POS cashier screen showing an online store and a sale, dramatic focused lighting, ${grade}, clean space at the TOP and BOTTOM for text.${rm}`,
+    `Cinematic VERTICAL 9:16 wide shot of a premium modern Omani shop or marketplace with warm inviting light, atmospheric depth, ${grade}, clean space in the CENTER for a call to action.${rm}`,
+  ];
+  const texts = [
+    { kicker: "متجرلينك", headline, pop },
+    { kicker: "", headline: valueLine || "متجر · كاشير · محاسبة", pop: "" },
+    { kicker: "متجرلينك", headline: cta || "قريبًا في عُمان", pop: "" },
+  ];
+  const frames = [], junk = [];
+  try {
+    for (let i = 0; i < 3; i++) {
+      const { buffer } = await gemini.generateImage(scenePrompts[i]);
+      const bgFile = path.join(dir, `_rlbg-${id}-${i}.png`); junk.push(bgFile);
+      let fd0 = fs.openSync(bgFile, "w"); try { fs.writeSync(fd0, buffer); fs.fsyncSync(fd0); } finally { fs.closeSync(fd0); }
+      const png = await eng.renderEditorial({ bg: bgFile, h: 1920, layout: "center", light, kicker: texts[i].kicker || "متجرلينك", headline: texts[i].headline, pop: texts[i].pop, cta: "" });
+      const fr = path.join(dir, `_rlfr-${id}-${i}.png`); junk.push(fr);
+      let fd = fs.openSync(fr, "w"); try { fs.writeSync(fd, png); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+      frames.push(fr);
+    }
+    const out = path.join(dir, `${id}.mp4`);
+    await renderReelFromFrames(frames, out);
+    return { url: `/media/design/${id}.mp4?v=${Date.now()}` };
+  } finally { for (const f of junk) { try { fs.unlinkSync(f); } catch (e) {} } }
+}
 
 // Hybrid design: Gemini generates a premium branded SCENE/background (no text),
 // then our engine overlays crisp Arabic headline + brand furniture on top.
@@ -713,12 +748,17 @@ app.post("/api/studio/generate", async (req, res) => {
   const ty = STUDIO_TYPES[type];
   const item = { id, t: content.t, t2: content.t2, cta: content.cta, cap: content.cap, ty };
   try {
-    if (isEditorial(template) && type === "post") {
+    if (isEditorial(template) && (type === "post" || type === "reel")) {
       if (!gemini.geminiReady()) throw new Error("قالب «الإعلاني» يحتاج ربط Gemini أولاً");
       const light = template === "editorial-white";
-      const sc = editorialScene([content.t, idea, description].join(" "), light);
-      const ed = await makeEditorial({ light, layout: sc.layout, kicker: content.kicker || "متجرلينك", headline: content.t, pop: content.t2 || "", cta: content.cta, prompt: sc.prompt, id });
-      item.mediaUrl = ed.url; item.images = [];
+      if (type === "reel") {
+        const r = await makeEditorialReel({ id, light, headline: content.t, pop: content.t2 || "قريبًا", cta: content.cta, valueLine: content.cap });
+        item.mediaUrl = r.url; item.images = [];
+      } else {
+        const sc = editorialScene([content.t, idea, description].join(" "), light);
+        const ed = await makeEditorial({ light, layout: sc.layout, kicker: content.kicker || "متجرلينك", headline: content.t, pop: content.t2 || "", cta: content.cta, prompt: sc.prompt, id });
+        item.mediaUrl = ed.url; item.images = [];
+      }
     } else if (type === "reel") {
       const r = await renderAndSaveReel(item, { ...content, scenes: scenes || content.scenes }, { template });
       item.mediaUrl = r.mediaUrl; item.images = [];

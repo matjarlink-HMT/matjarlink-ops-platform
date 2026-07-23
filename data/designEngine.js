@@ -439,8 +439,8 @@ function drawOmaniLattice(ctx, x, y, w, h, color, alpha, cell = 118) {
   }
   ctx.restore(); ctx.globalAlpha = 1;
 }
-export async function renderEditorial({ bg = null, kicker = "متجرلينك", headline = "", pop = "", cta = "", light = false, layout = "side", motif = false } = {}) {
-  const W = 1080, H = 1350;
+export async function renderEditorial({ bg = null, kicker = "متجرلينك", headline = "", pop = "", cta = "", light = false, layout = "side", motif = false, h = 1350 } = {}) {
+  const W = 1080, H = h; // h=1350 for posts (4:5), h=1920 for reel frames (9:16)
   const cv = createCanvas(W, H); const ctx = cv.getContext("2d");
   ctx.fillStyle = light ? "#FBEEDF" : AUB; ctx.fillRect(0, 0, W, H);
   let img = null; if (bg) { try { img = await loadImage(bg); } catch (e) { console.error("[editorial] bg:", e.message); } }
@@ -493,7 +493,7 @@ export async function renderEditorial({ bg = null, kicker = "متجرلينك", 
   };
   if (layout === "center") {
     if (logo) ctx.drawImage(logo, W / 2 - 120, 30, 240, 240);
-    ctx.textAlign = "center"; let y = 300;
+    ctx.textAlign = "center"; let y = Math.round(H * 0.24);
     if (kicker) { ctx.font = "36px TajawalB"; ctx.fillStyle = ORANGEB; ctx.fillText(kicker, W / 2, y); y += 22; }
     let size = 92; ctx.font = size + "px TajawalXB";
     let lines = wrapLines(ctx, headline, W - 200);
@@ -505,7 +505,7 @@ export async function renderEditorial({ bg = null, kicker = "متجرلينك", 
   } else {
     if (logo) ctx.drawImage(logo, 52, 30, 244, 244);
     const RX = Math.round(W * 0.55), maxW = Math.round(W * 0.47); // keep text off the right-side hero
-    ctx.textAlign = "right"; let y = 560;
+    ctx.textAlign = "right"; let y = Math.round(H * 0.42);
     if (kicker) { ctx.font = "36px TajawalB"; ctx.fillStyle = ORANGEB; ctx.fillText(kicker, RX, y); y += 22; }
     let size = 96; ctx.font = size + "px TajawalXB";
     let lines = wrapLines(ctx, headline, maxW);
