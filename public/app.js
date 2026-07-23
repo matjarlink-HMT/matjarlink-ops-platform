@@ -484,17 +484,17 @@ async function renderPlan(C) {
   const dim = new Date(plan.year, plan.month, 0).getDate(); // days in this month
   const rows = plan.items.map((it) => {
     const dis = it.status === "applied" ? "disabled" : "";
-    const detail = (it.hook || it.cap) ? `<button class="btn ghost sm pdet" data-cap="${attrSafe([it.hook ? "🎣 " + it.hook : "", it.cap].filter(Boolean).join("\n\n"))}">📄</button>` : "";
+    const hookBtn = it.hook ? `<button class="btn ghost sm pdet" data-cap="${attrSafe("🎣 " + it.hook)}" title="${T("plan_hook")}">🎣</button>` : "";
     return `<tr data-key="${escapeHtml(it.key)}" class="${it.status === "applied" ? "applied" : ""}">
       <td class="pdate">${escapeHtml(fullDate(plan, it))}</td>
       <td><input class="pinput pday" type="number" min="1" max="${dim}" value="${it.day}" ${dis}></td>
       <td><select class="psel ptime" ${dis}>${["19:30", "20:00", "20:30", "21:00"].map(t => `<option ${t === (it.time || "20:00") ? "selected" : ""}>${t}</option>`).join("")}</select></td>
       <td><input class="pinput pt" value="${escapeHtml(it.t).replace(/"/g, "&quot;")}" ${dis}></td>
       <td><select class="psel pty" ${dis}>${PLAN_TYPES.map(t => `<option ${t === it.ty ? "selected" : ""}>${t}</option>`).join("")}</select></td>
-      <td><input class="pinput ppl" value="${escapeHtml(it.pillar).replace(/"/g, "&quot;")}" ${dis}></td>
-      <td class="pstat">${it.status === "applied" ? `<span class="pill p-ok">✓ ${escapeHtml(it.id || "")}</span>` : `<span class="pill p-idle">${T("plan_draft")}</span>`}</td>
-      <td>${detail}${it.designed ? `<span class="pill p-ok" title="${T("plan_designed")}">🎨 ${T("plan_designed")}</span>` : ""}</td>
-    </tr>`;
+      <td class="pstat">${it.designed ? `<span class="pill p-ok">🎨 ${T("plan_designed")}</span>` : `<span class="pill p-idle">${T("plan_draft")}</span>`}</td>
+      <td class="planrowacts" style="white-space:nowrap">${hookBtn}<button class="btn ghost sm capbtn" data-key="${escapeHtml(it.key)}" title="${T("plan_caption")}">📝</button>${it.designed ? `<button class="btn ghost sm designone" data-key="${escapeHtml(it.key)}" title="${T("plan_redesign")}">↻</button>` : `<button class="btn sm designone" data-key="${escapeHtml(it.key)}">🎨 ${T("plan_design")}</button>`}</td>
+    </tr>
+    <tr class="caprow" data-caprow="${escapeHtml(it.key)}" style="display:none"><td colspan="7"><div style="padding:.3rem 0 .6rem"><label class="mut" style="display:block;margin-bottom:.25rem">📝 ${T("plan_caption")} — ${escapeHtml(it.t)}</label><textarea class="pinput pcapedit" data-key="${escapeHtml(it.key)}" rows="3" style="width:100%;resize:vertical" placeholder="${T("plan_caption_ph")}" ${dis}>${escapeHtml(it.cap || "")}</textarea></div></td></tr>`;
   }).join("");
   C.innerHTML = `<div class="planwrap">${tabBar}
     <div class="pcard nofloat planhead"><div>
@@ -510,23 +510,33 @@ async function renderPlan(C) {
       <span>💡</span><input class="pinput" id="ideain" placeholder="${T("idea_ph")}" style="flex:1;min-width:14rem" autocomplete="off">
       <button class="btn sm" id="ideago">${T("idea_add")}</button></div>
     ${planViewMode === "calendar" ? planCalendar(plan) : `<div class="tablewrap"><table class="plantable"><thead><tr>
-      <th>${T("plan_date")}</th><th>${T("plan_day")}</th><th>${T("plan_time")}</th><th>${T("plan_title")}</th><th>${T("plan_type")}</th><th>${T("plan_pillar")}</th><th>${T("plan_status")}</th><th></th>
+      <th>${T("plan_date")}</th><th>${T("plan_day")}</th><th>${T("plan_time")}</th><th>${T("plan_title")}</th><th>${T("plan_type")}</th><th>${T("plan_status")}</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table></div>`}
     <div class="mut" id="planmsg" style="margin-top:.6rem">${planViewMode === "calendar" ? T("plan_cal_hint") : ""}</div></div>`;
   C.querySelectorAll("[data-pv]").forEach(b => b.onclick = () => { planViewMode = b.dataset.pv; renderPlan(C); });
   if (planViewMode === "calendar") bindCalendarDnD(C, plan, active.key);
   bindTabs();
   C.querySelectorAll(".pdet").forEach(b => b.onclick = () => openCap(b.dataset.cap));
+  // 📝 toggle the inline caption editor for a plan row
+  C.querySelectorAll(".capbtn").forEach(b => b.onclick = () => {
+    const row = C.querySelector(`.caprow[data-caprow="${b.dataset.key}"]`);
+    if (!row) return;
+    const open = row.style.display !== "none";
+    row.style.display = open ? "none" : "table-row";
+    if (!open) row.querySelector("textarea")?.focus();
+  });
 
   const collect = () => {
     // Calendar mode has no table rows — its edits already live on plan.items
     // (updated on drop). Reading the DOM there would wipe the month.
     if (planViewMode === "calendar") return { ...plan };
-    return { ...plan, items: [...C.querySelectorAll("tbody tr")].map(tr => {
+    return { ...plan, items: [...C.querySelectorAll("tbody tr[data-key]")].map(tr => {
       const key = tr.dataset.key, old = plan.items.find(i => i.key === key) || {};
+      const capEl = C.querySelector(`.pcapedit[data-key="${key}"]`);
+      const ty = tr.querySelector(".pty").value;
       return { ...old, key, day: Math.min(Math.max(parseInt(tr.querySelector(".pday").value, 10) || old.day || 1, 1), dim),
         time: tr.querySelector(".ptime").value, t: tr.querySelector(".pt").value.trim(),
-        ty: tr.querySelector(".pty").value, pillar: tr.querySelector(".ppl").value.trim() };
+        ty, pillar: ty, cap: capEl ? capEl.value : (old.cap || "") };
     }) };
   };
   const save = async () => {
@@ -535,6 +545,19 @@ async function renderPlan(C) {
     return r.ok;
   };
   $("#plansave").onclick = save;
+  // 🎨 design ONE plan item on demand → saves the plan first (so the edited
+  // title/caption are used), then generates the design into «الاعتماد».
+  C.querySelectorAll(".designone").forEach(b => b.onclick = async () => {
+    const key = b.dataset.key, label = b.innerHTML;
+    b.disabled = true; b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
+    await save();
+    const r = await fetch("/api/plan/design-item", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ month: active.key, key }) }).then(x => x.json()).catch(() => null);
+    if (r && r.ok) {
+      try { S = await fetch("/api/state").then(x => x.json()); } catch (e) {}
+      $("#planmsg").textContent = "✓ " + T("plan_design_done");
+      renderPlan(C);
+    } else { b.disabled = false; b.innerHTML = label; $("#planmsg").textContent = "⚠ " + ((r && r.error) || ""); }
+  });
   const addIdea = async () => {
     const inp = $("#ideain"), text = inp.value.trim(); if (!text) return;
     const b = $("#ideago"); b.disabled = true; b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
@@ -548,7 +571,7 @@ async function renderPlan(C) {
     const taken = new Set(plan.items.filter(i => i.status === "applied").map(i => +i.day));
     (S.queue || []).forEach(p => { const m = (p.date || "").match(new RegExp(`^${active.key}-(\\d{2})`)); if (m) taken.add(+m[1]); });
     let day = 2;
-    C.querySelectorAll("tbody tr").forEach(tr => {
+    C.querySelectorAll("tbody tr[data-key]").forEach(tr => {
       if (tr.classList.contains("applied")) return;
       while (taken.has(day) && day < dim) day += 1;
       tr.querySelector(".pday").value = Math.min(day, dim);
