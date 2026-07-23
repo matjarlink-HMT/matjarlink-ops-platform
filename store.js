@@ -1,5 +1,5 @@
 // Shared notes/approvals store — persisted to JSON files so all users/devices
-// hitting this server see the same review state (Ibrahim + Marwa).
+// hitting this server see the same review state (الإدارة).
 // Persistence: attach a Railway Volume at /data; files are written under
 // /data/store (a subdirectory — see note below). The old per-file *_FILE env
 // vars are no longer used.

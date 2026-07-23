@@ -26,6 +26,12 @@ async function getLogo() {
   if (LOGO === undefined) { try { LOGO = await loadImage(path.join(__dirname, "..", "public", "logo-full.png")); } catch (e) { LOGO = null; } }
   return LOGO;
 }
+// Official WHITE logo (outlined bags, transparent bg) for dark backgrounds.
+let LOGO_WHITE;
+async function getWhiteLogo() {
+  if (LOGO_WHITE === undefined) { try { LOGO_WHITE = await loadImage(path.join(__dirname, "..", "public", "logo-white.png")); } catch (e) { LOGO_WHITE = null; } }
+  return LOGO_WHITE;
+}
 // White (or any-color) silhouette of the logo lockup — for dark reveal slides.
 let LOGO_TINTS = {};
 async function getTintedLogo(color) {
@@ -476,7 +482,7 @@ export async function renderEditorial({ bg = null, kicker = "متجرلينك", 
     if (layout === "center") drawOmaniLattice(ctx, 0, 0, W, Math.round(H * 0.5), mc, light ? 0.08 : 0.1);
     else drawOmaniLattice(ctx, 0, 0, Math.round(W * 0.52), H, mc, light ? 0.08 : 0.1);
   }
-  const logo = light ? await getLogo() : await getTintedLogo("#ffffff");
+  const logo = light ? await getLogo() : (await getWhiteLogo()) || await getTintedLogo("#ffffff");
   const drawPop = (rx, y, ps, center) => {
     ctx.font = ps + "px TajawalXB";
     const pw = ctx.measureText(pop).width, padx = 26, bh = ps * 1.14;
@@ -492,7 +498,7 @@ export async function renderEditorial({ bg = null, kicker = "متجرلينك", 
     ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.fillText(cta, bx + pw / 2, y + 58);
   };
   if (layout === "center") {
-    if (logo) ctx.drawImage(logo, W / 2 - 120, 30, 240, 240);
+    if (logo) { const lw = 240, lh = lw * (logo.height / logo.width); ctx.drawImage(logo, W / 2 - lw / 2, 34, lw, lh); }
     ctx.textAlign = "center"; let y = Math.round(H * 0.24);
     if (kicker) { ctx.font = "36px TajawalB"; ctx.fillStyle = ORANGEB; ctx.fillText(kicker, W / 2, y); y += 22; }
     let size = 92; ctx.font = size + "px TajawalXB";
@@ -503,7 +509,7 @@ export async function renderEditorial({ bg = null, kicker = "متجرلينك", 
     if (pop) { drawPop(0, y, Math.round(size * 0.9), true); }
     if (cta) drawCta(0, H - 196, true);
   } else {
-    if (logo) ctx.drawImage(logo, 52, 30, 244, 244);
+    if (logo) { const lw = 244, lh = lw * (logo.height / logo.width); ctx.drawImage(logo, 52, 34, lw, lh); }
     const RX = Math.round(W * 0.55), maxW = Math.round(W * 0.47); // keep text off the right-side hero
     ctx.textAlign = "right"; let y = Math.round(H * 0.42);
     if (kicker) { ctx.font = "36px TajawalB"; ctx.fillStyle = ORANGEB; ctx.fillText(kicker, RX, y); y += 22; }
