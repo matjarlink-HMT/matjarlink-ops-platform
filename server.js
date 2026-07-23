@@ -573,11 +573,17 @@ app.get("/media/clothing/:id", (req, res) => {
   res.setHeader("Content-Type", "image/png"); res.setHeader("Cache-Control", "public, max-age=86400");
   fs.createReadStream(f).pipe(res);
 });
-// Pick uploaded garment references matching a character prompt (by gender/type),
-// returning inline base64 refs + a prompt clause instructing exact-match dress.
+// The wardrobe (خزانة الملابس): owner-uploaded Omani garments drawn into EVERY
+// design that features an Omani person, so characters always wear the real dress.
+// Returns inline base64 refs + a prompt clause instructing exact-match dress.
+// Skips non-person scenes (device/card/shop) and the Egyptian (non-Omani dress).
 function clothingRefsFor(text) {
   const list = store.getClothing(); if (!list.length) return { refs: [], note: "" };
-  const isWoman = /woman|abaya|hijab/i.test(text);
+  const t = String(text || "");
+  if (/Egyptian|مصري|buttoned shirt/i.test(t)) return { refs: [], note: "" }; // wears shirt+trousers, not Omani garments
+  const isWoman = /woman|abaya|hijab|سيدة|تاجرة|امرأة/i.test(t);
+  const isPerson = isWoman || /\bman\b|person|owner|employee|merchant|shopkeeper|portrait|dishdasha|kummah|massar|رجل|تاجر|شخص/i.test(t);
+  if (!isPerson) return { refs: [], note: "" };
   const want = isWoman ? ["abaya", "hijab"] : ["massar", "kummah", "dishdasha", "furakha"];
   let picks = list.filter((c) => want.includes(c.type));
   if (!picks.length) picks = list;
@@ -743,7 +749,8 @@ app.post("/api/proposals/regenerate", async (req, res) => {
       store.saveProposal({ ...p, previewUrl: ed.url });
     } else if (p.kind === "character") {
       const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
-      const { buffer } = await gemini.generateImage(p.prompt + (note ? ` ${note}.` : ""));
+      const { refs, note: cnote } = clothingRefsFor(p.prompt);
+      const { buffer } = await gemini.generateImage(p.prompt + (note ? ` ${note}.` : "") + cnote, refs);
       const name = `_propchar-${p.id}`, file = `${name}.png`;
       const fd = fs.openSync(path.join(dir, file), "w"); try { fs.writeSync(fd, buffer); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
       store.saveProposal({ ...p, file, previewUrl: `/media/design/${name}?v=${Date.now()}` });
@@ -782,7 +789,8 @@ function editorialScene(text, light) {
 }
 // Render an editorial design to /media/design/<id>. Returns { url }.
 async function makeEditorial({ light, layout, kicker, headline, pop, cta, prompt, id }) {
-  const { buffer } = await gemini.generateImage(prompt);
+  const { refs, note } = clothingRefsFor(prompt);   // draw dress from the wardrobe when the scene has a person
+  const { buffer } = await gemini.generateImage(prompt + note, refs);
   const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
   const bgFile = path.join(dir, `_edbg-${id}.png`);
   const fd0 = fs.openSync(bgFile, "w"); try { fs.writeSync(fd0, buffer); fs.fsyncSync(fd0); } finally { fs.closeSync(fd0); }
@@ -813,7 +821,8 @@ async function makeEditorialReel({ id, light = false, headline, pop, cta, valueL
   const frames = [], junk = [];
   try {
     for (let i = 0; i < 3; i++) {
-      const { buffer } = await gemini.generateImage(scenePrompts[i]);
+      const { refs, note } = clothingRefsFor(scenePrompts[i]);   // wardrobe dress on the person scene
+      const { buffer } = await gemini.generateImage(scenePrompts[i] + note, refs);
       const bgFile = path.join(dir, `_rlbg-${id}-${i}.png`); junk.push(bgFile);
       let fd0 = fs.openSync(bgFile, "w"); try { fs.writeSync(fd0, buffer); fs.fsyncSync(fd0); } finally { fs.closeSync(fd0); }
       const png = await eng.renderEditorial({ bg: bgFile, h: 1920, layout: "center", light, kicker: texts[i].kicker || "متجرلينك", headline: texts[i].headline, pop: texts[i].pop, cta: "", biz: store.getBrandData() });
