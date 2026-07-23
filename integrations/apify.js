@@ -4,7 +4,9 @@
 // The owner pastes an Apify API token as APIFY_TOKEN (Connections page).
 import * as store from "../store.js";
 
-const TOKEN = () => store.cfgGet("APIFY_TOKEN");
+// Accept the common env-var spellings so a token set in Railway under any of
+// these names is picked up (cfgGet checks process.env first, then saved config).
+const TOKEN = () => store.cfgGet("APIFY_TOKEN") || store.cfgGet("APIFY_API_TOKEN") || store.cfgGet("APIFY_KEY");
 // Default IG scraper actor; override with APIFY_ACTOR if desired (user~actor form).
 export const defaultActor = () => store.cfgGet("APIFY_ACTOR") || "apify/instagram-scraper";
 export const apifyReady = () => Boolean(TOKEN());

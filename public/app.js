@@ -637,21 +637,36 @@ function bindDzDelete(C, refresh) {
     refresh();
   });
 }
+// Select-then-delete: checkboxes on deletable cards + one "delete selected" button.
+const dzBulkBar = () => `<div class="dzbulk" style="display:flex;gap:.6rem;align-items:center;margin:.2rem 0 .8rem;flex-wrap:wrap"><button class="btn ghost sm" id="delsel" disabled>🗑 ${T("dz_del_sel")} (<span id="selcount">0</span>)</button><span class="mut">${T("dz_del_sel_hint")}</span></div>`;
+function bindBulkDelete(C, refresh) {
+  const upd = () => { const n = C.querySelectorAll(".selchk:checked").length; const b = C.querySelector("#delsel"); if (b) { b.disabled = !n; } const c = C.querySelector("#selcount"); if (c) c.textContent = n; };
+  C.querySelectorAll(".selchk").forEach(ch => ch.onchange = upd);
+  const del = C.querySelector("#delsel");
+  if (del) del.onclick = async () => {
+    const sel = [...C.querySelectorAll(".selchk:checked")];
+    if (!sel.length || !confirm(T("dz_del_confirm_n").replace("{n}", sel.length))) return;
+    del.disabled = true; del.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
+    for (const ch of sel) await fetch("/api/design/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: ch.dataset.kind, id: ch.dataset.id }) }).catch(() => {});
+    refresh();
+  };
+  upd();
+}
 async function renderTemplatesTab(C) {
   C.innerHTML = `<div class="loading">…</div>`;
   let data = { templates: ["classic", "luxe", "spotlight"], active: "classic", custom: [] };
   try { data = await fetch("/api/templates").then(r => r.json()); } catch (e) {}
   const v = Date.now();
   const tcard = (id, name, on, del) => `<div class="tplcard ${on ? "on" : ""}">
-      <div class="tplhd"><span class="tplname">${name}</span>${on ? `<span class="pill p-ok">✓ ${T("tpl_active")}</span>` : ""}</div>
+      <div class="tplhd"><span class="tplname">${del ? `<input type="checkbox" class="selchk" data-kind="template" data-id="${id}" title="${T("dz_select")}"> ` : ""}${name}</span>${on ? `<span class="pill p-ok">✓ ${T("tpl_active")}</span>` : ""}</div>
       <div class="tplshots"><img loading="lazy" src="/media/template/${id}/cover?v=${v}"><img loading="lazy" src="/media/template/${id}/slide?v=${v}"></div>
       <div style="display:flex;gap:.35rem;margin-top:.3rem">
         ${on ? `<button class="btn ok sm" disabled>✓ ${T("tpl_active")}</button>` : `<button class="btn sm tplpick" data-tpl="${id}" data-tplname="${escapeHtml(name)}">${T("tpl_use")}</button>`}
-        ${del ? `<button class="btn ghost sm dzdel" data-kind="template" data-id="${id}">🗑</button>` : ""}
       </div></div>`;
   const cards = data.templates.map(t => tcard(t, (TEMPLATE_META[t]?.emoji || "🎨") + " " + T("tpl_" + t), t === data.active, false)).join("")
     + (data.custom || []).map(c => tcard(c.id, "🌙 " + escapeHtml(c.name), c.id === data.active, true)).join("");
-  C.innerHTML = `<div class="note-info">🎨 ${T("tpl_hint")}</div><div class="grid g3 tplgrid">${cards}</div><div class="mut" id="tplmsg" style="margin-top:.8rem"></div>`;
+  const anyDel = (data.custom || []).length > 0;
+  C.innerHTML = `<div class="note-info">🎨 ${T("tpl_hint")}</div>${anyDel ? dzBulkBar() : ""}<div class="grid g3 tplgrid">${cards}</div><div class="mut" id="tplmsg" style="margin-top:.8rem"></div>`;
   C.querySelectorAll(".tplpick").forEach(b => b.onclick = async () => {
     const t = b.dataset.tpl;
     if (!confirm(T("tpl_confirm").replace("{t}", b.dataset.tplname || t))) return;
@@ -660,7 +675,7 @@ async function renderTemplatesTab(C) {
     if (r && r.ok) { renderTemplatesTab(C); const m = $("#tplmsg"); if (m) m.textContent = "✓ " + T("tpl_saved"); }
     else { b.disabled = false; b.textContent = T("tpl_use"); }
   });
-  bindDzDelete(C, () => renderTemplatesTab(C));
+  bindBulkDelete(C, () => renderTemplatesTab(C));
 }
 async function renderBrandKit(C) {
   C.innerHTML = `<div class="loading">…</div>`;
@@ -809,17 +824,29 @@ async function renderCharacters(host, activeTpl) {
   const cards = d.characters.map(c => {
     const on = c.id === d.active;
     return `<div class="tplcard ${on ? "on" : ""}" data-char="${c.id}">
-      <div class="tplhd"><span class="tplname">🧑🏻 ${escapeHtml(c.label)}</span>${on ? `<span class="pill p-ok">✓ ${T("tpl_active")}</span>` : ""}</div>
+      <div class="tplhd"><span class="tplname"><input type="checkbox" class="selchk" data-kind="character" data-id="${c.id}" title="${T("dz_select")}"> 🧑🏻 ${escapeHtml(c.label)}</span>${on ? `<span class="pill p-ok">✓ ${T("tpl_active")}</span>` : ""}</div>
       <div class="tpldesc">${escapeHtml(c.dress)}</div>
       <div class="tplshots"><img loading="lazy" src="${c.thumb}?v=${v}" alt="character" style="grid-column:span 2;object-fit:cover;max-height:16rem"></div>
       <div style="display:flex;gap:.35rem;margin-top:.3rem">
         ${on ? `<button class="btn ok sm" disabled>✓ ${T("tpl_active")}</button>` : `<button class="btn sm charpick" data-char="${c.id}">${T("char_use")}</button>`}
-        <button class="btn ghost sm dzdel" data-kind="character" data-id="${c.id}">🗑</button>
       </div>
     </div>`;
   }).join("");
-  host.innerHTML = `<h3 style="margin:.2rem 0 .5rem">🧑🏻 ${T("char_title")}</h3>
+  host.innerHTML = `
+    <div class="sec-h" style="margin-top:.2rem"><h3>👕 ${T("cloth_title")}</h3></div>
+    <div class="note-info">${T("cloth_hint")}</div>
+    <div class="pcard nofloat" style="margin:.6rem 0">
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+        <select class="psel" id="cltype" style="max-width:12rem">${CLOTHING_TYPES.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
+        <input class="pinput" id="cllabel" placeholder="${T("cloth_label")}" style="max-width:14rem" autocomplete="off">
+        <input type="file" id="clfile" accept="image/*" style="max-width:16rem">
+        <button class="btn sm" id="clup">⬆ ${T("cloth_upload")}</button>
+        <span class="ok-s" id="clmsg"></span></div></div>
+    <div class="grid g3 tplgrid" id="clgrid">${clothCards(cloth.clothing || [])}</div>
+
+    <h3 style="margin:1.6rem 0 .5rem">🧑🏻 ${T("char_title")}</h3>
     <div class="note-info">${T("char_hint")}</div>
+    ${dzBulkBar()}
     <div class="grid g3 tplgrid">${cards}
       <div class="tplcard ${noneOn ? "on" : ""}">
         <div class="tplhd"><span class="tplname">🚫 ${T("char_none")}</span>${noneOn ? `<span class="pill p-ok">✓</span>` : ""}</div>
@@ -827,17 +854,7 @@ async function renderCharacters(host, activeTpl) {
         <div class="tplshots" style="min-height:6rem;display:flex;align-items:center;justify-content:center;color:var(--mut)">—</div>
         ${noneOn ? `<button class="btn ok sm" disabled>✓ ${T("tpl_active")}</button>` : `<button class="btn sm charpick" data-char="">${T("char_use")}</button>`}
       </div>
-    </div><div class="mut" id="charmsg" style="margin-top:.6rem"></div>
-    <div class="sec-h" style="margin-top:1.6rem"><h3>👕 ${T("cloth_title")}</h3></div>
-    <div class="note-info">${T("cloth_hint")}</div>
-    <div class="pcard nofloat" style="margin:.6rem 0">
-      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
-        <select class="psel" id="cltype">${CLOTHING_TYPES.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
-        <input class="pinput" id="cllabel" placeholder="${T("cloth_label")}" style="max-width:14rem" autocomplete="off">
-        <input type="file" id="clfile" accept="image/*" style="max-width:16rem">
-        <button class="btn sm" id="clup">⬆ ${T("cloth_upload")}</button>
-        <span class="ok-s" id="clmsg"></span></div></div>
-    <div class="grid g3 tplgrid" id="clgrid">${clothCards(cloth.clothing || [])}</div>`;
+    </div><div class="mut" id="charmsg" style="margin-top:.6rem"></div>`;
   host.querySelectorAll(".charpick").forEach(b => b.onclick = async () => {
     b.disabled = true; b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
     const r = await fetch("/api/characters/set", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ character: b.dataset.char }) }).then(x => x.json()).catch(() => null);
@@ -845,7 +862,7 @@ async function renderCharacters(host, activeTpl) {
     else { b.disabled = false; b.textContent = T("char_use"); }
   });
   bindClothing(host, activeTpl);
-  bindDzDelete(host, () => renderCharacters(host, activeTpl));
+  bindBulkDelete(host, () => renderCharacters(host, activeTpl));
 }
 const clothTypeLabel = (t) => (CLOTHING_TYPES.find(([v]) => v === t) || [, t])[1] || t;
 function clothCards(list) {
