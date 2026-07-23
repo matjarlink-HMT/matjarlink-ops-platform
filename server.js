@@ -977,7 +977,9 @@ async function designPlanItem(plan, it) {
   const fmt = it.format || "منشور";
   let previewUrl, images = [], qty;
   if (fmt.includes("ريل")) {
-    const ed = await makeEditorialReel({ id: pid, light, headline, pop: "", cta, valueLine: it.desc || it.cap });
+    // valueLine is the reel's short on-screen middle line — a product value prop,
+    // NEVER the idea description (that only briefs the design, it is never text).
+    const ed = await makeEditorialReel({ id: pid, light, headline, pop: "", cta, valueLine: "متجر · كاشير · محاسبة" });
     previewUrl = ed.url; qty = "ريل نوعي";
   } else if (fmt.includes("كاروسيل")) {
     const ed = await makeEditorialCarousel({ id: pid, light, headline, cta, points: it.points });
@@ -1087,7 +1089,7 @@ app.post("/api/studio/generate", async (req, res) => {
       if (!gemini.geminiReady()) throw new Error("قالب «الإعلاني» يحتاج ربط Gemini أولاً");
       const light = template === "editorial-white";
       if (type === "reel") {
-        const r = await makeEditorialReel({ id, light, headline: content.t, pop: content.t2 || "قريبًا", cta: content.cta, valueLine: content.cap });
+        const r = await makeEditorialReel({ id, light, headline: content.t, pop: content.t2 || "قريبًا", cta: content.cta, valueLine: "متجر · كاشير · محاسبة" });
         item.mediaUrl = r.url; item.images = [];
       } else {
         const sc = editorialScene([content.t, idea, description].join(" "), light);
