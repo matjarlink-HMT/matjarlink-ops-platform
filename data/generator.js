@@ -110,7 +110,7 @@ export async function generatePlan(monthLabel = "", year = 2026, month = 1, lang
 أنت وكيل التخطيط في متجرلينك. ضع خطة محتوى إنستغرام لشهر «${monthLabel}» — ١٢ منشوراً موزّعة كل ~يومين بفترات مسائية، تدوّر أنواع المحتوى الأربعة (تشويق/توعية/معلومة/إحصائيات) بتوازن.${perf ? `\n${perf}` : ""}
 أعد **JSON فقط** بهذا الشكل. حقل ty يجب أن يكون واحداً من: تشويق، توعية، معلومة، إحصائيات — حصراً:
 {"goal":"<هدف الشهر بجملة>","pillars":["تشويق","توعية","معلومة","إحصائيات"],"concepts":[{"t":"<عنوان قصير صادم>","ty":"<تشويق|توعية|معلومة|إحصائيات>","pillar":"<نفس النوع>","day":<رقم اليوم>,"hook":"<هوك قصير يوقف السكرول>","cap":"<كابشن مختصر جاهز باللهجة العُمانية، سطر أو سطران>"},... 12 عنصر]}`;
-  const out = parseJSON(await chat([{ role: "user", text: "ضع الخطة الآن. JSON فقط." }], system));
+  const out = parseJSON(await chat([{ role: "user", text: "ضع الخطة الآن. JSON فقط." }], system, { maxTokens: 6000 }));
   if (!out || !Array.isArray(out.concepts)) return null;
   return out;
 }
