@@ -88,12 +88,12 @@ function drawLogo(ctx, img) {
 }
 // Branded footer: @matjarlink · IG glyph · phone · WhatsApp glyph (centered).
 // light=true renders the inverted (dark background) variant of the reveal slide.
-function drawFooter(ctx, W, H, light = false) {
+function drawFooter(ctx, W, H, light = false, biz = {}) {
   const TXT = light ? "#FBE3C8" : PLUM, WA = light ? ORANGE : MAGENTA;
   const y = H - 96;
   ctx.textAlign = "left"; ctx.direction = "ltr";
   ctx.font = "42px TajawalXB"; ctx.fillStyle = TXT;
-  const handle = "matjarlink", phone = "97426620";
+  const handle = biz.instagram || "matjarlink", phone = biz.phone || "97426620";
   const hw = ctx.measureText(handle).width, pw = ctx.measureText(phone).width;
   const igS = 44, waS = 44, gap = 22, dot = 8;
   const total = hw + gap + igS + gap + dot + gap + pw + gap + waS;
@@ -445,7 +445,7 @@ function drawOmaniLattice(ctx, x, y, w, h, color, alpha, cell = 118) {
   }
   ctx.restore(); ctx.globalAlpha = 1;
 }
-export async function renderEditorial({ bg = null, kicker = "متجرلينك", headline = "", pop = "", cta = "", light = false, layout = "side", motif = false, h = 1350 } = {}) {
+export async function renderEditorial({ bg = null, kicker = "متجرلينك", headline = "", pop = "", cta = "", light = false, layout = "side", motif = false, h = 1350, biz = {} } = {}) {
   const W = 1080, H = h; // h=1350 for posts (4:5), h=1920 for reel frames (9:16)
   const cv = createCanvas(W, H); const ctx = cv.getContext("2d");
   ctx.fillStyle = light ? "#FBEEDF" : AUB; ctx.fillRect(0, 0, W, H);
@@ -521,6 +521,6 @@ export async function renderEditorial({ bg = null, kicker = "متجرلينك", 
     if (pop) { drawPop(RX, y, Math.round(size * 0.9), false); y += lh * 0.95; }
     if (cta) { y += 24; drawCta(RX, y, false); }
   }
-  drawFooter(ctx, W, H, !light);
+  drawFooter(ctx, W, H, !light, biz);
   return cv.toBuffer("image/png");
 }

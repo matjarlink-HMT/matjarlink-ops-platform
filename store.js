@@ -190,6 +190,26 @@ export function saveProposal(p) {
 }
 export function setProposalStatus(id, status) { if (props[id]) { props[id].status = status; persistProps(); } return props[id]; }
 
+// ── Hidden items ── soft-delete for approved templates/characters (builtin or
+// custom). A deleted id is hidden from the lists but kept for undo. cfg-backed.
+export function getHidden(kind) { return String(cfgGet("HIDDEN_" + kind) || "").split(",").filter(Boolean); }
+export function isHidden(kind, id) { return getHidden(kind).includes(id); }
+export function hideItem(kind, id) { const s = new Set(getHidden(kind)); s.add(id); cfgSet({ ["HIDDEN_" + kind]: [...s].join(",") }); }
+export function unhideItem(kind, id) { const s = new Set(getHidden(kind)); s.delete(id); cfgSet({ ["HIDDEN_" + kind]: [...s].join(",") }); }
+export function removeCustomTemplate(id) { const i = ctpl.findIndex((t) => t.id === id); if (i >= 0) { ctpl.splice(i, 1); persistCtpl(); } }
+export function removeCustomCharacter(id) { const i = cchar.findIndex((c) => c.id === id); if (i >= 0) { cchar.splice(i, 1); persistCchar(); } }
+
+// ── Brand data ── business info inserted into designs (footer). cfg-backed.
+export function getBrandData() {
+  return {
+    instagram: cfgGet("BIZ_IG") || "matjarlink",
+    phone: cfgGet("BIZ_PHONE") || "97426620",
+    email: cfgGet("BIZ_EMAIL") || "",
+    website: cfgGet("BIZ_WEB") || "",
+    whatsapp: cfgGet("BIZ_WA") || "",
+  };
+}
+
 // ── Fresh start ── wipe content-state (plans, studio drafts, proposals, content
 // overrides, review notes) for a clean rebuild under a new identity. Keeps cfg
 // (API keys), characters, custom templates, and the published log.

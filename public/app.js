@@ -24,7 +24,7 @@ const GROUPS = [
   { items: ["needs"] },
   { items: ["overview"] },
   { label: "g_manage", items: ["approvals", "manager", "agents"] },
-  { label: "g_content", items: ["studio", "pipeline", "plan", "templates"] },
+  { label: "g_content", items: ["templates", "plan", "pipeline"] },
   { label: "g_engage", items: ["comments", "messages", "leads"] },
   { label: "g_perf", items: ["analytics", "camp"] },
   { label: "g_settings", items: ["settings"] }
@@ -368,9 +368,20 @@ async function renderPlan(C) {
   if (!tabs.some(t => t.key === nextKey)) tabs.push({ key: nextKey, label: `${ARMONTHS_CLIENT[nm - 1]} ${ny}`, kind: "new" });
   if (!planActiveKey || !tabs.some(t => t.key === planActiveKey)) planActiveKey = plans[nextKey] ? nextKey : (tabs.find(t => t.kind === "plan")?.key || tabs[0]?.key);
   const active = tabs.find(t => t.key === planActiveKey) || tabs[0];
-  const tabBar = `<div class="montabs">${tabs.map(t => `<button class="montab ${t.key === active.key ? "on" : ""}" data-mk="${t.key}">${escapeHtml(t.label)}${t.kind === "current" ? " • " + T("plan_this_month") : t.kind === "new" && !plans[t.key] ? " +" : ""}</button>`).join("")}</div>`;
+  const tabBar = `<div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap"><div class="montabs" style="margin:0">${tabs.map(t => `<button class="montab ${t.key === active.key ? "on" : ""}" data-mk="${t.key}">${escapeHtml(t.label)}${t.kind === "current" ? " • " + T("plan_this_month") : t.kind === "new" && !plans[t.key] ? " +" : ""}</button>`).join("")}</div><button class="btn sm" id="planregen">✨ ${T("plan_regen")}</button></div><div class="mut" id="planregmsg" style="margin:.2rem 0 .6rem"></div>`;
 
-  const bindTabs = () => C.querySelectorAll("[data-mk]").forEach(b => b.onclick = () => { planActiveKey = b.dataset.mk; renderPlan(C); });
+  const bindTabs = () => {
+    C.querySelectorAll("[data-mk]").forEach(b => b.onclick = () => { planActiveKey = b.dataset.mk; renderPlan(C); });
+    const rg = $("#planregen");
+    if (rg) rg.onclick = async () => {
+      if (!confirm(T("plan_regen_confirm"))) return;
+      rg.disabled = true; rg.innerHTML = `<span class="dots"><i></i><i></i><i></i></span> ${T("plan_regen_running")}`;
+      const r = await fetch("/api/plan/regenerate", { method: "POST" }).then(x => x.json()).catch(() => null);
+      const m = $("#planregmsg");
+      if (r && r.ok) { if (m) m.textContent = `✓ ${r.posts || 0} ${T("plan_regen_done")}`; }
+      else { if (m) m.textContent = "⚠ " + ((r && r.error) || ""); rg.disabled = false; rg.innerHTML = `✨ ${T("plan_regen")}`; }
+    };
+  };
   const fullDate = (p, it) => `${p.year}-${String(p.month).padStart(2, "0")}-${String(it.day).padStart(2, "0")}`;
   const weekdayOf = (p, it) => { const wd = WEEKDAYS_CLIENT[lang] || WEEKDAYS_CLIENT.ar; return wd[new Date(p.year, p.month - 1, it.day).getDay()]; };
   const statusPill = (it) => it.status === "published" ? (it.permalink ? `<a class="pill p-ok" target="_blank" href="${it.permalink}">📤 ${T("s_published")} ↗</a>` : `<span class="pill p-ok">📤 ${T("s_published")}</span>`) : it.status === "approved" ? `<span class="pill p-ok">✓ ${T("s_approved")}</span>` : it.status === "held" ? `<span class="pill p-warn">✎ ${T("held")}</span>` : `<span class="pill p-info">🗓 ${T("plan_scheduled")}</span>`;
@@ -556,40 +567,89 @@ const TEMPLATE_META = {
   luxe: { emoji: "👑", tag: "p-new" },
   spotlight: { emoji: "🖼", tag: "p-info" },
 };
-async function renderTemplates(C) {
+// ── «التصميم» ── one page, tabbed: studio · templates · characters · brand kit · style.
+let designTab = "studio";
+function renderTemplates(C) {
+  const tabs = [["studio", "🎨 " + T("dz_studio")], ["templates", "🖼 " + T("dz_templates")], ["characters", "🧑🏻 " + T("dz_characters")], ["brand", "🎯 " + T("dz_brand")], ["style", "✨ " + T("dz_style")]];
+  C.innerHTML = `<div class="dztabs">${tabs.map(([k, l]) => `<button type="button" class="dztab ${k === designTab ? "on" : ""}" data-dz="${k}">${l}</button>`).join("")}</div><div id="dzbody"></div>`;
+  C.querySelectorAll(".dztab").forEach(b => b.onclick = () => { designTab = b.dataset.dz; C.querySelectorAll(".dztab").forEach(x => x.classList.remove("on")); b.classList.add("on"); dzRender(); });
+  dzRender();
+}
+function dzRender() {
+  const body = $("#dzbody"); if (!body) return;
+  if (designTab === "studio") renderStudio(body);
+  else if (designTab === "characters") renderCharacters(body, "spotlight");
+  else if (designTab === "brand") renderBrandKit(body);
+  else if (designTab === "style") body.innerHTML = dzStyle();
+  else renderTemplatesTab(body);
+}
+function bindDzDelete(C, refresh) {
+  C.querySelectorAll(".dzdel").forEach(b => b.onclick = async () => {
+    if (!confirm(T("dz_del_confirm"))) return;
+    await fetch("/api/design/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: b.dataset.kind, id: b.dataset.id }) }).catch(() => {});
+    refresh();
+  });
+}
+async function renderTemplatesTab(C) {
   C.innerHTML = `<div class="loading">…</div>`;
-  let data = { templates: ["classic", "luxe", "spotlight"], active: "classic" };
+  let data = { templates: ["classic", "luxe", "spotlight"], active: "classic", custom: [] };
   try { data = await fetch("/api/templates").then(r => r.json()); } catch (e) {}
   const v = Date.now();
-  const tcard = (id, name, on) => `<div class="tplcard ${on ? "on" : ""}" data-tpl="${id}" data-tplname="${escapeHtml(name)}">
+  const tcard = (id, name, on, del) => `<div class="tplcard ${on ? "on" : ""}">
       <div class="tplhd"><span class="tplname">${name}</span>${on ? `<span class="pill p-ok">✓ ${T("tpl_active")}</span>` : ""}</div>
-      <div class="tplshots">
-        <img loading="lazy" src="/media/template/${id}/cover?v=${v}" alt="cover">
-        <img loading="lazy" src="/media/template/${id}/slide?v=${v}" alt="slide">
-      </div>
-      ${on ? `<button class="btn ok sm" disabled>✓ ${T("tpl_active")}</button>` : `<button class="btn sm tplpick" data-tpl="${id}" data-tplname="${escapeHtml(name)}">${T("tpl_use")}</button>`}
-    </div>`;
-  const cards = data.templates.map(t => tcard(t, (TEMPLATE_META[t]?.emoji || "🎨") + " " + T("tpl_" + t), t === data.active)).join("")
-    + (data.custom || []).map(c => tcard(c.id, "🌙 " + escapeHtml(c.name), c.id === data.active)).join("");
-  C.innerHTML = `<div class="note-info">🎨 ${T("tpl_hint")}</div>
-    <div class="pcard nofloat" style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem">
-      <div style="flex:1;min-width:12rem"><b>🖼 ${T("canva_title")}</b><div class="mut">${T("canva_hint")}</div></div>
-      <button class="btn" id="canvabtn">🎨 ${T("canva_btn")}</button></div>
-    <div class="grid g3 tplgrid">${cards}</div>
-    <div class="mut" id="tplmsg" style="margin-top:.8rem"></div>
-    <div id="propsec" style="margin-top:1.6rem"></div>
-    <div id="charsec" style="margin-top:1.6rem"></div>`;
-  const cb = $("#canvabtn"); if (cb) cb.onclick = () => openCanva();
+      <div class="tplshots"><img loading="lazy" src="/media/template/${id}/cover?v=${v}"><img loading="lazy" src="/media/template/${id}/slide?v=${v}"></div>
+      <div style="display:flex;gap:.35rem;margin-top:.3rem">
+        ${on ? `<button class="btn ok sm" disabled>✓ ${T("tpl_active")}</button>` : `<button class="btn sm tplpick" data-tpl="${id}" data-tplname="${escapeHtml(name)}">${T("tpl_use")}</button>`}
+        ${del ? `<button class="btn ghost sm dzdel" data-kind="template" data-id="${id}">🗑</button>` : ""}
+      </div></div>`;
+  const cards = data.templates.map(t => tcard(t, (TEMPLATE_META[t]?.emoji || "🎨") + " " + T("tpl_" + t), t === data.active, false)).join("")
+    + (data.custom || []).map(c => tcard(c.id, "🌙 " + escapeHtml(c.name), c.id === data.active, true)).join("");
+  C.innerHTML = `<div class="note-info">🎨 ${T("tpl_hint")}</div><div class="grid g3 tplgrid">${cards}</div><div class="mut" id="tplmsg" style="margin-top:.8rem"></div>`;
   C.querySelectorAll(".tplpick").forEach(b => b.onclick = async () => {
     const t = b.dataset.tpl;
     if (!confirm(T("tpl_confirm").replace("{t}", b.dataset.tplname || t))) return;
     b.disabled = true; b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
     const r = await fetch("/api/templates/set", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ template: t }) }).then(x => x.json()).catch(() => null);
-    if (r && r.ok) { renderTemplates(C); const m = $("#tplmsg"); if (m) m.textContent = "✓ " + T("tpl_saved"); }
+    if (r && r.ok) { renderTemplatesTab(C); const m = $("#tplmsg"); if (m) m.textContent = "✓ " + T("tpl_saved"); }
     else { b.disabled = false; b.textContent = T("tpl_use"); }
   });
-  renderProposals($("#propsec"), C);
-  renderCharacters($("#charsec"), data.active);
+  bindDzDelete(C, () => renderTemplatesTab(C));
+}
+async function renderBrandKit(C) {
+  C.innerHTML = `<div class="loading">…</div>`;
+  let d = { data: {} }; try { d = await fetch("/api/branddata").then(r => r.json()); } catch (e) {}
+  const b = d.data || {};
+  const colors = [["#2D081E", "عنابي"], ["#F5821F", "برتقالي"], ["#9D1F60", "ماجنتا"], ["#FBE3C8", "كريمي"]];
+  C.innerHTML = `<div class="note-info">🎯 ${T("dz_brand_hint")}</div>
+    <div class="grid g2">
+      <div class="pcard nofloat"><h3 style="margin:.2rem 0 .6rem">🎨 ${T("dz_colors")}</h3>
+        <div style="display:flex;gap:.6rem;flex-wrap:wrap">${colors.map(([c, n]) => `<div style="text-align:center"><div style="width:3.4rem;height:3.4rem;border-radius:10px;background:${c};border:1px solid var(--line)"></div><div class="mut" style="font-size:.72rem;margin-top:.2rem">${n}<br>${c}</div></div>`).join("")}</div>
+        <h3 style="margin:1rem 0 .6rem">🔤 ${T("dz_fonts")}</h3><div class="mut">Tajawal — ExtraBold · Bold · Regular</div>
+        <h3 style="margin:1rem 0 .6rem">🛍 ${T("dz_logo")}</h3>
+        <div style="display:flex;gap:.6rem;align-items:center"><span style="background:var(--brand);padding:.7rem 1rem;border-radius:10px"><img src="/logo-white.png" style="height:60px"></span><img src="/logo-full.png" style="height:74px;background:#fff;padding:.3rem;border-radius:10px"></div>
+      </div>
+      <div class="pcard nofloat"><h3 style="margin:.2rem 0 .6rem">📇 ${T("dz_bizdata")}</h3>
+        <label class="slbl">Instagram</label><input id="bz_ig" class="sinput" value="${escapeHtml(b.instagram || "")}" placeholder="matjarlink">
+        <label class="slbl">${T("dz_phone")}</label><input id="bz_ph" class="sinput" value="${escapeHtml(b.phone || "")}">
+        <label class="slbl">${T("dz_wa")}</label><input id="bz_wa" class="sinput" value="${escapeHtml(b.whatsapp || "")}">
+        <label class="slbl">${T("dz_email")}</label><input id="bz_em" class="sinput" value="${escapeHtml(b.email || "")}">
+        <label class="slbl">${T("dz_web")}</label><input id="bz_web" class="sinput" value="${escapeHtml(b.website || "")}">
+        <button class="btn" id="bzsave" style="margin-top:.8rem;width:100%">💾 ${T("dz_save")}</button>
+        <div class="mut" id="bzmsg" style="margin-top:.5rem">${T("dz_biz_note")}</div></div>
+    </div>`;
+  $("#bzsave").onclick = async () => {
+    const body = { instagram: $("#bz_ig").value, phone: $("#bz_ph").value, whatsapp: $("#bz_wa").value, email: $("#bz_em").value, website: $("#bz_web").value };
+    const m = $("#bzmsg"); if (m) m.textContent = "…";
+    const r = await fetch("/api/branddata", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(x => x.json()).catch(() => null);
+    if (m) m.textContent = r && r.ok ? "✓ " + T("dz_saved") : "⚠";
+  };
+}
+function dzStyle() {
+  return `<div class="note-info">✨ ${T("dz_style_hint")}</div>
+    <div class="pcard nofloat"><h2 style="margin:.2rem 0 .4rem">${T("dz_style_name")}</h2>
+      <p class="mut" style="max-width:60ch">${T("dz_style_body")}</p>
+      <h3 style="margin:.9rem 0 .3rem">${T("dz_style_how")}</h3>
+      <ol class="mut" style="line-height:1.9;max-width:60ch">${["dz_style_s1", "dz_style_s2", "dz_style_s3", "dz_style_s4"].map(k => `<li>${T(k)}</li>`).join("")}</ol></div>`;
 }
 
 // ── «الاعتماد» ── one inbox for everything pending (post/reel/character/template).
@@ -704,7 +764,10 @@ async function renderCharacters(host, activeTpl) {
       <div class="tplhd"><span class="tplname">🧑🏻 ${escapeHtml(c.label)}</span>${on ? `<span class="pill p-ok">✓ ${T("tpl_active")}</span>` : ""}</div>
       <div class="tpldesc">${escapeHtml(c.dress)}</div>
       <div class="tplshots"><img loading="lazy" src="${c.thumb}?v=${v}" alt="character" style="grid-column:span 2;object-fit:cover;max-height:16rem"></div>
-      ${on ? `<button class="btn ok sm" disabled>✓ ${T("tpl_active")}</button>` : `<button class="btn sm charpick" data-char="${c.id}">${T("char_use")}</button>`}
+      <div style="display:flex;gap:.35rem;margin-top:.3rem">
+        ${on ? `<button class="btn ok sm" disabled>✓ ${T("tpl_active")}</button>` : `<button class="btn sm charpick" data-char="${c.id}">${T("char_use")}</button>`}
+        <button class="btn ghost sm dzdel" data-kind="character" data-id="${c.id}">🗑</button>
+      </div>
     </div>`;
   }).join("");
   host.innerHTML = `<h3 style="margin:.2rem 0 .5rem">🧑🏻 ${T("char_title")}</h3>
@@ -723,6 +786,7 @@ async function renderCharacters(host, activeTpl) {
     if (r && r.ok) { renderCharacters(host, activeTpl); const m = $("#charmsg"); if (m) m.textContent = "✓ " + T("char_saved"); }
     else { b.disabled = false; b.textContent = T("char_use"); }
   });
+  bindDzDelete(host, () => renderCharacters(host, activeTpl));
 }
 
 // Build a ready Canva "Magic Design" brief (Omani characters + brand colors),

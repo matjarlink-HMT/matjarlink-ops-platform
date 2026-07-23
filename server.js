@@ -463,8 +463,30 @@ async function renderAndSaveDesign(item, content = {}, opts = {}) {
 // ── Design templates ── list / select / sample-preview ──────────────────────
 app.get("/api/templates", (req, res) => res.json({
   ok: true, templates: DESIGN_TEMPLATES, active: activeTemplate(),
-  custom: store.getCustomTemplates().map((t) => ({ id: t.id, name: t.name, base: t.base, accent: t.accent })),
+  custom: store.getCustomTemplates().filter((t) => !store.isHidden("template", t.id)).map((t) => ({ id: t.id, name: t.name, base: t.base, accent: t.accent })),
 }));
+// Soft-delete (hide) an approved template or character; the editorial templates
+// 6/7 (house style) and the base builtins cannot be hidden.
+app.post("/api/design/delete", (req, res) => {
+  const { kind, id } = req.body || {};
+  if (!["template", "character"].includes(kind) || !id) return res.status(400).json({ ok: false, error: "bad request" });
+  if (kind === "template" && (isEditorial(id) || DESIGN_TEMPLATES.includes(id))) return res.status(400).json({ ok: false, error: "لا يمكن حذف القوالب الأساسية" });
+  store.hideItem(kind, id);
+  if (kind === "template") store.removeCustomTemplate(id); else store.removeCustomCharacter(id);
+  res.json({ ok: true });
+});
+// Brand data (business info inserted into designs).
+app.get("/api/branddata", (req, res) => res.json({ ok: true, data: store.getBrandData() }));
+app.post("/api/branddata", (req, res) => {
+  const b = req.body || {}; const map = {};
+  if ("instagram" in b) map.BIZ_IG = String(b.instagram || "").replace(/^@/, "").trim();
+  if ("phone" in b) map.BIZ_PHONE = String(b.phone || "").trim();
+  if ("email" in b) map.BIZ_EMAIL = String(b.email || "").trim();
+  if ("website" in b) map.BIZ_WEB = String(b.website || "").trim();
+  if ("whatsapp" in b) map.BIZ_WA = String(b.whatsapp || "").trim();
+  store.cfgSet(map);
+  res.json({ ok: true, data: store.getBrandData() });
+});
 app.post("/api/templates/set", (req, res) => {
   const t = (req.body || {}).template;
   if (!isValidTemplate(t)) return res.status(400).json({ ok: false, error: "unknown template" });
@@ -499,7 +521,7 @@ app.get("/media/template/:tpl/:kind", async (req, res) => {
 });
 
 // ── Brand characters ── authentic Omani people (builtin + nightly-approved) ──
-const allCharacters = () => [...charMod.CHARACTERS, ...store.getCustomCharacters()];
+const allCharacters = () => [...charMod.CHARACTERS, ...store.getCustomCharacters()].filter((c) => !store.isHidden("character", c.id));
 app.get("/api/characters", (req, res) => res.json({
   ok: true,
   active: store.cfgGet("BRAND_CHARACTER") || "",
@@ -609,7 +631,7 @@ app.post("/api/proposals/approve", (req, res) => {
   const p = store.getProposals()[(req.body || {}).id];
   if (!p || p.status !== "pending") return res.status(404).json({ ok: false, error: "proposal not found" });
   if (p.kind === "template") store.addCustomTemplate({ id: p.id, name: p.name, base: p.base, accent: p.accent });
-  else if (p.kind === "post") store.saveStudioDraft({ id: p.id, t: p.t, t2: p.t2 || "", cta: p.cta || "", ty: STUDIO_TYPES.post, mediaUrl: (p.previewUrl || "").split("?")[0], images: [], type: "post", template: p.template, platform: "instagram", approved: true, at: new Date().toISOString() });
+  else if (p.kind === "post") store.saveStudioDraft({ id: p.id, t: p.t, t2: p.t2 || "", cta: p.cta || "", ty: STUDIO_TYPES.post, mediaUrl: (p.previewUrl || "").split("?")[0], images: [], type: "post", template: p.template, platform: "instagram", date: p.date || "", approved: true, at: new Date().toISOString() });
   else store.addCustomCharacter({ id: p.id, label: p.label, dress: p.dress, file: p.file });
   store.setProposalStatus(p.id, "approved");
   res.json({ ok: true });
@@ -673,7 +695,7 @@ async function makeEditorial({ light, layout, kicker, headline, pop, cta, prompt
   const bgFile = path.join(dir, `_edbg-${id}.png`);
   const fd0 = fs.openSync(bgFile, "w"); try { fs.writeSync(fd0, buffer); fs.fsyncSync(fd0); } finally { fs.closeSync(fd0); }
   const eng = await import("./data/designEngine.js");
-  const png = await eng.renderEditorial({ bg: bgFile, kicker: kicker || "متجرلينك", headline: headline || "", pop: pop || "", cta: cta || "", light: !!light, layout: layout === "center" ? "center" : "side" });
+  const png = await eng.renderEditorial({ bg: bgFile, kicker: kicker || "متجرلينك", headline: headline || "", pop: pop || "", cta: cta || "", light: !!light, layout: layout === "center" ? "center" : "side", biz: store.getBrandData() });
   const fd = fs.openSync(path.join(dir, id + ".png"), "w"); try { fs.writeSync(fd, png); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
   return { url: `/media/design/${id}?v=${Date.now()}` };
 }
@@ -702,7 +724,7 @@ async function makeEditorialReel({ id, light = false, headline, pop, cta, valueL
       const { buffer } = await gemini.generateImage(scenePrompts[i]);
       const bgFile = path.join(dir, `_rlbg-${id}-${i}.png`); junk.push(bgFile);
       let fd0 = fs.openSync(bgFile, "w"); try { fs.writeSync(fd0, buffer); fs.fsyncSync(fd0); } finally { fs.closeSync(fd0); }
-      const png = await eng.renderEditorial({ bg: bgFile, h: 1920, layout: "center", light, kicker: texts[i].kicker || "متجرلينك", headline: texts[i].headline, pop: texts[i].pop, cta: "" });
+      const png = await eng.renderEditorial({ bg: bgFile, h: 1920, layout: "center", light, kicker: texts[i].kicker || "متجرلينك", headline: texts[i].headline, pop: texts[i].pop, cta: "", biz: store.getBrandData() });
       const fr = path.join(dir, `_rlfr-${id}-${i}.png`); junk.push(fr);
       let fd = fs.openSync(fr, "w"); try { fs.writeSync(fd, png); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
       frames.push(fr);
@@ -727,7 +749,7 @@ app.post("/api/hybrid-sample", async (req, res) => {
     const eng = await import("./data/designEngine.js");
     let png;
     if ((b.style || "editorial") === "editorial") {
-      png = await eng.renderEditorial({ bg: bgFile, kicker: b.kicker || "متجرلينك", headline: b.headline || "", pop: b.pop || b.headline2 || "", cta: b.cta || "", light: !!b.light, layout: b.layout === "center" ? "center" : "side", motif: !!b.motif });
+      png = await eng.renderEditorial({ bg: bgFile, kicker: b.kicker || "متجرلينك", headline: b.headline || "", pop: b.pop || b.headline2 || "", cta: b.cta || "", light: !!b.light, layout: b.layout === "center" ? "center" : "side", motif: !!b.motif, biz: store.getBrandData() });
     } else {
       png = await eng.renderDesign({ role: "single", kicker: b.kicker || "متجرلينك", headline: b.headline || "", headline2: b.headline2 || "", cta: b.cta || "", template: "spotlight", photo: bgFile });
     }
@@ -739,6 +761,31 @@ app.post("/api/hybrid-sample", async (req, res) => {
 app.post("/api/proposals/run-now", async (req, res) => { const r = await generateNightlyBatch(); res.json({ ok: true, ...r }); });
 // Fresh start: wipe plans/drafts/proposals/overrides/notes (new-identity rebuild).
 app.post("/api/admin/reset", (req, res) => { res.json(store.resetForFreshStart()); });
+// Regenerate the content plan → dated editorial posts (alternating white/dark) sent
+// to the Approvals inbox. Default range: rest of this month + first week of next.
+app.post("/api/plan/regenerate", async (req, res) => {
+  if (!gemini.geminiReady()) return res.status(400).json({ ok: false, error: "قالب «الإعلاني» يحتاج ربط Gemini أولاً" });
+  const m = new Date(Date.now() + 4 * 3600 * 1000);            // Muscat now
+  const start = new Date(m); start.setUTCDate(start.getUTCDate() + 1);
+  const end = new Date(Date.UTC(m.getUTCFullYear(), m.getUTCMonth() + 1, 7));
+  const dates = [];
+  for (const d = new Date(start); d <= end && dates.length < 10; d.setUTCDate(d.getUTCDate() + 2)) dates.push(new Date(d));
+  const out = { posts: 0, errors: [] };
+  for (let i = 0; i < dates.length; i++) {
+    try {
+      const c = NIGHTLY_POSTS[i % NIGHTLY_POSTS.length];
+      const light = i % 2 === 0;
+      const template = light ? "editorial-white" : "editorial-dark";
+      const id = "post-" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+      const sc = editorialScene(c.headline, light);
+      const ed = await makeEditorial({ light, layout: sc.layout, kicker: "متجرلينك", headline: c.headline, pop: c.pop, cta: c.cta, prompt: sc.prompt, id });
+      const dstr = dates[i].toISOString().slice(0, 10);
+      store.saveProposal({ id, kind: "post", template, t: c.headline, t2: c.pop, cta: c.cta, name: `${c.headline} · ${dstr}`, date: dstr, previewUrl: ed.url });
+      out.posts++;
+    } catch (e) { out.errors.push(e.message); }
+  }
+  res.json({ ok: true, ...out });
+});
 
 // ── Studio ── instant design creation: pick type/template/character/idea →
 // render on the spot → preview → publish now / schedule / download. Drafts live
