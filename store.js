@@ -239,6 +239,29 @@ function persistCchar() { try { writeDurable(CCHAR_FILE, JSON.stringify(cchar));
 export function getCustomCharacters() { return cchar; }
 export function addCustomCharacter(c) { if (c && c.id && !cchar.find((x) => x.id === c.id)) { cchar.push(c); persistCchar(); } return cchar; }
 
+// ── Leads (CRM) ── searchable, importable, auto-classified, with an outreach log.
+// Real customer data → survives resetForFreshStart (not wiped on a fresh identity).
+const LEADS_FILE = sp("leads.json");
+let leads = [];
+try { leads = JSON.parse(fs.readFileSync(LEADS_FILE, "utf8")); } catch (e) { leads = []; }
+function persistLeads() { try { writeDurable(LEADS_FILE, JSON.stringify(leads)); } catch (e) {} }
+const newLeadId = () => "LD-" + Math.random().toString(36).slice(2, 8).toUpperCase();
+function normLead(l) {
+  return {
+    id: l.id || newLeadId(),
+    name: (l.name || "").trim(), ch: l.ch || "whatsapp", contact: (l.contact || "").trim(),
+    stage: l.stage || "جديد", field: (l.field || "").trim(), activity: l.activity || "",
+    source: (l.source || "").trim(), note: (l.note || "").trim(), tm: l.tm || "",
+    createdAt: l.createdAt || new Date().toISOString(), outreach: l.outreach || [],
+  };
+}
+export function getLeads() { return leads; }
+export function addLead(l) { const lead = normLead(l); leads.unshift(lead); persistLeads(); return lead; }
+export function addLeadsBulk(arr) { const added = (arr || []).map(normLead); leads = [...added, ...leads]; persistLeads(); return added; }
+export function updateLead(id, patch) { const l = leads.find((x) => x.id === id); if (!l) return null; Object.assign(l, patch); persistLeads(); return l; }
+export function deleteLead(id) { leads = leads.filter((x) => x.id !== id); persistLeads(); return true; }
+export function addLeadOutreach(id, entry) { const l = leads.find((x) => x.id === id); if (!l) return null; (l.outreach = l.outreach || []).unshift({ ...entry, at: new Date().toISOString() }); persistLeads(); return l; }
+
 // ── Agent self-improvement state ── approved suggestions raise the agent's level.
 const AG_FILE = sp("agents_state.json");
 let ag = {};

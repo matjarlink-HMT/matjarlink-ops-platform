@@ -87,6 +87,7 @@ app.get("/api/state", async (req, res) => {
     return { ...a, task: o.task || a.task, ev: o.ev || a.ev, sug: o.sug || a.sug, sc: o.sc ?? a.sc, improved: true, improvements: o.improvements || 0, changelog: o.changelog || [] };
   });
   state.notes = store.getNotes();
+  state.leads = store.getLeads();
   state.publishReady = metaPublish.publishReady();
   state.autoPublish = (process.env.AUTO_PUBLISH || store.cfgGet("AUTO_PUBLISH")) === "on";
   state.publishedLog = store.getPublished();
@@ -1281,6 +1282,89 @@ app.post("/api/reply", async (req, res) => {
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
+});
+
+// ── Leads CRM ── search · import · auto-classify · WhatsApp/DM outreach ──
+const LEAD_SECTORS = [
+  ["مطاعم وكافيهات", /مطعم|كافيه|قهوة|مقهى|حلوي|حلا|أكل|مأكولات|food|cafe|restaurant|coffee/i],
+  ["أزياء وملابس", /ملابس|أزياء|عباية|دشداشة|بشوت|خياط|فساتين|fashion|cloth|abaya|boutique/i],
+  ["إلكترونيات", /جوال|إلكترون|كمبيوتر|لابتوب|هاتف|أجهزة|phone|electro|gadget|laptop/i],
+  ["تجميل وعناية", /تجميل|عطور|مكياج|عناية|بشرة|صالون|beauty|perfume|cosmet|salon|spa/i],
+  ["هدايا وورود", /هدايا|ورد|زهور|توزيعات|gift|flower|bouquet/i],
+  ["بقالة وتموين", /بقالة|تموين|سوبرماركت|market|grocery/i],
+  ["خدمات", /خدمة|خدمات|تصميم|تسويق|استشار|صيانة|service|marketing|consult/i],
+];
+function classifyLead(l) {
+  const hay = `${l.name || ""} ${l.note || ""} ${l.field || ""} ${l.source || ""}`;
+  let field = (l.field || "").trim();
+  if (!field) { const m = LEAD_SECTORS.find(([, rx]) => rx.test(hay)); field = m ? m[0] : "عام"; }
+  let activity = "متوسط";
+  if (["عميل", "تفاوض"].includes(l.stage)) activity = "نشِط";
+  else if (l.stage === "معلّق") activity = "خامل";
+  else if ((l.outreach || []).length >= 2) activity = "نشِط";
+  return { field, activity };
+}
+app.get("/api/leads", (req, res) => {
+  const { q, stage, source, field } = req.query || {};
+  let items = store.getLeads();
+  if (q) { const s = String(q).toLowerCase(); items = items.filter((l) => `${l.name} ${l.contact} ${l.note} ${l.field} ${l.source}`.toLowerCase().includes(s)); }
+  if (stage && stage !== "all") items = items.filter((l) => l.stage === stage);
+  if (source && source !== "all") items = items.filter((l) => l.source === source);
+  if (field && field !== "all") items = items.filter((l) => l.field === field);
+  res.json({ ok: true, leads: items, total: store.getLeads().length });
+});
+app.post("/api/leads", (req, res) => {
+  const b = req.body || {};
+  if (!b.name && !b.contact) return res.status(400).json({ ok: false, error: "name or contact required" });
+  const lead = store.addLead({ ...b, ...classifyLead(b) });
+  res.json({ ok: true, lead });
+});
+// Bulk import: accepts {leads:[...]} or {text:"name,contact,note\n..."} (CSV-ish or one-per-line).
+app.post("/api/leads/import", (req, res) => {
+  const b = req.body || {};
+  let rows = Array.isArray(b.leads) ? b.leads : [];
+  if (!rows.length && b.text) {
+    rows = String(b.text).split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
+      const parts = line.split(/[,،\t]/).map((s) => s.trim());
+      return { name: parts[0] || "", contact: parts[1] || "", note: parts.slice(2).join(" ") || "", source: b.source || "استيراد" };
+    });
+  }
+  if (!rows.length) return res.status(400).json({ ok: false, error: "no rows" });
+  const prepared = rows.map((r) => ({ ...r, source: r.source || b.source || "استيراد", ...classifyLead(r) }));
+  const added = store.addLeadsBulk(prepared);
+  res.json({ ok: true, added: added.length, leads: added });
+});
+app.put("/api/leads/:id", (req, res) => {
+  const patch = req.body || {};
+  if (patch.field !== undefined || patch.stage !== undefined) Object.assign(patch, classifyLead({ ...store.getLeads().find((x) => x.id === req.params.id), ...patch }));
+  const lead = store.updateLead(req.params.id, patch);
+  if (!lead) return res.status(404).json({ ok: false, error: "not found" });
+  res.json({ ok: true, lead });
+});
+app.delete("/api/leads/:id", (req, res) => { store.deleteLead(req.params.id); res.json({ ok: true }); });
+// Re-classify every lead (activity + field) in one pass.
+app.post("/api/leads/classify", (req, res) => {
+  store.getLeads().forEach((l) => store.updateLead(l.id, classifyLead(l)));
+  res.json({ ok: true, leads: store.getLeads() });
+});
+// Outreach: send a WhatsApp message or IG DM to a lead and log it on the record.
+app.post("/api/leads/:id/outreach", async (req, res) => {
+  const lead = store.getLeads().find((x) => x.id === req.params.id);
+  if (!lead) return res.status(404).json({ ok: false, error: "not found" });
+  const { message, channel } = req.body || {};
+  if (!message) return res.status(400).json({ ok: false, error: "message required" });
+  const ch = channel || lead.ch || "whatsapp";
+  const isWA = /wa|whats/i.test(ch);
+  const ready = isWA ? wa.whatsappReady() : meta.metaReady();
+  let simulated = false, result = null, error = null;
+  if (!ready) simulated = true;
+  else {
+    try { result = isWA ? await wa.sendMessage(lead.contact, message) : await meta.sendMessage(lead.contact, message); }
+    catch (e) { error = e.message; }
+  }
+  store.addLeadOutreach(lead.id, { channel: ch, message, simulated, error });
+  if (error) return res.status(500).json({ ok: false, error, lead: store.getLeads().find((x) => x.id === lead.id) });
+  res.json({ ok: true, simulated, lead: store.getLeads().find((x) => x.id === lead.id) });
 });
 
 // ── WhatsApp webhook (verify + ingest) ──────────────────────────────

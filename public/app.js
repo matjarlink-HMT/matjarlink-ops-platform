@@ -23,7 +23,7 @@ const STMAP = { online: "p-ok", working: "p-info", scheduled: "p-info", idle: "p
 const GROUPS = [
   { items: ["needs"] },
   { items: ["overview"] },
-  { label: "g_manage", items: ["approvals", "manager", "agents"] },
+  { label: "g_manage", items: ["approvals", "agents"] },
   { label: "g_content", items: ["templates", "plan", "pipeline"] },
   { label: "g_engage", items: ["comments", "messages", "leads"] },
   { label: "g_perf", items: ["analytics", "camp"] },
@@ -116,8 +116,8 @@ function render(p) {
     });
   }
   else if (p === "approvals") renderApprovals(C);
-  else if (p === "agents") { C.innerHTML = `<div class="note-info">🚀 ${T("agent_improve_hint")}</div><div class="grid g3">${S.agents.map((a, i) => agentCard(a, i)).join("")}</div>`; bindAgents(); }
-  else if (p === "needs") C.innerHTML = `<div class="grid g2">${S.needs.map(needCard).join("")}</div>`;
+  else if (p === "agents") renderTeam(C);
+  else if (p === "needs") renderNeeds(C);
   else if (p === "studio") renderStudio(C);
   else if (p === "pipeline") renderPipeline(C);
   else if (p === "plan") renderPlan(C);
@@ -126,7 +126,7 @@ function render(p) {
   else if (p === "camp") C.innerHTML = campView();
   else if (p === "comments") { C.innerHTML = feed(S.comments, "c", "comment"); bindReply(); }
   else if (p === "messages") { C.innerHTML = feed(S.messages, "m", "dm"); bindReply(); }
-  else if (p === "leads") C.innerHTML = leadsView();
+  else if (p === "leads") renderLeads(C);
   else if (p === "manager") renderManager(C);
   else if (p === "settings") renderSettings(C);
 }
@@ -811,6 +811,17 @@ async function openCanva(q) {
 }
 
 // ── manager chat (CAIMO) ──────────────────────────────────────────
+// «الفريق» — the AI team: self-improving agents (auto-approved dev points + history)
+// with the AI manager chat merged in (was a separate «المدير» page).
+async function renderTeam(C) {
+  C.innerHTML = `<div class="note-info">🚀 ${T("agent_improve_hint")}</div>
+    <div class="grid g3" id="agentgrid">${S.agents.map((a, i) => agentCard(a, i)).join("")}</div>
+    <div class="sec-h" style="margin-top:1.4rem"><h2>💬 ${T("team_manager")}</h2></div>
+    <div class="mut" style="margin:-.3rem 0 .6rem">${T("team_manager_d")}</div>
+    <div id="mgrhost"></div>`;
+  bindAgents();
+  renderManager($("#mgrhost"));
+}
 async function renderManager(C) {
   C.innerHTML = `<div class="chatwrap">
     <div class="chatscroll" id="chatscroll"><div class="loading">…</div></div>
@@ -979,6 +990,44 @@ async function improveAgent(i, btn) {
 const needCard = (n) => `<div class="card"><div style="display:flex;gap:.4rem;align-items:center;margin-bottom:.35rem">${pill(n.t)} ${pill(n.pr)}<span style="margin-inline-start:auto;font-size:.74rem;color:var(--muted)">${n.f}</span></div>
   <div style="font-weight:800">${n.ti}</div><div class="mut" style="margin-top:.25rem">${n.d}</div></div>`;
 
+// ── «مهامي» ── one place that turns platform state into actionable steps,
+// each with a ready-to-paste prompt the owner can hand to Claude to execute.
+async function renderNeeds(C) {
+  C.innerHTML = `<div class="loading">…</div>`;
+  let props = { posts: [], characters: [], templates: [] }, conns = { integrations: [] };
+  try { [props, conns] = await Promise.all([fetch("/api/proposals").then(r => r.json()), fetch("/api/connections").then(r => r.json())]); } catch (e) {}
+  const q = S.queue || [], notes = S.notes || {}, pub = S.publishedLog || {};
+  const pendAppr = (props.posts || []).length + (props.characters || []).length + (props.templates || []).length;
+  const held = q.filter(p => !pub[p.id] && (notes[p.id] || {}).status !== "معتمد" && ((notes[p.id] || {}).note || "").trim()).length;
+  const off = (conns.integrations || []).filter(i => !i.connected);
+  const geminiOff = off.some(i => /gemini/i.test(i.key));
+  const pillars = (S.needs || []);
+
+  const tasks = [];
+  if (pendAppr) tasks.push({ icon: "🖼", pr: T("pr_high"), title: T("task_appr_t").replace("{n}", pendAppr), desc: T("task_appr_d"), view: "approvals", prompt: T("task_appr_prompt") });
+  if (held) tasks.push({ icon: "✎", pr: T("pr_med"), title: T("task_held_t").replace("{n}", held), desc: T("task_held_d"), view: "pipeline", prompt: T("task_held_prompt") });
+  if (geminiOff) tasks.push({ icon: "🔌", pr: T("pr_high"), title: T("task_gemini_t"), desc: T("task_gemini_d"), view: "settings", prompt: T("task_gemini_prompt") });
+  off.filter(i => !/gemini/i.test(i.key)).forEach(i => tasks.push({ icon: "🔌", pr: T("pr_low"), title: T("task_conn_t").replace("{n}", i.name), desc: i.desc || "", view: "settings", prompt: T("task_conn_prompt").replace("{n}", i.name) }));
+  // developer / platform-improvement needs → each becomes a Claude-ready prompt
+  pillars.forEach(n => tasks.push({ icon: "🛠", pr: n.pr || T("pr_med"), title: n.ti, desc: n.d, prompt: `${n.ti}\n\n${n.d}` }));
+
+  if (!tasks.length) { C.innerHTML = `<div class="note-info">✅ ${T("tasks_empty")}</div>`; return; }
+  const card = (t, i) => `<div class="card taskcard">
+    <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.4rem"><span style="font-size:1.2rem">${t.icon}</span>
+      <div style="font-weight:800;flex:1">${escapeHtml(t.title)}</div>${pill([t.pr, t.pr === T("pr_high") ? "p-warn" : t.pr === T("pr_low") ? "p-idle" : "p-info"])}</div>
+    <div class="mut" style="margin-bottom:.6rem">${escapeHtml(t.desc)}</div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+      ${t.view ? `<button class="btn sm" data-goview="${t.view}">↪ ${T("task_open")}</button>` : ""}
+      <button class="btn ghost sm" data-copyp="${i}">📋 ${T("task_copy_prompt")}</button>
+      <span class="ok-s" id="tcp-${i}"></span></div>
+    <details class="chlog" style="margin-top:.55rem"><summary>${T("task_show_prompt")}</summary><div class="taskprompt" id="tp-${i}">${escapeHtml(t.prompt)}</div></details></div>`;
+  C.innerHTML = `<div class="note-info">🧭 ${T("tasks_hint")}</div><div class="grid g2">${tasks.map(card).join("")}</div>`;
+  C.querySelectorAll("[data-goview]").forEach(b => b.onclick = () => { const t = document.querySelector(`#nav button[data-go="${b.dataset.goview}"]`); if (t) t.click(); });
+  C.querySelectorAll("[data-copyp]").forEach(b => b.onclick = async () => {
+    const i = +b.dataset.copyp; try { await navigator.clipboard.writeText(tasks[i].prompt); const m = $("#tcp-" + i); if (m) { m.textContent = "✓ " + T("task_copied"); setTimeout(() => m.textContent = "", 2000); } } catch (e) {}
+  });
+}
+
 // ── unified Pipeline (merges queue + prep + media + published) ─────
 function renderPipeline(C) {
   const q = S.queue || [];
@@ -1043,34 +1092,27 @@ function pdetailMain(q) {
     pub ? `<span class="pill p-ok">📤 ${T("published_ok")}</span>` : approved ? `<span class="pill p-ok">✓ ${T("approve")}</span>` : held ? `<span class="pill p-warn">✎ ${T("held")}</span>` : q.gen ? `<span class="pill p-warn">✋ ${T("gen_hold")}</span>` : `<span class="pill p-info">🔕 ${T("silent_ok")}</span>`,
     q.gen ? `<span class="pill p-new">✨ ${T("gen")}</span>` : ""
   ].filter(Boolean).join(" ");
-  const threadHtml = thread.length ? `<div class="pthread">${thread.map(bubble).join("")}</div>` : "";
   const when = parseWhenClient(q.date);
   const cdHtml = pub ? `<span class="cd done">✓ ${T("published_ok")}</span>` : (when ? `<span class="cd" data-when="${when.getTime()}">${fmtCountdown(when)}</span>` : "");
-  const hasNote = thread.some(m => m.role === "user");
   let pubBtn = "";
   if (pub) pubBtn = pub.permalink ? `<a class="link sm" target="_blank" href="${pub.permalink}">${T("published_ok")} ↗</a>` : "";
   else if (S.publishReady && !held) pubBtn = `<button class="btn sm pubbtn" data-pub="${q.id}">📤 ${T("publish_now")}</button>`;
   // one-tap emergency stop: writes a hold note so the scheduler skips this post
-  const stopBtn = (!pub && !held && !q.gen) ? `<button class="btn ghost sm" data-stop="${q.id}" title="${T("stop_hint")}">⏸ ${T("stop_pub")}</button>` : "";
+  const stopBtn = (!pub && !held) ? `<button class="btn ghost sm" data-stop="${q.id}" title="${T("stop_hint")}">⏸ ${T("stop_pub")}</button>` : "";
+  // Editing / commenting / regenerating a design now lives on the الاعتماد page —
+  // the publish queue is a clean schedule view: preview, publish, hold, delete.
   return `<div class="pcard nofloat" data-id="${q.id}"><div class="pmain">
       <div class="ptitle">${escapeHtml(q.t)}</div>
       <div class="pmeta">${chan(q.ch)} ${q.ty} · <b>${q.date}</b></div>
-      <div class="pcdrow">${cdHtml}<div class="pbadges">${badges}${q.regens ? `<span class="pill p-idle">♻️ ${q.regens}</span>` : ""}</div></div>
+      <div class="pcdrow">${cdHtml}<div class="pbadges">${badges}</div></div>
       <div class="pcap">${escapeHtml((q.cap || "").slice(0, 240))}${(q.cap || "").length > 240 ? "…" : ""}</div>
       ${(() => { const sl = slidesOf(q); return sl.length > 1 ? `<div class="slideshdr">${T("slides_label")} (${sl.length})</div><div class="slides">${sl.map((u, idx) => `<img class="slidethumb" src="${u}" loading="lazy" data-img="${u}" data-t="${idx === 0 ? T("cover") : T("slide") + " " + idx}" title="${idx === 0 ? T("cover") : T("slide") + " " + idx}">`).join("")}</div>` : ""; })()}
-      ${threadHtml}
-      <div class="pnotebar"><input class="pnote" data-id="${q.id}" placeholder="${T("note_ask_ph")}" autocomplete="off"><button class="btn sm askbtn" data-ask="${q.id}">${T("note_ask")}</button></div>
+      ${held ? `<div class="note-warn" style="margin:.5rem 0">✎ ${T("held")} — ${T("pipe_edit_at_appr")}</div>` : ""}
       <div class="pactions">
-        ${pub ? "" : `<button class="btn ghost sm regenbtn ${hasNote ? "hot" : ""}" data-regen="${q.id}">♻️ ${T("regen")}</button>`}
-        ${pub ? "" : `<button class="btn ghost sm" data-alt="${q.id}">🅰🅱 ${T("alt_hooks")}</button>`}
-        ${!pub && (q.ty || "").includes("ريل") ? `<button class="btn ghost sm" data-livereel="${q.id}">🎬 ${T("live_reel")}</button>` : ""}
-        ${pub ? "" : `<button class="btn ghost sm" data-canva="${q.id}">🎨 Canva</button>`}
-        ${!pub && q.regenerated && (q.drive || (q.driveSlides && q.driveSlides.length)) ? `<button class="btn ghost sm" data-restore="${q.id}">↺ ${T("restore_orig")}</button>` : ""}
-        ${approved || pub ? "" : `<button class="btn ok sm" data-approve="${q.id}">✓ ${T("approve")}</button>`}
         ${pubBtn}${stopBtn}
         ${isVideoUrl(q.mediaUrl) ? `<button class="btn ghost sm" data-playvid="${q.mediaUrl}">▶ ${lang === "en" ? "Preview" : lang === "fa" ? "پیش‌نمایش" : "معاينة"}</button>` : q.drive ? `<button class="btn ghost sm" data-play2="${q.drive}" data-reel="${(q.ty || "").includes("ريل") ? "1" : "0"}">▶ ${lang === "en" ? "Preview" : lang === "fa" ? "پیش‌نمایش" : "معاينة"}</button>` : ""}${q.drive ? `<a class="link sm" target="_blank" href="https://drive.google.com/file/d/${q.drive}/view">${T("openDrive")}</a>` : ""}
         <button class="btn ghost sm delbtn" data-del="${q.id}" title="${T("del")}" style="margin-inline-start:auto">🗑</button>
-      </div><div class="althost" data-althost="${q.id}"></div></div></div>`;
+      </div></div></div>`;
 }
 function setFocus(i, list) {
   pf.focus = Math.max(0, Math.min(list.length - 1, i));
@@ -1330,14 +1372,127 @@ const campView = () => `<div class="card" style="text-align:center;padding:1.4re
   ${S.campaigns.map(c => `<div class="card" style="box-shadow:none"><div style="font-weight:800;font-size:.88rem">${c.name}</div><div class="mut">${c.meta}</div><div style="margin-top:.4rem">${pill(c.st)}</div></div>`).join("")}</div></div>`;
 const accCard = (a) => `<div class="card acc"><div class="ic" style="background:${CH[a.ch] || "#888"}">${GLYPH[a.ch] || a.ch}</div><div style="flex:1"><div style="font-weight:800">${a.h}</div><div class="mut">${a.s}</div></div>${pill(a.st)}</div>`;
 
-// ── leads (mini-CRM) ──────────────────────────────────────────────
-function leadsView() {
-  const stages = ["جديد", "مهتم", "تفاوض", "عميل", "معلّق"];
-  return `<div class="kanban">${stages.map(s => {
-    const items = S.leads.filter(l => l.stage === s);
+// ── leads (full CRM) ── search · import · auto-classify · WA/DM outreach ──
+const LEAD_STAGES = ["جديد", "مهتم", "تفاوض", "عميل", "معلّق"];
+let leadState = { q: "", stage: "all", source: "all", field: "all" };
+let leadPanel = "";        // "" | "add" | "import"
+let leadOutreachId = "";   // id whose inline composer is open
+
+async function renderLeads(C) {
+  C.innerHTML = `<div class="loading">…</div>`;
+  const params = new URLSearchParams();
+  if (leadState.q) params.set("q", leadState.q);
+  ["stage", "source", "field"].forEach(k => { if (leadState[k] && leadState[k] !== "all") params.set(k, leadState[k]); });
+  let data = { leads: [], total: 0 };
+  try { data = await fetch("/api/leads?" + params.toString()).then(r => r.json()); } catch (e) {}
+  const shown = data.leads || [];
+  const allForOpts = S.leads || [];
+  const sources = [...new Set(allForOpts.map(l => l.source).filter(Boolean))];
+  const fields = [...new Set(allForOpts.map(l => l.field).filter(Boolean))];
+  const sel = (id, val, opts, allLabel) => `<select class="psel" id="${id}"><option value="all">${allLabel}</option>${opts.map(o => `<option value="${o}" ${o === val ? "selected" : ""}>${escapeHtml(o)}</option>`).join("")}</select>`;
+
+  const toolbar = `<div class="pcard nofloat" style="margin-bottom:1rem">
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+      <input class="pinput" id="lq" placeholder="🔍 ${T("crm_search")}" value="${escapeHtml(leadState.q)}" style="flex:1;min-width:12rem" autocomplete="off">
+      ${sel("lstage", leadState.stage, LEAD_STAGES.map(s => s), T("f_all"))}
+      ${sel("lsource", leadState.source, sources, T("crm_all_sources"))}
+      ${sel("lfield", leadState.field, fields, T("crm_all_fields"))}
+      <button class="btn sm" id="ladd">➕ ${T("crm_add")}</button>
+      <button class="btn ghost sm" id="limport">📥 ${T("crm_import")}</button>
+      <button class="btn ghost sm" id="lclassify">🏷 ${T("crm_classify")}</button>
+      <span class="mut">${data.total || 0} ${T("crm_leads")}</span>
+    </div>
+    <div id="lpanel"></div></div>`;
+
+  const kanban = `<div class="kanban">${LEAD_STAGES.map(s => {
+    const items = shown.filter(l => l.stage === s);
     return `<div class="kcol"><div class="kh">${T("stage_" + s)} <span class="kc">${items.length}</span></div>
-      ${items.map(l => `<div class="lcard"><div class="ln">${chan(l.ch)} ${escapeHtml(l.name)}</div><div class="mut">${escapeHtml(l.note)}</div><div class="lt">${escapeHtml(l.tm || "")}</div></div>`).join("") || `<div class="mut" style="padding:.5rem">—</div>`}</div>`;
+      ${items.map(leadCard).join("") || `<div class="mut" style="padding:.5rem">—</div>`}</div>`;
   }).join("")}</div>`;
+
+  C.innerHTML = `<div class="note-info">📇 ${T("crm_hint")}</div>${toolbar}${shown.length || leadState.q || leadState.stage !== "all" ? kanban : `<div class="card" style="text-align:center;padding:1.6rem"><div style="font-weight:800">${T("crm_empty")}</div><div class="mut" style="margin-top:.4rem">${T("crm_empty_d")}</div></div>`}`;
+  bindLeads(C);
+}
+function leadCard(l) {
+  const act = l.activity || "", actCls = act === "نشِط" ? "p-ok" : act === "خامل" ? "p-idle" : "p-info";
+  const isWA = /wa|whats/i.test(l.ch);
+  const lastOut = (l.outreach || [])[0];
+  return `<div class="lcard" data-lid="${l.id}">
+    <div class="ln">${chan(l.ch)} ${escapeHtml(l.name || l.contact || "—")}</div>
+    <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin:.3rem 0">
+      ${l.field ? `<span class="pill p-info">${escapeHtml(l.field)}</span>` : ""}
+      ${act ? `<span class="pill ${actCls}">${escapeHtml(act)}</span>` : ""}
+      ${l.source ? `<span class="pill p-idle">🏷 ${escapeHtml(l.source)}</span>` : ""}</div>
+    ${l.note ? `<div class="mut">${escapeHtml(l.note)}</div>` : ""}
+    ${l.contact ? `<div class="lt">${escapeHtml(l.contact)}</div>` : ""}
+    ${lastOut ? `<div class="lt" style="color:var(--ok)">✓ ${T("crm_last_out")}: ${escapeHtml((lastOut.message || "").slice(0, 30))}${lastOut.simulated ? ` (${T("sent_sim")})` : ""}</div>` : ""}
+    <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.5rem;align-items:center">
+      <select class="psel sm lstagesel" data-lid="${l.id}" title="${T("crm_stage")}">${LEAD_STAGES.map(s => `<option ${s === l.stage ? "selected" : ""}>${s}</option>`).join("")}</select>
+      <button class="btn ghost sm loutbtn" data-lid="${l.id}">${isWA ? "🟢" : "✉"} ${T("crm_reach")}</button>
+      <button class="btn ghost sm ldelbtn" data-lid="${l.id}" title="${T("del")}" style="margin-inline-start:auto">🗑</button>
+    </div>
+    <div class="loutcomposer" data-lid="${l.id}"></div></div>`;
+}
+function bindLeads(C) {
+  const rerender = () => renderLeads(C);
+  const q = $("#lq");
+  if (q) { let t; q.oninput = () => { clearTimeout(t); t = setTimeout(() => { leadState.q = q.value.trim(); rerender(); }, 350); }; }
+  ["stage", "source", "field"].forEach(k => { const el = $("#l" + k); if (el) el.onchange = () => { leadState[k] = el.value; rerender(); }; });
+  const panel = $("#lpanel");
+  $("#ladd").onclick = () => { leadPanel = leadPanel === "add" ? "" : "add"; drawLeadPanel(panel, rerender); };
+  $("#limport").onclick = () => { leadPanel = leadPanel === "import" ? "" : "import"; drawLeadPanel(panel, rerender); };
+  $("#lclassify").onclick = async (e) => { e.target.disabled = true; e.target.textContent = "…"; await fetch("/api/leads/classify", { method: "POST" }); try { S = await fetch("/api/state").then(r => r.json()); } catch (x) {} rerender(); };
+  if (leadPanel) drawLeadPanel(panel, rerender);
+  C.querySelectorAll(".lstagesel").forEach(s => s.onchange = async () => { await fetch("/api/leads/" + s.dataset.lid, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage: s.value }) }); try { S = await fetch("/api/state").then(r => r.json()); } catch (x) {} rerender(); });
+  C.querySelectorAll(".ldelbtn").forEach(b => b.onclick = async () => { if (!confirm(T("crm_del_confirm"))) return; await fetch("/api/leads/" + b.dataset.lid, { method: "DELETE" }); try { S = await fetch("/api/state").then(r => r.json()); } catch (x) {} rerender(); });
+  C.querySelectorAll(".loutbtn").forEach(b => b.onclick = () => {
+    const host = C.querySelector(`.loutcomposer[data-lid="${b.dataset.lid}"]`);
+    if (host.dataset.open === "1") { host.dataset.open = "0"; host.innerHTML = ""; return; }
+    host.dataset.open = "1";
+    host.innerHTML = `<div style="display:flex;gap:.4rem;margin-top:.5rem"><input class="pinput sm loutmsg" placeholder="${T("crm_msg_ph")}" autocomplete="off" style="flex:1"><button class="btn sm loutsend">${T("crm_send")}</button></div><div class="ok-s loutmsgr"></div>`;
+    const inp = host.querySelector(".loutmsg"); inp.focus();
+    const send = async () => {
+      const msg = inp.value.trim(); if (!msg) return;
+      const btn = host.querySelector(".loutsend"); btn.disabled = true; btn.textContent = "…";
+      const r = await fetch("/api/leads/" + b.dataset.lid + "/outreach", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: msg }) }).then(x => x.json()).catch(() => null);
+      const m = host.querySelector(".loutmsgr");
+      if (r && r.ok) { m.textContent = r.simulated ? "✓ " + T("sent_sim") : "✓ " + T("sent"); setTimeout(() => renderLeads(C), 900); }
+      else { m.textContent = "✗ " + ((r && r.error) || ""); btn.disabled = false; btn.textContent = T("crm_send"); }
+    };
+    host.querySelector(".loutsend").onclick = send;
+    inp.onkeydown = (e) => { if (e.key === "Enter") send(); };
+  });
+}
+function drawLeadPanel(host, rerender) {
+  if (!host) return;
+  if (leadPanel === "add") {
+    host.innerHTML = `<div class="lformgrid" style="margin-top:.8rem;display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:.5rem">
+      <input class="pinput" id="lf_name" placeholder="${T("crm_name")}" autocomplete="off">
+      <input class="pinput" id="lf_contact" placeholder="${T("crm_contact")}" autocomplete="off">
+      <select class="psel" id="lf_ch"><option value="whatsapp">WhatsApp</option><option value="instagram">Instagram</option></select>
+      <input class="pinput" id="lf_source" placeholder="${T("crm_source")}" autocomplete="off">
+      <input class="pinput" id="lf_field" placeholder="${T("crm_field")}" autocomplete="off">
+      <input class="pinput" id="lf_note" placeholder="${T("crm_note")}" autocomplete="off" style="grid-column:1/-1">
+    </div><div style="margin-top:.6rem"><button class="btn sm" id="lf_save">💾 ${T("crm_save")}</button> <span class="ok-s" id="lf_msg"></span></div>`;
+    $("#lf_save").onclick = async () => {
+      const body = { name: $("#lf_name").value.trim(), contact: $("#lf_contact").value.trim(), ch: $("#lf_ch").value, source: $("#lf_source").value.trim(), field: $("#lf_field").value.trim(), note: $("#lf_note").value.trim() };
+      if (!body.name && !body.contact) { $("#lf_msg").textContent = "✗ " + T("crm_need_name"); return; }
+      const r = await fetch("/api/leads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(x => x.json()).catch(() => null);
+      if (r && r.ok) { leadPanel = ""; try { S = await fetch("/api/state").then(x => x.json()); } catch (e) {} rerender(); }
+      else $("#lf_msg").textContent = "✗";
+    };
+  } else if (leadPanel === "import") {
+    host.innerHTML = `<div style="margin-top:.8rem"><div class="mut" style="margin-bottom:.4rem">${T("crm_import_hint")}</div>
+      <textarea class="pinput" id="lf_text" rows="5" placeholder="${T("crm_import_ph")}" style="width:100%;resize:vertical"></textarea>
+      <div style="display:flex;gap:.5rem;align-items:center;margin-top:.5rem"><input class="pinput sm" id="lf_isrc" placeholder="${T("crm_source")}" style="max-width:12rem"><button class="btn sm" id="lf_imp">📥 ${T("crm_import")}</button> <span class="ok-s" id="lf_imsg"></span></div></div>`;
+    $("#lf_imp").onclick = async () => {
+      const text = $("#lf_text").value.trim(); if (!text) return;
+      const b = $("#lf_imp"); b.disabled = true; b.textContent = "…";
+      const r = await fetch("/api/leads/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, source: $("#lf_isrc").value.trim() || "استيراد" }) }).then(x => x.json()).catch(() => null);
+      if (r && r.ok) { $("#lf_imsg").textContent = `✓ ${r.added}`; leadPanel = ""; try { S = await fetch("/api/state").then(x => x.json()); } catch (e) {} setTimeout(rerender, 500); }
+      else { $("#lf_imsg").textContent = "✗"; b.disabled = false; b.textContent = "📥"; }
+    };
+  } else host.innerHTML = "";
 }
 
 // ── feeds + reply ─────────────────────────────────────────────────
