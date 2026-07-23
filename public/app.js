@@ -659,27 +659,31 @@ function bindBulkDelete(C, refresh) {
 }
 async function renderTemplatesTab(C) {
   C.innerHTML = `<div class="loading">…</div>`;
-  let data = { templates: ["classic", "luxe", "spotlight"], active: "classic", custom: [] };
+  let data = { custom: [] };
   try { data = await fetch("/api/templates").then(r => r.json()); } catch (e) {}
   const v = Date.now();
-  const tcard = (id, name, on, del) => `<div class="tplcard ${on ? "on" : ""}">
-      <div class="tplhd"><span class="tplname">${del ? `<input type="checkbox" class="selchk" data-kind="template" data-id="${id}" title="${T("dz_select")}"> ` : ""}${name}</span>${on ? `<span class="pill p-ok">✓ ${T("tpl_active")}</span>` : ""}</div>
-      <div class="tplshots"><img loading="lazy" src="/media/template/${id}/cover?v=${v}"><img loading="lazy" src="/media/template/${id}/slide?v=${v}"></div>
-      <div style="display:flex;gap:.35rem;margin-top:.3rem">
-        ${on ? `<button class="btn ok sm" disabled>✓ ${T("tpl_active")}</button>` : `<button class="btn sm tplpick" data-tpl="${id}" data-tplname="${escapeHtml(name)}">${T("tpl_use")}</button>`}
-      </div></div>`;
-  const cards = data.templates.map(t => tcard(t, (TEMPLATE_META[t]?.emoji || "🎨") + " " + T("tpl_" + t), t === data.active, false)).join("")
-    + (data.custom || []).map(c => tcard(c.id, "🌙 " + escapeHtml(c.name), c.id === data.active, true)).join("");
+  // The two ADOPTED editorial templates — they auto-alternate white/dark on every
+  // design, so there's nothing to "select"; shown here as the house style.
+  const editorial = [
+    { name: T("tpl_ed_white"), desc: T("tpl_ed_white_d"), bg: "linear-gradient(135deg,#FBE3C8,#ffffff)", fg: "#2D081E", kick: "#F5821F", bar: "#F5821F" },
+    { name: T("tpl_ed_dark"), desc: T("tpl_ed_dark_d"), bg: "radial-gradient(120% 120% at 70% 30%,#4a1230,#2D081E)", fg: "#ffffff", kick: "#F5821F", bar: "#F5821F" },
+  ];
+  const ecard = (e) => `<div class="tplcard on">
+      <div class="tplhd"><span class="tplname">🖼 ${e.name}</span><span class="pill p-ok">✓ ${T("tpl_adopted")}</span></div>
+      <div style="height:11rem;border-radius:.6rem;background:${e.bg};display:flex;flex-direction:column;justify-content:center;padding:1.1rem;gap:.45rem;overflow:hidden">
+        <div style="color:${e.kick};font-weight:800;font-size:.72rem;letter-spacing:.05em">متجرلينك</div>
+        <div style="color:${e.fg};font-weight:900;font-size:1.25rem;line-height:1.2">تجارتك كلها<br>في مكان واحد</div>
+        <div style="background:${e.bar};color:#fff;font-weight:800;padding:.2rem .6rem;border-radius:.3rem;align-self:flex-start;font-size:.8rem;transform:skewX(-6deg)">قريبًا في عُمان</div></div>
+      <div class="tpldesc" style="margin-top:.45rem">${e.desc}</div></div>`;
+  const ccard = (c) => `<div class="tplcard">
+      <div class="tplhd"><span class="tplname"><input type="checkbox" class="selchk" data-kind="template" data-id="${c.id}" title="${T("dz_select")}"> 🌙 ${escapeHtml(c.name)}</span></div>
+      <div class="tplshots"><img loading="lazy" src="/media/template/${c.id}/cover?v=${v}"><img loading="lazy" src="/media/template/${c.id}/slide?v=${v}"></div></div>`;
+  const customCards = (data.custom || []).map(ccard).join("");
   const anyDel = (data.custom || []).length > 0;
-  C.innerHTML = `<div class="note-info">🎨 ${T("tpl_hint")}</div>${anyDel ? dzBulkBar() : ""}<div class="grid g3 tplgrid">${cards}</div><div class="mut" id="tplmsg" style="margin-top:.8rem"></div>`;
-  C.querySelectorAll(".tplpick").forEach(b => b.onclick = async () => {
-    const t = b.dataset.tpl;
-    if (!confirm(T("tpl_confirm").replace("{t}", b.dataset.tplname || t))) return;
-    b.disabled = true; b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
-    const r = await fetch("/api/templates/set", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ template: t }) }).then(x => x.json()).catch(() => null);
-    if (r && r.ok) { renderTemplatesTab(C); const m = $("#tplmsg"); if (m) m.textContent = "✓ " + T("tpl_saved"); }
-    else { b.disabled = false; b.textContent = T("tpl_use"); }
-  });
+  C.innerHTML = `<div class="note-info">🎨 ${T("tpl_adopted_hint")}</div>
+    <div class="grid g2">${editorial.map(ecard).join("")}</div>
+    ${customCards ? `<div class="sec-h" style="margin-top:1.4rem"><h3>🌙 ${T("tpl_custom")}</h3></div>${anyDel ? dzBulkBar() : ""}<div class="grid g3 tplgrid">${customCards}</div>` : ""}
+    <div class="mut" id="tplmsg" style="margin-top:.8rem"></div>`;
   bindBulkDelete(C, () => renderTemplatesTab(C));
 }
 async function renderBrandKit(C) {
@@ -728,14 +732,14 @@ async function renderApprovals(C) {
   let d = null;
   try { d = await fetch("/api/proposals").then(r => r.json()); } catch (e) {}
   if (!d || !d.ok) { C.innerHTML = `<div class="note-info">${T("appr_hint")}</div><div class="mut">${T("appr_empty")}</div>`; return; }
-  const all = [
-    ...(d.posts || []).map(p => ({ ...p, kind: "post" })),
-    ...(d.characters || []).map(p => ({ ...p, kind: "character" })),
-    ...(d.templates || []).map(p => ({ ...p, kind: "template" })),
-  ];
-  const card = (p) => `<div class="tplcard">
-      <div class="tplhd"><span class="tplname">${APPR_ICON[p.kind]} ${escapeHtml(p.name || p.label || p.t || "")}</span><span class="pill p-idle">${T("appr_kind_" + p.kind)}</span></div>
-      <div class="tplshots" style="grid-template-columns:1fr"><img loading="lazy" src="${p.previewUrl}"></div>
+  const posts = (d.posts || []).map(p => ({ ...p, kind: "post" }));
+  const chars = (d.characters || []).map(p => ({ ...p, kind: "character" }));
+  const tpls = (d.templates || []).map(p => ({ ...p, kind: "template" }));
+  const total = posts.length + chars.length + tpls.length;
+  // Designs get big previews; characters/templates get small thumbnails.
+  const card = (p, big) => `<div class="tplcard">
+      <div class="tplhd"><span class="tplname">${APPR_ICON[p.kind]} ${escapeHtml(p.name || p.label || p.t || "")}</span>${p.date ? `<span class="pill p-info">${escapeHtml((p.date || "").split(" · ")[0])}${p.ty ? " · " + escapeHtml(p.ty) : ""}</span>` : ""}</div>
+      <div class="tplshots" style="grid-template-columns:1fr"><img loading="lazy" src="${p.previewUrl}" style="width:100%;max-height:${big ? "28rem" : "10rem"};object-fit:${big ? "contain" : "cover"};border-radius:.5rem"></div>
       <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.4rem">
         <button class="btn ok sm aappr" data-appr="${p.id}">✓ ${T("appr_approve")}</button>
         ${p.kind === "template" ? "" : `<button class="btn sm aedit" data-appr="${p.id}">✎ ${T("appr_edit")}</button>`}
@@ -747,12 +751,13 @@ async function renderApprovals(C) {
       </div>
       <div class="mut amsg" data-appr="${p.id}" style="margin-top:.3rem"></div>
     </div>`;
+  const section = (icon, title, list, grid, big) => list.length ? `<div class="sec-h" style="margin-top:1.2rem"><h3>${icon} ${title} <span class="mut">(${list.length})</span></h3></div><div class="grid ${grid}">${list.map(p => card(p, big)).join("")}</div>` : "";
   C.innerHTML = `<div class="note-info">🗳 ${T("appr_hint")}</div>
     <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:.4rem 0 1rem">
       <button class="btn sm" id="apprrun">⚡ ${T("prop_run")}</button>
       <span class="mut">${T("appr_route_note")}</span>
     </div>
-    ${all.length ? `<div class="grid g3">${all.map(card).join("")}</div>` : `<div class="mut" style="padding:1rem">${T("appr_empty")}</div>`}`;
+    ${total ? `${section("🖼", T("appr_sec_designs"), posts, "g2", true)}${section("🧑🏻", T("appr_sec_characters"), chars, "g4 tplgrid", false)}${section("🎨", T("appr_sec_templates"), tpls, "g4 tplgrid", false)}` : `<div class="mut" style="padding:1rem">${T("appr_empty")}</div>`}`;
   const run = $("#apprrun");
   if (run) run.onclick = async () => { run.disabled = true; run.innerHTML = `<span class="dots"><i></i><i></i><i></i></span> ${T("prop_running")}`; await fetch("/api/proposals/run-now", { method: "POST" }).catch(() => {}); renderApprovals(C); };
   const msg = (id) => C.querySelector(`.amsg[data-appr="${id}"]`);

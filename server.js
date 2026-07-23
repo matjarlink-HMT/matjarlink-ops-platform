@@ -783,7 +783,19 @@ app.post("/api/proposals/approve", (req, res) => {
   store.setProposalStatus(p.id, "approved");
   res.json({ ok: true, routedTo });
 });
-app.post("/api/proposals/reject", (req, res) => { store.setProposalStatus((req.body || {}).id, "rejected"); res.json({ ok: true }); });
+app.post("/api/proposals/reject", (req, res) => {
+  const id = (req.body || {}).id;
+  const p = store.getProposals()[id];
+  store.setProposalStatus(id, "rejected");
+  // If this design came from a plan item, revert that item to draft so it shows
+  // «مسودة» and can be re-designed (otherwise it's stuck on «صُمّم» with no proposal).
+  if (p && p.planMonth && p.planItemKey) {
+    const plan = store.getPlans()[p.planMonth];
+    const it = plan && (plan.items || []).find((i) => i.key === p.planItemKey);
+    if (it) { it.designed = false; delete it.proposalId; store.setPlan(plan); }
+  }
+  res.json({ ok: true });
+});
 // Regenerate a pending proposal with the reviewer's note (edit-and-retry).
 app.post("/api/proposals/regenerate", async (req, res) => {
   const b = req.body || {}; const p = store.getProposals()[b.id];
@@ -926,7 +938,8 @@ async function designPlanItem(plan, it) {
   const sc = editorialScene(headline, light);
   const pid = "post-" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
   const ed = await makeEditorial({ light, layout: sc.layout, kicker: "متجرلينك", headline, pop: "", cta, prompt: sc.prompt, id: pid });
-  store.saveProposal({ id: pid, kind: "post", template, t: headline, t2: "", cta, cap: it.cap || "", ty: it.ty, name: `${headline} · ${dateStr.split(" · ")[0]}`, date: dateStr, previewUrl: ed.url });
+  const planMonth = `${plan.year}-${String(plan.month).padStart(2, "0")}`;
+  store.saveProposal({ id: pid, kind: "post", template, t: headline, t2: "", cta, cap: it.cap || "", ty: it.ty, name: `${headline} · ${dateStr.split(" · ")[0]}`, date: dateStr, previewUrl: ed.url, planMonth, planItemKey: it.key });
   it.designed = true; it.proposalId = pid;
   return pid;
 }
