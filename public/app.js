@@ -1,4 +1,6 @@
-import { LANGS, I18N } from "./i18n.js";
+// Load i18n with the SAME ?v= build stamp this module was loaded with, so a new
+// deploy always fetches the matching (fresh) translations, never a cached set.
+const { LANGS, I18N } = await import("./i18n.js" + (new URL(import.meta.url).search || ""));
 
 let S = null, A = null, mediaIdx = 0;
 let lang = localStorage.getItem("ml_lang") || "ar";

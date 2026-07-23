@@ -1484,8 +1484,19 @@ app.post("/webhook/whatsapp", (req, res) => {
 app.use("/media", express.static(path.join(__dirname, "public", "media")));
 
 // ── Static dashboard ────────────────────────────────────────────────
-app.use(express.static(path.join(__dirname, "public")));
-app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
+// Per-deploy build stamp → the app.js/i18n.js URLs get a fresh ?v= on every
+// deploy, so browsers (and the network-first SW) never serve a stale bundle.
+const BUILD = Date.now().toString(36);
+function sendIndex(req, res) {
+  let html;
+  try { html = fs.readFileSync(path.join(__dirname, "public", "index.html"), "utf8"); }
+  catch (e) { return res.status(500).send("index missing"); }
+  html = html.replace('src="/app.js"', `src="/app.js?v=${BUILD}"`);
+  res.set("Cache-Control", "no-store");
+  res.type("html").send(html);
+}
+app.use(express.static(path.join(__dirname, "public"), { index: false })); // "/" handled below (with version injection)
+app.get("*", sendIndex);
 
 app.listen(PORT, () => {
   console.log(`\n  MatjarLink Ops Platform`);

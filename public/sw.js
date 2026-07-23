@@ -1,7 +1,9 @@
 // Network-first service worker: always serve fresh content when online (so
 // deploys/updates show immediately), fall back to cache when offline.
-const CACHE = "mlops-v2";
-const SHELL = ["/", "/app.js", "/i18n.js", "/manifest.json", "/logo.svg", "/icon.svg"];
+const CACHE = "mlops-v3";
+// Don't pre-cache the versioned bundles (app.js/i18n.js now carry a ?v= stamp and
+// are fetched fresh network-first); only the shell entry so offline still loads.
+const SHELL = ["/", "/manifest.json", "/logo.svg", "/icon.svg"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
