@@ -19,6 +19,7 @@ import { managerSystem, demoReply, errReply, managerNoteSystem, demoNoteReply, a
 import * as live from "./data/live.js";
 import * as charMod from "./data/characters.js";
 import * as gemini from "./integrations/gemini.js";
+import * as apify from "./integrations/apify.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -669,6 +670,50 @@ async function nightlyTick() {
 }
 setInterval(nightlyTick, 15 * 60 * 1000);
 nightlyTick();
+
+// ── Daily market research ── scrape relevant IG accounts via Apify, distill the
+// trends (top hashtags + best-performing captions) for the content plan. ~06:00 Muscat.
+async function runResearch() {
+  const accounts = store.getResearch().accounts || [];
+  if (!apify.apifyReady()) throw new Error("Apify غير مربوط — أضف APIFY_TOKEN من الإعدادات");
+  if (!accounts.length) throw new Error("أضِف حسابات مستهدفة أولاً");
+  const items = await apify.scrapeAccounts(accounts, 6);
+  const tags = {}, caps = [];
+  for (const p of items) {
+    (p.hashtags || []).forEach((h) => { const t = String(h).replace(/^#/, ""); if (t) tags[t] = (tags[t] || 0) + 1; });
+    const first = String(p.caption || "").split("\n").find((l) => l.trim());
+    if (first) caps.push({ text: first.slice(0, 140), likes: p.likesCount || 0, comments: p.commentsCount || 0, acc: p.ownerUsername || "" });
+  }
+  const topTags = Object.entries(tags).sort((a, b) => b[1] - a[1]).slice(0, 14).map(([tag, n]) => ({ tag, n }));
+  const insights = caps.sort((a, b) => (b.likes + b.comments) - (a.likes + a.comments)).slice(0, 10);
+  const { date } = muscatDateHour();
+  return store.saveResearch({ topTags, insights, lastRun: date, count: items.length });
+}
+let researchBusy = false;
+async function researchTick() {
+  const { date, hour } = muscatDateHour();
+  if (hour < 5 || hour >= 9) return;
+  if (store.researchRanOn() === date) return;
+  if (!apify.apifyReady() || !(store.getResearch().accounts || []).length) return;
+  store.saveResearch({ lastRun: date }); // guard: once per day even across restarts
+  console.log(`[research] ${date} scanning ${store.getResearch().accounts.length} accounts`);
+  try { await runResearch(); console.log("[research] done"); } catch (e) { console.error("[research]", e.message); }
+}
+setInterval(researchTick, 30 * 60 * 1000);
+researchTick();
+app.get("/api/research", (req, res) => { const r = store.getResearch(); res.json({ ok: true, ...r, apifyReady: apify.apifyReady() }); });
+app.post("/api/research/accounts", (req, res) => {
+  const list = Array.isArray((req.body || {}).accounts) ? req.body.accounts : String((req.body || {}).accounts || "").split(/[\n,،]/);
+  res.json({ ok: true, ...store.setResearchAccounts(list) });
+});
+app.post("/api/research/run", async (req, res) => {
+  if (researchBusy) return res.json({ ok: false, error: "قيد التشغيل" });
+  researchBusy = true;
+  try { const r = await runResearch(); res.json({ ok: true, ...r }); }
+  catch (e) { res.status(400).json({ ok: false, error: e.message }); }
+  finally { researchBusy = false; }
+});
+
 // ── Proposals ── list / approve / reject + manual "run now" (for testing) ──
 app.get("/api/proposals", (req, res) => {
   const all = Object.values(store.getProposals()).filter((p) => p.status === "pending").sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
@@ -1126,11 +1171,14 @@ app.get("/api/connections", (req, res) => {
       fields: [f("WHATSAPP_TOKEN", "Access Token", true), f("WHATSAPP_PHONE_ID", "Phone Number ID")] },
     { key: "gemini", name: "Gemini — توليد الشخصيات (Nano Banana)", icon: "GM", connected: gemini.geminiReady(),
       help: "https://aistudio.google.com/apikey", desc: "توليد شخصيات عُمانية أصيلة تلقائياً كل ليلة (١–٥ص) لصفحة القوالب.",
-      fields: [f("GEMINI_API_KEY", "API Key", true)] }
+      fields: [f("GEMINI_API_KEY", "API Key", true)] },
+    { key: "apify", name: "Apify — بحث السوق", icon: "AP", connected: apify.apifyReady(),
+      help: "https://console.apify.com/account/integrations", desc: "بحث يومي عن ترندات التجارة الإلكترونية من حسابات منافسة لتغذية خطة المحتوى.",
+      fields: [f("APIFY_TOKEN", "API Token", true)] }
   ]});
 });
 app.post("/api/connections", (req, res) => {
-  const allowed = ["META_ACCESS_TOKEN", "META_IG_USER_ID", "META_PAGE_ID", "WINDSOR_API_KEY", "WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "META_GRAPH_VERSION", "AUTO_PUBLISH", "GEMINI_API_KEY", "GEMINI_IMAGE_MODEL"];
+  const allowed = ["META_ACCESS_TOKEN", "META_IG_USER_ID", "META_PAGE_ID", "WINDSOR_API_KEY", "WHATSAPP_TOKEN", "WHATSAPP_PHONE_ID", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "META_GRAPH_VERSION", "AUTO_PUBLISH", "GEMINI_API_KEY", "GEMINI_IMAGE_MODEL", "APIFY_TOKEN", "APIFY_ACTOR"];
   const clean = {}; for (const k of allowed) if (k in (req.body || {})) clean[k] = req.body[k];
   store.cfgSet(clean);
   res.json({ ok: true, connectivity: { meta: meta.metaReady(), whatsapp: wa.whatsappReady(), windsor: windsor.windsorReady() } });

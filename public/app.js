@@ -298,6 +298,52 @@ const ARMONTHS_CLIENT = ["يناير", "فبراير", "مارس", "أبريل",
 const WEEKDAYS_CLIENT = { ar: ["أحد", "إثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت"], en: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], fa: ["یک", "دو", "سه", "چهار", "پنج", "جمعه", "شنبه"] };
 let planActiveKey = null; // which month tab is open
 let planViewMode = "table"; // "table" | "calendar"
+let researchOpen = false;   // market-research panel expanded?
+
+// ── Market research panel (plan page) ── daily Apify scan of relevant IG accounts
+// → top trends the owner can turn into content-plan ideas with one click.
+async function loadResearchPanel() {
+  const host = $("#mktresearch"); if (!host) return;
+  let r = null;
+  try { r = await fetch("/api/research").then(x => x.json()); } catch (e) {}
+  if (!r) { host.innerHTML = ""; return; }
+  const open = researchOpen;
+  const accounts = (r.accounts || []).join("، ");
+  const tags = (r.topTags || []).map(t => `<span class="pill p-idle">#${escapeHtml(t.tag)} ${t.n}</span>`).join(" ");
+  const insights = (r.insights || []).map((it, i) => `<div class="rins" style="padding:.5rem 0;border-bottom:1px solid var(--line)">
+    <div class="mut">@${escapeHtml(it.acc || "")} · ❤ ${it.likes || 0}${it.comments ? " · 💬 " + it.comments : ""}</div>
+    <div style="margin:.2rem 0">${escapeHtml(it.text)}</div>
+    <button class="btn ghost sm rIdea" data-i="${i}">💡 ${T("res_to_idea")}</button></div>`).join("");
+  host.innerHTML = `<div class="pcard nofloat" style="margin:.2rem 0 .8rem">
+    <div style="display:flex;align-items:center;gap:.5rem;cursor:pointer" id="rhead"><b>🔎 ${T("res_title")}</b>
+      ${r.lastRun ? `<span class="mut">${T("res_last")}: ${r.lastRun}</span>` : `<span class="mut">${T("res_never")}</span>`}
+      <span style="margin-inline-start:auto">${open ? "▲" : "▼"}</span></div>
+    <div id="rbody" style="display:${open ? "block" : "none"};margin-top:.6rem">
+      ${!r.apifyReady ? `<div class="note-warn" style="margin-bottom:.5rem">${T("res_need_apify")}</div>` : ""}
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.5rem">
+        <input class="pinput" id="racc" value="${escapeHtml(accounts)}" placeholder="${T("res_accounts_ph")}" style="flex:1;min-width:14rem" autocomplete="off">
+        <button class="btn ghost sm" id="rsave">💾</button>
+        <button class="btn sm" id="rrun">🔎 ${T("res_run")}</button><span class="ok-s" id="rmsg"></span></div>
+      ${tags ? `<div style="margin:.4rem 0;display:flex;gap:.3rem;flex-wrap:wrap">${tags}</div>` : ""}
+      <div class="rinsights">${insights || `<div class="mut">${T("res_empty")}</div>`}</div></div></div>`;
+  $("#rhead").onclick = () => { researchOpen = !researchOpen; loadResearchPanel(); };
+  if (!open) return;
+  const saveAccts = () => fetch("/api/research/accounts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accounts: $("#racc").value }) });
+  $("#rsave").onclick = async () => { await saveAccts(); const m = $("#rmsg"); if (m) { m.textContent = "✓"; setTimeout(() => m.textContent = "", 1500); } };
+  $("#rrun").onclick = async () => {
+    const b = $("#rrun"); b.disabled = true; b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
+    await saveAccts();
+    const x = await fetch("/api/research/run", { method: "POST" }).then(z => z.json()).catch(() => null);
+    if (x && x.ok) loadResearchPanel();
+    else { const m = $("#rmsg"); if (m) m.textContent = "✗ " + ((x && x.error) || ""); b.disabled = false; b.innerHTML = "🔎 " + T("res_run"); }
+  };
+  document.querySelectorAll(".rIdea").forEach(btn => btn.onclick = async () => {
+    const it = (r.insights || [])[+btn.dataset.i]; if (!it) return;
+    btn.disabled = true; btn.textContent = "…";
+    const rr = await fetch("/api/plan/idea", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: it.text, month: planActiveKey }) }).then(z => z.json()).catch(() => null);
+    btn.textContent = rr && rr.ok ? "✓ " + T("res_added") : "✗";
+  });
+}
 
 // Monthly calendar grid; each plan item is a draggable chip on its day.
 function planCalendar(plan) {
@@ -368,10 +414,11 @@ async function renderPlan(C) {
   if (!tabs.some(t => t.key === nextKey)) tabs.push({ key: nextKey, label: `${ARMONTHS_CLIENT[nm - 1]} ${ny}`, kind: "new" });
   if (!planActiveKey || !tabs.some(t => t.key === planActiveKey)) planActiveKey = plans[nextKey] ? nextKey : (tabs.find(t => t.kind === "plan")?.key || tabs[0]?.key);
   const active = tabs.find(t => t.key === planActiveKey) || tabs[0];
-  const tabBar = `<div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap"><div class="montabs" style="margin:0">${tabs.map(t => `<button class="montab ${t.key === active.key ? "on" : ""}" data-mk="${t.key}">${escapeHtml(t.label)}${t.kind === "current" ? " • " + T("plan_this_month") : t.kind === "new" && !plans[t.key] ? " +" : ""}</button>`).join("")}</div><button class="btn sm" id="planregen">✨ ${T("plan_regen")}</button></div><div class="mut" id="planregmsg" style="margin:.2rem 0 .6rem"></div>`;
+  const tabBar = `<div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap"><div class="montabs" style="margin:0">${tabs.map(t => `<button class="montab ${t.key === active.key ? "on" : ""}" data-mk="${t.key}">${escapeHtml(t.label)}${t.kind === "current" ? " • " + T("plan_this_month") : t.kind === "new" && !plans[t.key] ? " +" : ""}</button>`).join("")}</div><button class="btn sm" id="planregen">✨ ${T("plan_regen")}</button></div><div class="mut" id="planregmsg" style="margin:.2rem 0 .6rem"></div><div id="mktresearch"></div>`;
 
   const bindTabs = () => {
     C.querySelectorAll("[data-mk]").forEach(b => b.onclick = () => { planActiveKey = b.dataset.mk; renderPlan(C); });
+    loadResearchPanel();
     const rg = $("#planregen");
     if (rg) rg.onclick = async () => {
       if (!confirm(T("plan_regen_confirm"))) return;
@@ -1043,12 +1090,13 @@ async function renderNeeds(C) {
   if (geminiOff) tasks.push({ icon: "🔌", pr: T("pr_high"), title: T("task_gemini_t"), desc: T("task_gemini_d"), view: "settings", prompt: T("task_gemini_prompt") });
   off.filter(i => !/gemini/i.test(i.key)).forEach(i => tasks.push({ icon: "🔌", pr: T("pr_low"), title: T("task_conn_t").replace("{n}", i.name), desc: i.desc || "", view: "settings", prompt: T("task_conn_prompt").replace("{n}", i.name) }));
   // developer / platform-improvement needs → each becomes a Claude-ready prompt
-  pillars.forEach(n => tasks.push({ icon: "🛠", pr: n.pr || T("pr_med"), title: n.ti, desc: n.d, prompt: `${n.ti}\n\n${n.d}` }));
+  pillars.forEach(n => tasks.push({ icon: "🛠", pr: (Array.isArray(n.pr) ? n.pr[0] : n.pr) || T("pr_med"), title: n.ti, desc: n.d, prompt: `${n.ti}\n\n${n.d}` }));
 
   if (!tasks.length) { C.innerHTML = `<div class="note-info">✅ ${T("tasks_empty")}</div>`; return; }
+  const prCls = (p) => (p === T("pr_high") || /عاجل|عالي|مرتفع|urgent|high/i.test(p)) ? "p-warn" : (p === T("pr_low") || /منخفض|low/i.test(p)) ? "p-idle" : "p-info";
   const card = (t, i) => `<div class="card taskcard">
     <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.4rem"><span style="font-size:1.2rem">${t.icon}</span>
-      <div style="font-weight:800;flex:1">${escapeHtml(t.title)}</div>${pill([t.pr, t.pr === T("pr_high") ? "p-warn" : t.pr === T("pr_low") ? "p-idle" : "p-info"])}</div>
+      <div style="font-weight:800;flex:1">${escapeHtml(t.title)}</div>${pill([t.pr, prCls(t.pr)])}</div>
     <div class="mut" style="margin-bottom:.6rem">${escapeHtml(t.desc)}</div>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
       ${t.view ? `<button class="btn sm" data-goview="${t.view}">↪ ${T("task_open")}</button>` : ""}
@@ -1423,7 +1471,7 @@ async function renderLeads(C) {
   const allForOpts = S.leads || [];
   const sources = [...new Set(allForOpts.map(l => l.source).filter(Boolean))];
   const fields = [...new Set(allForOpts.map(l => l.field).filter(Boolean))];
-  const sel = (id, val, opts, allLabel) => `<select class="psel" id="${id}"><option value="all">${allLabel}</option>${opts.map(o => `<option value="${o}" ${o === val ? "selected" : ""}>${escapeHtml(o)}</option>`).join("")}</select>`;
+  const sel = (id, val, opts, allLabel) => `<select class="psel" id="${id}" style="max-width:11rem"><option value="all">${allLabel}</option>${opts.map(o => `<option value="${o}" ${o === val ? "selected" : ""}>${escapeHtml(o)}</option>`).join("")}</select>`;
 
   const toolbar = `<div class="pcard nofloat" style="margin-bottom:1rem">
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">

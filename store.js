@@ -276,6 +276,20 @@ export function addClothing(c) {
 }
 export function removeClothing(id) { cloth = cloth.filter((x) => x.id !== id); persistCloth(); return true; }
 
+// ── Market research ── daily Apify scrape of relevant IG accounts → trends the
+// content plan can learn from. Owner-editable target accounts + latest insights.
+const RESEARCH_FILE = sp("research.json");
+let research = { accounts: [], insights: [], topTags: [], lastRun: "", count: 0 };
+try { research = { ...research, ...JSON.parse(fs.readFileSync(RESEARCH_FILE, "utf8")) }; } catch (e) {}
+function persistResearch() { try { writeDurable(RESEARCH_FILE, JSON.stringify(research)); } catch (e) {} }
+export function getResearch() { return research; }
+export function setResearchAccounts(list) {
+  research.accounts = (list || []).map((s) => String(s).trim().replace(/^@/, "")).filter(Boolean).slice(0, 20);
+  persistResearch(); return research;
+}
+export function saveResearch(patch) { research = { ...research, ...patch }; persistResearch(); return research; }
+export function researchRanOn() { return research.lastRun || ""; }
+
 // ── Agent self-improvement state ── approved suggestions raise the agent's level.
 const AG_FILE = sp("agents_state.json");
 let ag = {};
