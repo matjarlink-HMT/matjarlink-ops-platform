@@ -22,7 +22,7 @@ const pill = (a) => a ? `<span class="pill ${a[1]}">${a[0]}</span>` : "";
 const STMAP = { online: "p-ok", working: "p-info", scheduled: "p-info", idle: "p-idle", action: "p-bad", new: "p-new" };
 const GROUPS = [
   { items: ["overview"] },
-  { label: "g_manage", items: ["manager", "agents", "needs"] },
+  { label: "g_manage", items: ["approvals", "manager", "agents", "needs"] },
   { label: "g_content", items: ["studio", "pipeline", "plan", "templates"] },
   { label: "g_engage", items: ["comments", "messages", "leads"] },
   { label: "g_perf", items: ["analytics", "camp"] },
@@ -114,6 +114,7 @@ function render(p) {
       const t = document.querySelector(`#nav button[data-go="${b.dataset.goview}"]`); if (t) t.click();
     });
   }
+  else if (p === "approvals") renderApprovals(C);
   else if (p === "agents") { C.innerHTML = `<div class="note-info">🚀 ${T("agent_improve_hint")}</div><div class="grid g3">${S.agents.map((a, i) => agentCard(a, i)).join("")}</div>`; bindAgents(); }
   else if (p === "needs") C.innerHTML = `<div class="grid g2">${S.needs.map(needCard).join("")}</div>`;
   else if (p === "studio") renderStudio(C);
@@ -588,6 +589,61 @@ async function renderTemplates(C) {
   });
   renderProposals($("#propsec"), C);
   renderCharacters($("#charsec"), data.active);
+}
+
+// ── «الاعتماد» ── one inbox for everything pending (post/reel/character/template).
+// Approve → routes to its home (design→publish queue, template→التصميم, character→
+// الشخصيات). Edit → note + regenerate. Reject → discard.
+const APPR_ICON = { post: "🖼", template: "🌙", character: "🧑🏻" };
+async function renderApprovals(C) {
+  C.innerHTML = `<div class="loading">…</div>`;
+  let d = null;
+  try { d = await fetch("/api/proposals").then(r => r.json()); } catch (e) {}
+  if (!d || !d.ok) { C.innerHTML = `<div class="note-info">${T("appr_hint")}</div><div class="mut">${T("appr_empty")}</div>`; return; }
+  const all = [
+    ...(d.posts || []).map(p => ({ ...p, kind: "post" })),
+    ...(d.characters || []).map(p => ({ ...p, kind: "character" })),
+    ...(d.templates || []).map(p => ({ ...p, kind: "template" })),
+  ];
+  const card = (p) => `<div class="tplcard">
+      <div class="tplhd"><span class="tplname">${APPR_ICON[p.kind]} ${escapeHtml(p.name || p.label || p.t || "")}</span><span class="pill p-idle">${T("appr_kind_" + p.kind)}</span></div>
+      <div class="tplshots" style="grid-template-columns:1fr"><img loading="lazy" src="${p.previewUrl}"></div>
+      <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.4rem">
+        <button class="btn ok sm aappr" data-appr="${p.id}">✓ ${T("appr_approve")}</button>
+        ${p.kind === "template" ? "" : `<button class="btn sm aedit" data-appr="${p.id}">✎ ${T("appr_edit")}</button>`}
+        <button class="btn ghost sm arej" data-appr="${p.id}">✕ ${T("appr_reject")}</button>
+      </div>
+      <div class="aeditbox" data-appr="${p.id}" style="display:none;margin-top:.4rem">
+        <textarea class="sinput anote" rows="2" placeholder="${T("appr_note_ph")}"></textarea>
+        <button class="btn sm aregen" data-appr="${p.id}" style="margin-top:.3rem">↻ ${T("appr_regen")}</button>
+      </div>
+      <div class="mut amsg" data-appr="${p.id}" style="margin-top:.3rem"></div>
+    </div>`;
+  C.innerHTML = `<div class="note-info">🗳 ${T("appr_hint")}</div>
+    <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:.4rem 0 1rem">
+      <button class="btn sm" id="apprrun">⚡ ${T("prop_run")}</button>
+      <span class="mut">${T("appr_route_note")}</span>
+    </div>
+    ${all.length ? `<div class="grid g3">${all.map(card).join("")}</div>` : `<div class="mut" style="padding:1rem">${T("appr_empty")}</div>`}`;
+  const run = $("#apprrun");
+  if (run) run.onclick = async () => { run.disabled = true; run.innerHTML = `<span class="dots"><i></i><i></i><i></i></span> ${T("prop_running")}`; await fetch("/api/proposals/run-now", { method: "POST" }).catch(() => {}); renderApprovals(C); };
+  const msg = (id) => C.querySelector(`.amsg[data-appr="${id}"]`);
+  C.querySelectorAll(".aappr").forEach(b => b.onclick = async () => {
+    const m = msg(b.dataset.appr); if (m) m.textContent = "…";
+    const r = await fetch("/api/proposals/approve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: b.dataset.appr }) }).then(x => x.json()).catch(() => null);
+    if (r && r.ok) { if (m) m.textContent = "✓ " + T("appr_approved"); setTimeout(() => renderApprovals(C), 600); } else if (m) m.textContent = "⚠ " + ((r && r.error) || "");
+  });
+  C.querySelectorAll(".arej").forEach(b => b.onclick = async () => {
+    await fetch("/api/proposals/reject", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: b.dataset.appr }) }).catch(() => {});
+    renderApprovals(C);
+  });
+  C.querySelectorAll(".aedit").forEach(b => b.onclick = () => { const box = C.querySelector(`.aeditbox[data-appr="${b.dataset.appr}"]`); if (box) box.style.display = box.style.display === "none" ? "block" : "none"; });
+  C.querySelectorAll(".aregen").forEach(b => b.onclick = async () => {
+    const id = b.dataset.appr, note = C.querySelector(`.aeditbox[data-appr="${id}"] .anote`)?.value || "", m = msg(id);
+    if (m) m.textContent = "↻ …"; b.disabled = true;
+    const r = await fetch("/api/proposals/regenerate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, note }) }).then(x => x.json()).catch(() => null);
+    if (r && r.ok) renderApprovals(C); else { if (m) m.textContent = "⚠ " + ((r && r.error) || ""); b.disabled = false; }
+  });
 }
 
 // Nightly-invented proposals (templates + characters) awaiting the owner's approval.

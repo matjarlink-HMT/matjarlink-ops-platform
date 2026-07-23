@@ -615,6 +615,28 @@ app.post("/api/proposals/approve", (req, res) => {
   res.json({ ok: true });
 });
 app.post("/api/proposals/reject", (req, res) => { store.setProposalStatus((req.body || {}).id, "rejected"); res.json({ ok: true }); });
+// Regenerate a pending proposal with the reviewer's note (edit-and-retry).
+app.post("/api/proposals/regenerate", async (req, res) => {
+  const b = req.body || {}; const p = store.getProposals()[b.id];
+  if (!p || p.status !== "pending") return res.status(404).json({ ok: false, error: "proposal not found" });
+  if (!gemini.geminiReady()) return res.status(400).json({ ok: false, error: "يحتاج ربط Gemini" });
+  const note = (b.note || "").trim();
+  try {
+    if (p.kind === "post") {
+      const light = p.template === "editorial-white";
+      const sc = editorialScene([p.t, note].join(" "), light);
+      const ed = await makeEditorial({ light, layout: sc.layout, kicker: "متجرلينك", headline: p.t, pop: p.t2 || "", cta: p.cta || "", prompt: sc.prompt + (note ? ` Owner note: ${note}.` : ""), id: p.id });
+      store.saveProposal({ ...p, previewUrl: ed.url });
+    } else if (p.kind === "character") {
+      const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
+      const { buffer } = await gemini.generateImage(p.prompt + (note ? ` ${note}.` : ""));
+      const name = `_propchar-${p.id}`, file = `${name}.png`;
+      const fd = fs.openSync(path.join(dir, file), "w"); try { fs.writeSync(fd, buffer); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+      store.saveProposal({ ...p, file, previewUrl: `/media/design/${name}?v=${Date.now()}` });
+    } else return res.status(400).json({ ok: false, error: "لا يدعم إعادة توليد القوالب" });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
 // ── Editorial style (adopted templates 6 = dark, 7 = white) ──────────────────
 // Gemini generates a content-matched premium SCENE (person/device/card/place),
 // our engine overlays crisp Arabic text. Dynamic layout (side/center) + a hero
