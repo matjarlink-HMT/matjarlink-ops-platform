@@ -256,7 +256,7 @@ app.post("/api/plan/generate", async (req, res) => {
   if (!out) return res.status(502).json({ ok: false, error: "plan generation failed" });
   const items = (out.concepts || []).slice(0, 16).map((c, i) => {
     const day = Math.min(Math.max(parseInt(c.day, 10) || (2 + i * 2), 1), new Date(year, month, 0).getDate());
-    return { key: `${year}-${month}-${i}`, day, time: i % 2 ? "20:30" : "20:00", t: String(c.t || ""), ty: String(c.ty || "منشور علامة"), pillar: String(c.pillar || ""), hook: String(c.hook || ""), cap: String(c.cap || ""), status: "draft", id: null };
+    return { key: `${year}-${month}-${i}`, day, time: i % 2 ? "20:30" : "20:00", t: String(c.t || ""), ty: String(c.ty || "توعية"), pillar: String(c.pillar || ""), hook: String(c.hook || ""), cap: String(c.cap || ""), status: "draft", id: null };
   });
   const plan = store.setPlan({ label, year, month, goal: String(out.goal || ""), pillars: (out.pillars || []).map(String).slice(0, 6), items, generatedAt: new Date().toISOString() });
   res.json({ ok: true, plan });
@@ -671,8 +671,10 @@ async function nightlyTick() {
   if (hour < 1 || hour >= 5) return;
   if (store.nightlyRanOn() === date) return;
   store.markNightlyRan(date); // set before running → once per night even across restarts
-  console.log(`[nightly] ${date} inventing templates + characters`);
-  try { const r = await generateNightlyBatch(); console.log("[nightly] done", r); } catch (e) { console.error("[nightly]", e.message); }
+  console.log(`[nightly] ${date} inventing characters (designs come from the approved plan)`);
+  // Random editorial POSTS are no longer auto-generated — designs come exclusively
+  // from the owner-approved content plan. Nightly keeps inventing characters only.
+  try { const r = await generateNightlyBatch({ post: 0, char: 2 }); console.log("[nightly] done", r); } catch (e) { console.error("[nightly]", e.message); }
 }
 setInterval(nightlyTick, 15 * 60 * 1000);
 nightlyTick();
@@ -882,6 +884,54 @@ app.post("/api/proposals/run-now", async (req, res) => { const r = await generat
 app.post("/api/admin/reset", (req, res) => { res.json(store.resetForFreshStart()); });
 // Regenerate the content plan → dated editorial posts (alternating white/dark) sent
 // to the Approvals inbox. Default range: rest of this month + first week of next.
+// Approve the plan → generate editorial designs for the COMING WEEK's plan items,
+// each sent to «الاعتماد» (pending) carrying the plan's date+time. The owner then
+// approves each design individually → it moves to the publish queue and
+// auto-publishes at the scheduled plan time. Designs come ONLY from here.
+const CONTENT_TYPE_HINT = {
+  "تشويق": "أسلوب تشويقي يثير الفضول قبل الإطلاق (قريبًا)، عنوان صادم قصير",
+  "توعية": "أسلوب توعوي يبيّن لماذا يحتاج التاجر النظام، قيمة عملية",
+  "معلومة": "نصيحة أو معلومة عملية مفيدة للتاجر",
+  "إحصائيات": "رقم أو حقيقة سوقية مؤثّرة عن التجارة الإلكترونية في عُمان/الخليج",
+};
+app.post("/api/plan/approve", async (req, res) => {
+  if (!generator.claudeReady()) return res.status(400).json({ ok: false, error: "يحتاج ربط Claude (المدير الذكي) أولاً" });
+  if (!gemini.geminiReady()) return res.status(400).json({ ok: false, error: "يحتاج ربط Gemini أولاً" });
+  const key = (req.body || {}).month;
+  const plans = store.getPlans();
+  const plan = (key && plans[key]) || Object.values(plans).sort((a, b) => (b.generatedAt || "").localeCompare(a.generatedAt || ""))[0];
+  if (!plan) return res.status(404).json({ ok: false, error: "لا توجد خطة لاعتمادها" });
+  // Coming-week window (today → +7 days, Muscat).
+  const m = new Date(Date.now() + 4 * 3600 * 1000);
+  const today0 = Date.UTC(m.getUTCFullYear(), m.getUTCMonth(), m.getUTCDate());
+  const within = (it) => { const diff = (Date.UTC(plan.year, plan.month - 1, it.day) - today0) / 86400000; return diff >= 0 && diff <= 7; };
+  const items = (plan.items || []).filter((it) => within(it) && !it.designed && it.status !== "applied");
+  const out = { generated: 0, skipped: (plan.items || []).length - items.length, errors: [] };
+  let idx = 0;
+  for (const it of items) {
+    try {
+      const light = idx % 2 === 0;
+      const template = light ? "editorial-white" : "editorial-dark";
+      const idNum = nextIdNum(baseState().queue) + idx;
+      const dateStr = `${plan.year}-${String(plan.month).padStart(2, "0")}-${String(it.day).padStart(2, "0")} · ${it.time || "20:00"}`;
+      const hint = CONTENT_TYPE_HINT[it.ty] || "";
+      let post = null;
+      try { post = await generator.generatePost({ idNum, date: dateStr, pillar: it.ty || it.pillar, prompt: `فكرة الخطة: «${it.t}» — نوع المحتوى: ${it.ty}${hint ? " (" + hint + ")" : ""}. اجعل العنوان إعلانياً قصيراً صادماً.` }, "ar"); } catch (e) {}
+      const headline = (post && post.t) || it.t;
+      const pop = (post && post.t2) || "";
+      const cta = (post && post.cta) || "قريبًا في عُمان";
+      const sc = editorialScene(headline, light);
+      const pid = "post-" + Date.now().toString(36) + idx.toString(36) + Math.floor(Math.random() * 1e3).toString(36);
+      const ed = await makeEditorial({ light, layout: sc.layout, kicker: "متجرلينك", headline, pop, cta, prompt: sc.prompt, id: pid });
+      store.saveProposal({ id: pid, kind: "post", template, t: headline, t2: pop, cta, cap: (post && post.cap) || "", ty: it.ty, name: `${headline} · ${dateStr.split(" · ")[0]}`, date: dateStr, previewUrl: ed.url });
+      it.designed = true; it.proposalId = pid;
+      out.generated++; idx++;
+    } catch (e) { out.errors.push(e.message); }
+  }
+  plan.approved = true; plan.approvedAt = new Date().toISOString();
+  store.setPlan(plan);
+  res.json({ ok: true, ...out });
+});
 app.post("/api/plan/regenerate", async (req, res) => {
   if (!gemini.geminiReady()) return res.status(400).json({ ok: false, error: "قالب «الإعلاني» يحتاج ربط Gemini أولاً" });
   const m = new Date(Date.now() + 4 * 3600 * 1000);            // Muscat now
@@ -1313,12 +1363,12 @@ async function autoPublishTick() {
     // objection (a note left without approval). Explicit approval also passes.
     const nt = notes[q.id] || {};
     const approved = nt.status === "معتمد";
-    const held = !approved && !!(nt.note && nt.note.trim());
-    // AI-generated posts (plan / ➕) need EXPLICIT approval — silence=consent
-    // applies only to content the owner has already seen (the seeded batch).
-    if (q.gen && !approved) continue;
+    // Management approves every design explicitly (silence=consent is OFF). Nothing
+    // publishes without an explicit «معتمد» — approved posts then auto-publish at
+    // their scheduled plan time.
+    if (!approved) continue;
     const when = parseWhen(q.date);
-    if (held || !when) continue;
+    if (!when) continue;
     const dueAgo = now - when.getTime();
     const input = resolveMedia(q, publicBase());
     if (!input) continue; // needs media (also: don't alert about a post that can't publish)

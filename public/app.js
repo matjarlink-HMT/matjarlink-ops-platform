@@ -295,7 +295,7 @@ function bindStudioDrafts(C) {
 }
 
 // ── content plan (خطة المحتوى) ── month tabs · editable table · one-click apply ──
-const PLAN_TYPES = ["ريل تشويقي", "كاروسيل توعوي", "منشور علامة", "تفاعلي + استطلاع", "مجتمعي", "كاروسيل فاخر"];
+const PLAN_TYPES = ["تشويق", "توعية", "معلومة", "إحصائيات"];
 const ARMONTHS_CLIENT = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
 const WEEKDAYS_CLIENT = { ar: ["أحد", "إثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت"], en: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], fa: ["یک", "دو", "سه", "چهار", "پنج", "جمعه", "شنبه"] };
 let planActiveKey = null; // which month tab is open
@@ -416,19 +416,19 @@ async function renderPlan(C) {
   if (!tabs.some(t => t.key === nextKey)) tabs.push({ key: nextKey, label: `${ARMONTHS_CLIENT[nm - 1]} ${ny}`, kind: "new" });
   if (!planActiveKey || !tabs.some(t => t.key === planActiveKey)) planActiveKey = plans[nextKey] ? nextKey : (tabs.find(t => t.kind === "plan")?.key || tabs[0]?.key);
   const active = tabs.find(t => t.key === planActiveKey) || tabs[0];
-  const tabBar = `<div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap"><div class="montabs" style="margin:0">${tabs.map(t => `<button class="montab ${t.key === active.key ? "on" : ""}" data-mk="${t.key}">${escapeHtml(t.label)}${t.kind === "current" ? " • " + T("plan_this_month") : t.kind === "new" && !plans[t.key] ? " +" : ""}</button>`).join("")}</div><button class="btn sm" id="planregen">✨ ${T("plan_regen")}</button></div><div class="mut" id="planregmsg" style="margin:.2rem 0 .6rem"></div><div id="mktresearch"></div>`;
+  const tabBar = `<div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap"><div class="montabs" style="margin:0">${tabs.map(t => `<button class="montab ${t.key === active.key ? "on" : ""}" data-mk="${t.key}">${escapeHtml(t.label)}${t.kind === "current" ? " • " + T("plan_this_month") : t.kind === "new" && !plans[t.key] ? " +" : ""}</button>`).join("")}</div><button class="btn sm" id="planapprove">✅ ${T("plan_approve")}</button></div><div class="mut" id="planregmsg" style="margin:.2rem 0 .6rem">${active && plans[active.key]?.approved ? "✓ " + T("plan_approved_at") + " " + (plans[active.key].approvedAt || "").slice(0, 10) : ""}</div><div id="mktresearch"></div>`;
 
   const bindTabs = () => {
     C.querySelectorAll("[data-mk]").forEach(b => b.onclick = () => { planActiveKey = b.dataset.mk; renderPlan(C); });
     loadResearchPanel();
-    const rg = $("#planregen");
+    const rg = $("#planapprove");
     if (rg) rg.onclick = async () => {
-      if (!confirm(T("plan_regen_confirm"))) return;
-      rg.disabled = true; rg.innerHTML = `<span class="dots"><i></i><i></i><i></i></span> ${T("plan_regen_running")}`;
-      const r = await fetch("/api/plan/regenerate", { method: "POST" }).then(x => x.json()).catch(() => null);
+      if (!confirm(T("plan_approve_confirm"))) return;
+      rg.disabled = true; rg.innerHTML = `<span class="dots"><i></i><i></i><i></i></span> ${T("plan_approve_running")}`;
+      const r = await fetch("/api/plan/approve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ month: planActiveKey }) }).then(x => x.json()).catch(() => null);
       const m = $("#planregmsg");
-      if (r && r.ok) { if (m) m.textContent = `✓ ${r.posts || 0} ${T("plan_regen_done")}`; }
-      else { if (m) m.textContent = "⚠ " + ((r && r.error) || ""); rg.disabled = false; rg.innerHTML = `✨ ${T("plan_regen")}`; }
+      if (r && r.ok) { if (m) m.textContent = `✓ ${r.generated || 0} ${T("plan_approve_done")}`; rg.innerHTML = `✅ ${T("plan_approve")}`; rg.disabled = false; try { S = await fetch("/api/state").then(x => x.json()); } catch (e) {} }
+      else { if (m) m.textContent = "⚠ " + ((r && r.error) || ""); rg.disabled = false; rg.innerHTML = `✅ ${T("plan_approve")}`; }
     };
   };
   const fullDate = (p, it) => `${p.year}-${String(p.month).padStart(2, "0")}-${String(it.day).padStart(2, "0")}`;
@@ -493,7 +493,7 @@ async function renderPlan(C) {
       <td><select class="psel pty" ${dis}>${PLAN_TYPES.map(t => `<option ${t === it.ty ? "selected" : ""}>${t}</option>`).join("")}</select></td>
       <td><input class="pinput ppl" value="${escapeHtml(it.pillar).replace(/"/g, "&quot;")}" ${dis}></td>
       <td class="pstat">${it.status === "applied" ? `<span class="pill p-ok">✓ ${escapeHtml(it.id || "")}</span>` : `<span class="pill p-idle">${T("plan_draft")}</span>`}</td>
-      <td>${detail}${it.status === "applied" ? "" : `<button class="btn ghost sm applyone" data-key="${escapeHtml(it.key)}">⬆ ${T("plan_apply")}</button>`}</td>
+      <td>${detail}${it.designed ? `<span class="pill p-ok" title="${T("plan_designed")}">🎨 ${T("plan_designed")}</span>` : ""}</td>
     </tr>`;
   }).join("");
   C.innerHTML = `<div class="planwrap">${tabBar}
@@ -505,8 +505,7 @@ async function renderPlan(C) {
         <div class="viewtog" style="margin-inline-end:.3rem"><button class="vtbtn ${planViewMode === "table" ? "on" : ""}" data-pv="table">▤ ${T("plan_v_table")}</button><button class="vtbtn ${planViewMode === "calendar" ? "on" : ""}" data-pv="calendar">🗓 ${T("plan_v_cal")}</button></div>
         <button class="btn ghost sm" id="plannew">♻️ ${T("plan_new")}</button>
         <button class="btn ghost sm" id="planslots" title="${T("plan_slots_hint")}">🪄 ${T("plan_slots")}</button>
-        <button class="btn ghost sm" id="plansave">💾 ${T("plan_save")}</button>
-        <button class="btn sm" id="planall">🚀 ${T("plan_apply_all")} (${plan.items.length - applied})</button></div></div>
+        <button class="btn ghost sm" id="plansave">💾 ${T("plan_save")}</button></div></div>
     <div class="pcard nofloat" style="margin-bottom:1rem;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
       <span>💡</span><input class="pinput" id="ideain" placeholder="${T("idea_ph")}" style="flex:1;min-width:14rem" autocomplete="off">
       <button class="btn sm" id="ideago">${T("idea_add")}</button></div>
@@ -567,36 +566,9 @@ async function renderPlan(C) {
     const r = await fetch("/api/plan/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ year: yy, month: mo }) }).then(x => x.json()).catch(() => null);
     if (r && r.ok) renderPlan(C); else { b.disabled = false; b.textContent = "♻️ " + T("plan_new"); }
   };
-  const applyOne = async (key) => {
-    const r = await fetch("/api/plan/apply-item", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key }) }).then(x => x.json());
-    if (r.ok && r.plan) plans[active.key] = r.plan;
-    return r;
-  };
-  C.querySelectorAll(".applyone").forEach(b => b.onclick = async () => {
-    b.disabled = true; b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
-    await save();
-    const r = await applyOne(b.dataset.key);
-    if (!r.ok) { alert(r.error || "!"); }
-    try { S = await fetch("/api/state").then(x => x.json()); } catch (e) {}
-    renderPlan(C);
-  });
-  $("#planall").onclick = async () => {
-    const pending = plan.items.filter(i => i.status !== "applied");
-    if (!pending.length) return;
-    if (!confirm(T("plan_all_confirm").replace("{n}", pending.length))) return;
-    const b = $("#planall"); b.disabled = true; $("#plansave").disabled = true;
-    await save();
-    let done = 0, fail = 0;
-    for (const it of pending) {
-      b.innerHTML = `🚀 ${T("plan_applying")} ${done + fail + 1}/${pending.length} <span class="dots"><i></i><i></i><i></i></span>`;
-      const r = await applyOne(it.key).catch(() => null);
-      if (r && r.ok) done++; else fail++;
-    }
-    try { S = await fetch("/api/state").then(x => x.json()); } catch (e) {}
-    buildChrome();
-    await renderPlan(C);
-    const m = $("#planmsg"); if (m) m.textContent = `✓ ${T("plan_done")}: ${done}` + (fail ? ` · ✗ ${fail}` : "");
-  };
+  // Designs are no longer applied directly to the queue from here — the owner
+  // approves the whole plan («اعتمِد الخطة»), which generates the coming week's
+  // designs into «الاعتماد» for individual approval.
 }
 // Attribute-safe escape that PRESERVES newlines (escapeHtml turns \n into <br>,
 // which double-escapes inside a pre-wrap popup). Only neutralizes & " < >.
