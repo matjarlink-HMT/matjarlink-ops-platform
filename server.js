@@ -281,6 +281,27 @@ app.put("/api/plan", (req, res) => {
   res.json({ ok: true, plan: store.setPlan({ ...cur, ...p }) });
 });
 
+// 🔧 Re-sequence an EXISTING plan's dates → start from the upcoming days only
+// (tomorrow for the current month, day 1 for a future month), every 2 days;
+// items that no longer fit the month are trimmed. Fixes plans generated before
+// the date logic was corrected.
+app.post("/api/plan/resequence", (req, res) => {
+  const key = (req.body || {}).month;
+  const plans = store.getPlans();
+  const plan = key && plans[key];
+  if (!plan) return res.status(404).json({ ok: false, error: "لا توجد خطة" });
+  const dim = new Date(plan.year, plan.month, 0).getDate();
+  const mn = new Date(Date.now() + 4 * 3600 * 1000);
+  const isCur = plan.year === mn.getUTCFullYear() && plan.month === mn.getUTCMonth() + 1;
+  const startDay = isCur ? Math.min(mn.getUTCDate() + 1, dim) : 1;
+  const slots = []; for (let d = startDay; d <= dim; d += 2) slots.push(d);
+  const kept = (plan.items || []).slice(0, slots.length).map((it, i) => ({ ...it, day: slots[i], time: i % 2 ? "20:30" : "20:00" }));
+  const dropped = (plan.items || []).length - kept.length;
+  plan.items = kept;
+  store.setPlan(plan);
+  res.json({ ok: true, plan, dropped });
+});
+
 // 💡 Idea inbox: expand a raw owner idea into a draft plan row (first free day).
 app.post("/api/plan/idea", async (req, res) => {
   const { text: raw, month } = req.body || {};

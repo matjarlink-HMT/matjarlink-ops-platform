@@ -504,6 +504,7 @@ async function renderPlan(C) {
       <div class="planacts">
         <div class="viewtog" style="margin-inline-end:.3rem"><button class="vtbtn ${planViewMode === "table" ? "on" : ""}" data-pv="table">▤ ${T("plan_v_table")}</button><button class="vtbtn ${planViewMode === "calendar" ? "on" : ""}" data-pv="calendar">🗓 ${T("plan_v_cal")}</button></div>
         <button class="btn ghost sm" id="plannew">♻️ ${T("plan_new")}</button>
+        <button class="btn ghost sm" id="planreseq" title="${T("plan_reseq_hint")}">🔧 ${T("plan_reseq")}</button>
         <button class="btn ghost sm" id="planslots" title="${T("plan_slots_hint")}">🪄 ${T("plan_slots")}</button>
         <button class="btn ghost sm" id="plansave">💾 ${T("plan_save")}</button></div></div>
     <div class="pcard nofloat" style="margin-bottom:1rem;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
@@ -581,6 +582,13 @@ async function renderPlan(C) {
       tr.querySelector(".ptime").value = t ? t[1] : "20:00";
     });
     $("#planmsg").textContent = "🪄 " + T("plan_slots_done");
+  };
+  $("#planreseq").onclick = async () => {
+    if (!confirm(T("plan_reseq_confirm"))) return;
+    const b = $("#planreseq"); b.disabled = true; b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
+    const r = await fetch("/api/plan/resequence", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ month: active.key }) }).then(x => x.json()).catch(() => null);
+    if (r && r.ok) { renderPlan(C); const m = $("#planmsg"); if (m) m.textContent = "✓ " + T("plan_reseq_done") + (r.dropped ? " · " + T("plan_reseq_dropped").replace("{n}", r.dropped) : ""); }
+    else { b.disabled = false; b.innerHTML = `🔧 ${T("plan_reseq")}`; }
   };
   $("#plannew").onclick = async () => {
     if (!confirm(T("plan_new_confirm"))) return;
