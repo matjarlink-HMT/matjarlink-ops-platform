@@ -296,6 +296,8 @@ function bindStudioDrafts(C) {
 
 // ── content plan (خطة المحتوى) ── month tabs · editable table · one-click apply ──
 const PLAN_TYPES = ["تشويق", "توعية", "معلومة", "إحصائيات"];
+const PLAN_FORMATS = [["منشور", "🖼 منشور"], ["ريل", "🎬 ريل"], ["كاروسيل", "🎠 كاروسيل"]];
+const PLAN_TPLS = () => [["", T("plan_tpl_auto")], ["editorial-white", "⚪ " + T("tpl_ed_white")], ["editorial-dark", "🟣 " + T("tpl_ed_dark")]];
 const ARMONTHS_CLIENT = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
 const WEEKDAYS_CLIENT = { ar: ["أحد", "إثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت"], en: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], fa: ["یک", "دو", "سه", "چهار", "پنج", "جمعه", "شنبه"] };
 let planActiveKey = null; // which month tab is open
@@ -486,15 +488,18 @@ async function renderPlan(C) {
     const dis = it.status === "applied" ? "disabled" : "";
     const hookBtn = it.hook ? `<button class="btn ghost sm pdet" data-cap="${attrSafe("🎣 " + it.hook)}" title="${T("plan_hook")}">🎣</button>` : "";
     return `<tr data-key="${escapeHtml(it.key)}" class="${it.status === "applied" ? "applied" : ""}">
-      <td class="pdate">${escapeHtml(fullDate(plan, it))}</td>
-      <td><input class="pinput pday" type="number" min="1" max="${dim}" value="${it.day}" ${dis}></td>
+      <td><input class="pinput pdate2" type="date" value="${plan.year}-${String(plan.month).padStart(2, "0")}-${String(it.day).padStart(2, "0")}" min="${plan.year}-${String(plan.month).padStart(2, "0")}-01" max="${plan.year}-${String(plan.month).padStart(2, "0")}-${String(dim).padStart(2, "0")}" ${dis} style="min-width:8.5rem"></td>
       <td><select class="psel ptime" ${dis}>${["19:30", "20:00", "20:30", "21:00"].map(t => `<option ${t === (it.time || "20:00") ? "selected" : ""}>${t}</option>`).join("")}</select></td>
-      <td><input class="pinput pt" value="${escapeHtml(it.t).replace(/"/g, "&quot;")}" ${dis}></td>
+      <td style="min-width:14rem"><input class="pinput pt" value="${escapeHtml(it.t).replace(/"/g, "&quot;")}" ${dis}>${it.desc ? `<div class="mut ideadesc" style="font-size:.74rem;margin-top:.25rem;white-space:normal;line-height:1.4">${escapeHtml(it.desc)}</div>` : `<div class="mut ideadesc" style="font-size:.72rem;margin-top:.25rem;font-style:italic;opacity:.7">${T("plan_no_desc")}</div>`}</td>
       <td><select class="psel pty" ${dis}>${PLAN_TYPES.map(t => `<option ${t === it.ty ? "selected" : ""}>${t}</option>`).join("")}</select></td>
+      <td><select class="psel pfmt" ${dis}>${PLAN_FORMATS.map(f => `<option value="${f[0]}" ${f[0] === (it.format || "منشور") ? "selected" : ""}>${f[1]}</option>`).join("")}</select></td>
+      <td><select class="psel ptpl" ${dis}>${PLAN_TPLS().map(t => `<option value="${t[0]}" ${t[0] === (it.template || "") ? "selected" : ""}>${t[1]}</option>`).join("")}</select></td>
       <td class="pstat">${it.designed ? `<span class="pill p-ok">🎨 ${T("plan_designed")}</span>` : `<span class="pill p-idle">${T("plan_draft")}</span>`}</td>
       <td class="planrowacts" style="white-space:nowrap">${hookBtn}<button class="btn ghost sm capbtn" data-key="${escapeHtml(it.key)}" title="${T("plan_caption")}">📝</button>${it.designed ? `<button class="btn ghost sm designone" data-key="${escapeHtml(it.key)}" title="${T("plan_redesign")}">↻</button>` : `<button class="btn sm designone" data-key="${escapeHtml(it.key)}">🎨 ${T("plan_design")}</button>`}</td>
     </tr>
-    <tr class="caprow" data-caprow="${escapeHtml(it.key)}" style="display:none"><td colspan="7"><div style="padding:.3rem 0 .6rem"><label class="mut" style="display:block;margin-bottom:.25rem">📝 ${T("plan_caption")} — ${escapeHtml(it.t)}</label><textarea class="pinput pcapedit" data-key="${escapeHtml(it.key)}" rows="3" style="width:100%;resize:vertical" placeholder="${T("plan_caption_ph")}" ${dis}>${escapeHtml(it.cap || "")}</textarea></div></td></tr>`;
+    <tr class="caprow" data-caprow="${escapeHtml(it.key)}" style="display:none"><td colspan="8"><div style="padding:.3rem 0 .6rem">
+      <label class="mut" style="display:block;margin-bottom:.2rem">📖 ${T("plan_ideadesc")}</label><textarea class="pinput pdescedit" data-key="${escapeHtml(it.key)}" rows="2" style="width:100%;resize:vertical" placeholder="${T("plan_ideadesc_ph")}" ${dis}>${escapeHtml(it.desc || "")}</textarea>
+      <label class="mut" style="display:block;margin:.5rem 0 .2rem">📝 ${T("plan_caption")}</label><textarea class="pinput pcapedit" data-key="${escapeHtml(it.key)}" rows="3" style="width:100%;resize:vertical" placeholder="${T("plan_caption_ph")}" ${dis}>${escapeHtml(it.cap || "")}</textarea></div></td></tr>`;
   }).join("");
   C.innerHTML = `<div class="planwrap">${tabBar}
     <div class="pcard nofloat planhead"><div>
@@ -505,13 +510,12 @@ async function renderPlan(C) {
         <div class="viewtog" style="margin-inline-end:.3rem"><button class="vtbtn ${planViewMode === "table" ? "on" : ""}" data-pv="table">▤ ${T("plan_v_table")}</button><button class="vtbtn ${planViewMode === "calendar" ? "on" : ""}" data-pv="calendar">🗓 ${T("plan_v_cal")}</button></div>
         <button class="btn ghost sm" id="plannew">♻️ ${T("plan_new")}</button>
         <button class="btn ghost sm" id="planreseq" title="${T("plan_reseq_hint")}">🔧 ${T("plan_reseq")}</button>
-        <button class="btn ghost sm" id="planslots" title="${T("plan_slots_hint")}">🪄 ${T("plan_slots")}</button>
         <button class="btn ghost sm" id="plansave">💾 ${T("plan_save")}</button></div></div>
     <div class="pcard nofloat" style="margin-bottom:1rem;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
       <span>💡</span><input class="pinput" id="ideain" placeholder="${T("idea_ph")}" style="flex:1;min-width:14rem" autocomplete="off">
       <button class="btn sm" id="ideago">${T("idea_add")}</button></div>
     ${planViewMode === "calendar" ? planCalendar(plan) : `<div class="tablewrap"><table class="plantable"><thead><tr>
-      <th>${T("plan_date")}</th><th>${T("plan_day")}</th><th>${T("plan_time")}</th><th>${T("plan_title")}</th><th>${T("plan_type")}</th><th>${T("plan_status")}</th><th></th>
+      <th>${T("plan_date")}</th><th>${T("plan_time")}</th><th>${T("plan_title")}</th><th>${T("plan_type")}</th><th>${T("plan_format")}</th><th>${T("plan_template")}</th><th>${T("plan_status")}</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table></div>`}
     <div class="mut" id="planmsg" style="margin-top:.6rem">${planViewMode === "calendar" ? T("plan_cal_hint") : ""}</div></div>`;
   C.querySelectorAll("[data-pv]").forEach(b => b.onclick = () => { planViewMode = b.dataset.pv; renderPlan(C); });
@@ -534,10 +538,15 @@ async function renderPlan(C) {
     return { ...plan, items: [...C.querySelectorAll("tbody tr[data-key]")].map(tr => {
       const key = tr.dataset.key, old = plan.items.find(i => i.key === key) || {};
       const capEl = C.querySelector(`.pcapedit[data-key="${key}"]`);
+      const descEl = C.querySelector(`.pdescedit[data-key="${key}"]`);
       const ty = tr.querySelector(".pty").value;
-      return { ...old, key, day: Math.min(Math.max(parseInt(tr.querySelector(".pday").value, 10) || old.day || 1, 1), dim),
+      const dstr = tr.querySelector(".pdate2")?.value || "";
+      const day = Math.min(Math.max(parseInt((dstr.split("-")[2]) || old.day, 10) || old.day || 1, 1), dim);
+      return { ...old, key, day,
         time: tr.querySelector(".ptime").value, t: tr.querySelector(".pt").value.trim(),
-        ty, pillar: ty, cap: capEl ? capEl.value : (old.cap || "") };
+        ty, pillar: ty, format: tr.querySelector(".pfmt")?.value || old.format || "منشور",
+        template: tr.querySelector(".ptpl")?.value || "",
+        desc: descEl ? descEl.value : (old.desc || ""), cap: capEl ? capEl.value : (old.cap || "") };
     }) };
   };
   const save = async () => {
@@ -567,22 +576,6 @@ async function renderPlan(C) {
   };
   $("#ideago").onclick = addIdea;
   $("#ideain").onkeydown = (e) => { if (e.key === "Enter") addIdea(); };
-  $("#planslots").onclick = () => {
-    const TIME_BY_TYPE = { "ريل": "21:00", "كاروسيل": "20:30", "استطلاع": "19:30", "تفاعلي": "19:30", "مجتمعي": "19:30" };
-    const taken = new Set(plan.items.filter(i => i.status === "applied").map(i => +i.day));
-    (S.queue || []).forEach(p => { const m = (p.date || "").match(new RegExp(`^${active.key}-(\\d{2})`)); if (m) taken.add(+m[1]); });
-    let day = 2;
-    C.querySelectorAll("tbody tr[data-key]").forEach(tr => {
-      if (tr.classList.contains("applied")) return;
-      while (taken.has(day) && day < dim) day += 1;
-      tr.querySelector(".pday").value = Math.min(day, dim);
-      taken.add(day); day += 2;
-      const ty = tr.querySelector(".pty").value;
-      const t = Object.entries(TIME_BY_TYPE).find(([k]) => ty.includes(k));
-      tr.querySelector(".ptime").value = t ? t[1] : "20:00";
-    });
-    $("#planmsg").textContent = "🪄 " + T("plan_slots_done");
-  };
   $("#planreseq").onclick = async () => {
     if (!confirm(T("plan_reseq_confirm"))) return;
     const b = $("#planreseq"); b.disabled = true; b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
@@ -750,9 +743,16 @@ async function renderApprovals(C) {
   const tpls = (d.templates || []).map(p => ({ ...p, kind: "template" }));
   const total = posts.length + chars.length + tpls.length;
   // Designs get big previews; characters/templates get small thumbnails.
-  const card = (p, big) => `<div class="tplcard">
-      <div class="tplhd"><span class="tplname">${APPR_ICON[p.kind]} ${escapeHtml(p.name || p.label || p.t || "")}</span>${p.date ? `<span class="pill p-info">${escapeHtml((p.date || "").split(" · ")[0])}${p.ty ? " · " + escapeHtml(p.ty) : ""}</span>` : ""}</div>
-      <div class="tplshots" style="grid-template-columns:1fr"><img loading="lazy" src="${p.previewUrl}" style="width:100%;${big ? "aspect-ratio:4/5" : "max-height:9rem"};object-fit:cover;border-radius:.5rem"></div>
+  const card = (p, big) => {
+    const isVid = /\.mp4/.test(p.previewUrl || "");
+    const nSlides = (p.images || []).length;
+    const fmtBadge = isVid ? `<span class="pill p-new">🎬 ${T("plan_fmt_reel")}</span>` : nSlides > 1 ? `<span class="pill p-new">🎠 ${nSlides}</span>` : "";
+    const media = isVid
+      ? `<video src="${p.previewUrl}" muted loop autoplay playsinline style="width:100%;${big ? "aspect-ratio:9/16;max-height:26rem" : "max-height:9rem"};object-fit:cover;border-radius:.5rem"></video>`
+      : `<img loading="lazy" src="${p.previewUrl}" style="width:100%;${big ? "aspect-ratio:4/5" : "max-height:9rem"};object-fit:cover;border-radius:.5rem">`;
+    return `<div class="tplcard">
+      <div class="tplhd"><span class="tplname">${APPR_ICON[p.kind]} ${escapeHtml(p.name || p.label || p.t || "")}</span>${fmtBadge || (p.date ? `<span class="pill p-info">${escapeHtml((p.date || "").split(" · ")[0])}${p.ty ? " · " + escapeHtml(p.ty) : ""}</span>` : "")}</div>
+      <div class="tplshots" style="grid-template-columns:1fr">${media}</div>
       <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.4rem">
         <button class="btn ok sm aappr" data-appr="${p.id}">✓ ${T("appr_approve")}</button>
         ${p.kind === "template" ? "" : `<button class="btn sm aedit" data-appr="${p.id}">✎ ${T("appr_edit")}</button>`}
@@ -764,6 +764,7 @@ async function renderApprovals(C) {
       </div>
       <div class="mut amsg" data-appr="${p.id}" style="margin-top:.3rem"></div>
     </div>`;
+  };
   const section = (icon, title, list, grid, big) => list.length ? `<div class="sec-h" style="margin-top:1.2rem"><h3>${icon} ${title} <span class="mut">(${list.length})</span></h3></div><div class="grid ${grid}">${list.map(p => card(p, big)).join("")}</div>` : "";
   C.innerHTML = `<div class="note-info">🗳 ${T("appr_hint")}</div>
     <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:.4rem 0 1rem">

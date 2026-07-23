@@ -262,9 +262,13 @@ app.post("/api/plan/generate", async (req, res) => {
   const isCur = year === mn.getUTCFullYear() && month === mn.getUTCMonth() + 1;
   const startDay = isCur ? Math.min(mn.getUTCDate() + 1, dim) : 1;
   const maxFit = Math.max(1, Math.floor((dim - startDay) / 2) + 1);
+  // Fallback format rotation (biased to reels/carousels) when the model omits it.
+  const FMT_ROT = ["ريل", "كاروسيل", "ريل", "منشور", "كاروسيل", "ريل", "كاروسيل", "منشور", "ريل", "كاروسيل", "ريل", "منشور"];
+  const normFmt = (f) => { const s = String(f || ""); return s.includes("ريل") ? "ريل" : s.includes("كاروسيل") ? "كاروسيل" : s.includes("منشور") || s.includes("بوست") ? "منشور" : ""; };
   const items = (out.concepts || []).slice(0, Math.min(12, maxFit)).map((c, i) => {
     const day = Math.min(startDay + i * 2, dim);
-    return { key: `${year}-${month}-${i}`, day, time: i % 2 ? "20:30" : "20:00", t: String(c.t || ""), ty: String(c.ty || "توعية"), pillar: String(c.ty || c.pillar || ""), hook: String(c.hook || ""), cap: String(c.cap || ""), status: "draft", id: null };
+    const format = normFmt(c.format) || FMT_ROT[i % FMT_ROT.length];
+    return { key: `${year}-${month}-${i}`, day, time: i % 2 ? "20:30" : "20:00", t: String(c.t || ""), ty: String(c.ty || "توعية"), format, pillar: String(c.ty || c.pillar || ""), hook: String(c.hook || ""), desc: String(c.desc || ""), points: Array.isArray(c.points) ? c.points.map(String).slice(0, 5) : [], cap: String(c.cap || ""), status: "draft", id: null };
   });
   const plan = store.setPlan({ label, year, month, goal: String(out.goal || ""), pillars: (out.pillars || []).map(String).slice(0, 6), items, generatedAt: new Date().toISOString() });
   res.json({ ok: true, plan });
@@ -766,15 +770,18 @@ app.post("/api/proposals/approve", (req, res) => {
     // approved (owner explicitly approved it here) so it's ready to publish.
     const idNum = nextIdNum(baseState().queue);
     const qid = "MJ-" + String(idNum).padStart(3, "0");
-    const media = (p.previewUrl || "").split("?")[0];  // /media/design/<id> (serves <id>.png)
+    const media = (p.previewUrl || "").split("?")[0];  // /media/design/<id> (serves <id>.png or .mp4)
     const { date: today } = muscatDateHour();
-    const isReel = /\.mp4/.test(p.previewUrl || "") || (p.ty || "").includes("ريل");
+    const fmt = p.format || "";
+    const isReel = fmt.includes("ريل") || /\.mp4/.test(p.previewUrl || "") || (p.ty || "").includes("ريل");
+    const isCar = fmt.includes("كاروسيل") || (p.images && p.images.length > 1);
+    const qty = p.qty || (isReel ? "ريل نوعي" : isCar ? "كاروسيل توعوي" : "منشور علامة");
     appendPost({
       id: qid, t: p.t, t2: p.t2 || "", cta: p.cta || "",
       cap: `${p.t}${p.t2 ? " · " + p.t2 : ""}${p.cta ? "\n\n" + p.cta : ""}`,
-      ty: isReel ? "ريل نوعي" : "منشور علامة", ch: "IG", tyc: "#6E1444",
+      ty: qty, ch: "IG", tyc: "#6E1444",
       date: p.date || `${today} · 20:00`,
-      mediaUrl: media, images: [], gen: true, template: p.template,
+      mediaUrl: media, images: (p.images || []).map((u) => u.split("?")[0]), gen: true, template: p.template, regenerated: isCar,
     });
     store.approve(qid);   // status «معتمد» → shows approved & publish-ready in the queue
     routedTo = "pipeline";
@@ -896,6 +903,34 @@ async function makeEditorialReel({ id, light = false, headline, pop, cta, valueL
     return { url: `/media/design/${id}.mp4?v=${Date.now()}` };
   } finally { for (const f of junk) { try { fs.unlinkSync(f); } catch (e) {} } }
 }
+// Editorial CAROUSEL: a cover + content slides, each its own editorial scene.
+// Returns { url (cover), images: [cover, slide1, …] } for the carousel queue post.
+async function makeEditorialCarousel({ id, light = false, headline, cta, points = [] }) {
+  if (!gemini.geminiReady()) throw new Error("قالب «الإعلاني» يحتاج ربط Gemini أولاً");
+  const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
+  const eng = await import("./data/designEngine.js");
+  const biz = store.getBrandData();
+  const writePng = (name, buf) => { const fd = fs.openSync(path.join(dir, name + ".png"), "w"); try { fs.writeSync(fd, buf); fs.fsyncSync(fd); } finally { fs.closeSync(fd); } };
+  const renderSlide = async (slug, hl, kicker, isLight) => {
+    const sc = editorialScene(hl, isLight);
+    const { refs, note } = clothingRefsFor(sc.prompt);
+    const { buffer } = await gemini.generateImage(sc.prompt + note, refs);
+    const bg = path.join(dir, `_cbg-${slug}.png`);
+    const fd0 = fs.openSync(bg, "w"); try { fs.writeSync(fd0, buffer); fs.fsyncSync(fd0); } finally { fs.closeSync(fd0); }
+    const png = await eng.renderEditorial({ bg, kicker, headline: hl, pop: "", cta: "", light: isLight, layout: sc.layout, biz });
+    try { fs.unlinkSync(bg); } catch (e) {}
+    return png;
+  };
+  const slidePoints = (points && points.length ? points : ["متجر إلكتروني احترافي", "كاشير ذكي يربط كل شي", "محاسبة وتقارير تلقائية"]).slice(0, 4);
+  const urls = [];
+  const cover = await renderSlide(`${id}-c`, headline, "متجرلينك", light);
+  writePng(id, cover); urls.push(`/media/design/${id}`);
+  for (let i = 0; i < slidePoints.length; i++) {
+    const png = await renderSlide(`${id}-${i + 1}`, slidePoints[i], i === slidePoints.length - 1 ? "متجرلينك · " + (cta || "قريبًا") : "", light);
+    writePng(`${id}-${i + 1}`, png); urls.push(`/media/design/${id}-${i + 1}`);
+  }
+  return { url: `/media/design/${id}?v=${Date.now()}`, images: urls };
+}
 
 // Hybrid design: Gemini generates a premium branded SCENE/background (no text),
 // then our engine overlays crisp Arabic headline + brand furniture on top.
@@ -930,16 +965,29 @@ app.post("/api/admin/reset", (req, res) => { res.json(store.resetForFreshStart()
 const CTA_FOR = (ty) => (ty === "تشويق" ? "قريبًا في عُمان" : ty === "إحصائيات" ? "الرقم يتكلم" : "سجّل اهتمامك");
 async function designPlanItem(plan, it) {
   const idx = Math.max(0, (plan.items || []).indexOf(it));
-  const light = idx % 2 === 0;
-  const template = light ? "editorial-white" : "editorial-dark";
+  // Template: owner's per-item choice wins; otherwise auto-alternate white/dark.
+  const chosen = (it.template === "editorial-white" || it.template === "editorial-dark") ? it.template : null;
+  const template = chosen || (idx % 2 === 0 ? "editorial-white" : "editorial-dark");
+  const light = template === "editorial-white";
   const dateStr = `${plan.year}-${String(plan.month).padStart(2, "0")}-${String(it.day).padStart(2, "0")} · ${it.time || "20:00"}`;
   const headline = it.t || "متجرلينك";
   const cta = CTA_FOR(it.ty);
-  const sc = editorialScene(headline, light);
   const pid = "post-" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
-  const ed = await makeEditorial({ light, layout: sc.layout, kicker: "متجرلينك", headline, pop: "", cta, prompt: sc.prompt, id: pid });
   const planMonth = `${plan.year}-${String(plan.month).padStart(2, "0")}`;
-  store.saveProposal({ id: pid, kind: "post", template, t: headline, t2: "", cta, cap: it.cap || "", ty: it.ty, name: `${headline} · ${dateStr.split(" · ")[0]}`, date: dateStr, previewUrl: ed.url, planMonth, planItemKey: it.key });
+  const fmt = it.format || "منشور";
+  let previewUrl, images = [], qty;
+  if (fmt.includes("ريل")) {
+    const ed = await makeEditorialReel({ id: pid, light, headline, pop: "", cta, valueLine: it.desc || it.cap });
+    previewUrl = ed.url; qty = "ريل نوعي";
+  } else if (fmt.includes("كاروسيل")) {
+    const ed = await makeEditorialCarousel({ id: pid, light, headline, cta, points: it.points });
+    previewUrl = ed.url; images = ed.images; qty = "كاروسيل توعوي";
+  } else {
+    const sc = editorialScene(headline, light);
+    const ed = await makeEditorial({ light, layout: sc.layout, kicker: "متجرلينك", headline, pop: "", cta, prompt: sc.prompt, id: pid });
+    previewUrl = ed.url; qty = "منشور علامة";
+  }
+  store.saveProposal({ id: pid, kind: "post", template, t: headline, t2: "", cta, cap: it.cap || "", ty: it.ty, format: fmt, qty, images, name: `${headline} · ${dateStr.split(" · ")[0]}`, date: dateStr, previewUrl, planMonth, planItemKey: it.key });
   it.designed = true; it.proposalId = pid;
   return pid;
 }
