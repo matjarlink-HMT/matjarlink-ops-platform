@@ -9,7 +9,7 @@ export const LANGS = {
 export const I18N = {
   ar: {
     brand_sub: "AI Ops · مركز التشغيل", sub: "لوحة تشغيل فريق الذكاء الاصطناعي — متجرلينك",
-    nav_overview: "نظرة عامة", nav_agents: "الفريق (الوكلاء)", nav_needs: "الاحتياجات", nav_queue: "قائمة النشر",
+    nav_overview: "لوحة التحكم", nav_agents: "الفريق (الوكلاء)", nav_needs: "مهامي", nav_queue: "قائمة النشر",
     nav_prep: "قيد الإعداد", nav_analytics: "التحليلات", nav_media: "معرض التصاميم", nav_camp: "الحملات",
     nav_pub: "آخر ما نُشر", nav_comments: "التعليقات", nav_messages: "الرسائل", nav_leads: "عملاء محتملون",
     nav_accounts: "الحسابات", nav_calendar: "تقويم النشر",
@@ -43,7 +43,7 @@ export const I18N = {
     publish_now: "انشر الآن على إنستغرام", publish_confirm: "تأكيد: نشر هذا المنشور على إنستغرام الآن؟", published_ok: "نُشر ✓", publishing: "جارٍ النشر…", publish_need_media: "يحتاج رابط وسائط عام (mediaUrl) — يُضاف من التصميم", publish_not_ready: "فعّل ربط Meta أولاً",
     nav_pipeline: "قائمة النشر",
     nav_plan: "خطة المحتوى",
-    nav_templates: "قوالب التصميم",
+    nav_templates: "التصميم",
     tpl_hint: "اختر قالب التصميم الأساسي — بمجرد اعتماده تُصمَّم كل المنشورات القادمة به.",
     canva_title: "صمّم في Canva بشخصيات عُمانية", canva_hint: "بريف جاهز (زيّ عُماني + ألوان الهوية) يُنسخ لك، ويُفتح Canva لتلصقه في Magic Design.", canva_btn: "صمّم في Canva", canva_copied: "✓ نُسخ البريف — الصقه في خانة Magic Design داخل Canva (سيُفتح الآن).", canva_manual: "انسخ هذا البريف والصقه في Canva Magic Design:",
     char_title: "شخصيات العلامة (عُمانية أصيلة)", char_hint: "شخصية عُمانية حقيقية بالمصر أو الكمة — عند اختيارها تظهر في كل التصاميم المولّدة (خلفية كاملة في «الحضور»، وداخل إطار الصورة مع إبراز الوجه في «الأبيض» و«الفخم»).", char_needspotlight: "فعّل قالب «الحضور» (spotlight) أعلاه ليظهر تأثيرها.", char_use: "استخدم هذه الشخصية", char_saved: "تم اعتماد الشخصية", char_none: "بدون شخصية", char_none_d: "قالب الحضور يستخدم صورة موضوعية عامة بدل الشخصية.",
@@ -94,7 +94,7 @@ export const I18N = {
   },
   en: {
     brand_sub: "AI Ops · Command Center", sub: "AI marketing team operations — MatjarLink",
-    nav_overview: "Overview", nav_agents: "Team (Agents)", nav_needs: "Needs", nav_queue: "Publish Queue",
+    nav_overview: "Dashboard", nav_agents: "Team (Agents)", nav_needs: "My tasks", nav_queue: "Publish Queue",
     nav_prep: "In Preparation", nav_analytics: "Analytics", nav_media: "Media Gallery", nav_camp: "Campaigns",
     nav_pub: "Published", nav_comments: "Comments", nav_messages: "Messages", nav_leads: "Leads",
     nav_accounts: "Accounts", nav_calendar: "Calendar",
@@ -179,7 +179,7 @@ export const I18N = {
   },
   fa: {
     brand_sub: "AI Ops · مرکز فرماندهی", sub: "عملیات تیم بازاریابی هوش مصنوعی — متجرلینک",
-    nav_overview: "نمای کلی", nav_agents: "تیم (ایجنت‌ها)", nav_needs: "نیازها", nav_queue: "صف انتشار",
+    nav_overview: "داشبورد", nav_agents: "تیم (ایجنت‌ها)", nav_needs: "نیازها", nav_queue: "صف انتشار",
     nav_prep: "در حال آماده‌سازی", nav_analytics: "تحلیل‌ها", nav_media: "گالری طرح‌ها", nav_camp: "کمپین‌ها",
     nav_pub: "منتشر شده", nav_comments: "نظرات", nav_messages: "پیام‌ها", nav_leads: "سرنخ‌ها",
     nav_accounts: "حساب‌ها", nav_calendar: "تقویم انتشار",

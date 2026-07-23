@@ -21,8 +21,9 @@ const chan = (k) => `<span class="chan" style="background:${CH[k] || "#888"}">${
 const pill = (a) => a ? `<span class="pill ${a[1]}">${a[0]}</span>` : "";
 const STMAP = { online: "p-ok", working: "p-info", scheduled: "p-info", idle: "p-idle", action: "p-bad", new: "p-new" };
 const GROUPS = [
+  { items: ["needs"] },
   { items: ["overview"] },
-  { label: "g_manage", items: ["approvals", "manager", "agents", "needs"] },
+  { label: "g_manage", items: ["approvals", "manager", "agents"] },
   { label: "g_content", items: ["studio", "pipeline", "plan", "templates"] },
   { label: "g_engage", items: ["comments", "messages", "leads"] },
   { label: "g_perf", items: ["analytics", "camp"] },
