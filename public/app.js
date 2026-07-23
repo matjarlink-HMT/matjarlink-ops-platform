@@ -487,19 +487,18 @@ async function renderPlan(C) {
   const rows = plan.items.map((it) => {
     const dis = it.status === "applied" ? "disabled" : "";
     const hookBtn = it.hook ? `<button class="btn ghost sm pdet" data-cap="${attrSafe("🎣 " + it.hook)}" title="${T("plan_hook")}">🎣</button>` : "";
+    const mm = String(plan.month).padStart(2, "0");
     return `<tr data-key="${escapeHtml(it.key)}" class="${it.status === "applied" ? "applied" : ""}">
-      <td><input class="pinput pdate2" type="date" value="${plan.year}-${String(plan.month).padStart(2, "0")}-${String(it.day).padStart(2, "0")}" min="${plan.year}-${String(plan.month).padStart(2, "0")}-01" max="${plan.year}-${String(plan.month).padStart(2, "0")}-${String(dim).padStart(2, "0")}" ${dis} style="min-width:8.5rem"></td>
-      <td><select class="psel ptime" ${dis}>${["19:30", "20:00", "20:30", "21:00"].map(t => `<option ${t === (it.time || "20:00") ? "selected" : ""}>${t}</option>`).join("")}</select></td>
-      <td style="min-width:14rem"><input class="pinput pt" value="${escapeHtml(it.t).replace(/"/g, "&quot;")}" ${dis}>${it.desc ? `<div class="mut ideadesc" style="font-size:.74rem;margin-top:.25rem;white-space:normal;line-height:1.4">${escapeHtml(it.desc)}</div>` : `<div class="mut ideadesc" style="font-size:.72rem;margin-top:.25rem;font-style:italic;opacity:.7">${T("plan_no_desc")}</div>`}</td>
-      <td><select class="psel pty" ${dis}>${PLAN_TYPES.map(t => `<option ${t === it.ty ? "selected" : ""}>${t}</option>`).join("")}</select></td>
+      <td style="min-width:8.5rem"><input class="pinput pdate2" type="date" value="${plan.year}-${mm}-${String(it.day).padStart(2, "0")}" min="${plan.year}-${mm}-01" max="${plan.year}-${mm}-${String(dim).padStart(2, "0")}" ${dis}><select class="psel ptime" style="margin-top:.25rem;width:100%" ${dis}>${["19:30", "20:00", "20:30", "21:00"].map(t => `<option ${t === (it.time || "20:00") ? "selected" : ""}>${t}</option>`).join("")}</select></td>
+      <td style="min-width:16rem"><input class="pinput pt" value="${escapeHtml(it.t).replace(/"/g, "&quot;")}" ${dis}><textarea class="pinput pdescedit" data-key="${escapeHtml(it.key)}" rows="2" placeholder="${T("plan_ideadesc_ph")}" style="width:100%;margin-top:.25rem;resize:vertical;font-size:.78rem;line-height:1.4" ${dis}>${escapeHtml(it.desc || "")}</textarea></td>
+      <td><select class="psel pty" style="min-width:5.5rem" ${dis}>${PLAN_TYPES.map(t => `<option ${t === it.ty ? "selected" : ""}>${t}</option>`).join("")}</select></td>
       <td><select class="psel pfmt" ${dis}>${PLAN_FORMATS.map(f => `<option value="${f[0]}" ${f[0] === (it.format || "منشور") ? "selected" : ""}>${f[1]}</option>`).join("")}</select></td>
       <td><select class="psel ptpl" ${dis}>${PLAN_TPLS().map(t => `<option value="${t[0]}" ${t[0] === (it.template || "") ? "selected" : ""}>${t[1]}</option>`).join("")}</select></td>
       <td class="pstat">${it.designed ? `<span class="pill p-ok">🎨 ${T("plan_designed")}</span>` : `<span class="pill p-idle">${T("plan_draft")}</span>`}</td>
       <td class="planrowacts" style="white-space:nowrap">${hookBtn}<button class="btn ghost sm capbtn" data-key="${escapeHtml(it.key)}" title="${T("plan_caption")}">📝</button>${it.designed ? `<button class="btn ghost sm designone" data-key="${escapeHtml(it.key)}" title="${T("plan_redesign")}">↻</button>` : `<button class="btn sm designone" data-key="${escapeHtml(it.key)}">🎨 ${T("plan_design")}</button>`}</td>
     </tr>
-    <tr class="caprow" data-caprow="${escapeHtml(it.key)}" style="display:none"><td colspan="8"><div style="padding:.3rem 0 .6rem">
-      <label class="mut" style="display:block;margin-bottom:.2rem">📖 ${T("plan_ideadesc")}</label><textarea class="pinput pdescedit" data-key="${escapeHtml(it.key)}" rows="2" style="width:100%;resize:vertical" placeholder="${T("plan_ideadesc_ph")}" ${dis}>${escapeHtml(it.desc || "")}</textarea>
-      <label class="mut" style="display:block;margin:.5rem 0 .2rem">📝 ${T("plan_caption")}</label><textarea class="pinput pcapedit" data-key="${escapeHtml(it.key)}" rows="3" style="width:100%;resize:vertical" placeholder="${T("plan_caption_ph")}" ${dis}>${escapeHtml(it.cap || "")}</textarea></div></td></tr>`;
+    <tr class="caprow" data-caprow="${escapeHtml(it.key)}" style="display:none"><td colspan="7"><div style="padding:.3rem 0 .6rem">
+      <label class="mut" style="display:block;margin-bottom:.2rem">📝 ${T("plan_caption")} — ${T("plan_caption_note")}</label><textarea class="pinput pcapedit" data-key="${escapeHtml(it.key)}" rows="3" style="width:100%;resize:vertical" placeholder="${T("plan_caption_ph")}" ${dis}>${escapeHtml(it.cap || "")}</textarea></div></td></tr>`;
   }).join("");
   C.innerHTML = `<div class="planwrap">${tabBar}
     <div class="pcard nofloat planhead"><div>
@@ -515,7 +514,7 @@ async function renderPlan(C) {
       <span>💡</span><input class="pinput" id="ideain" placeholder="${T("idea_ph")}" style="flex:1;min-width:14rem" autocomplete="off">
       <button class="btn sm" id="ideago">${T("idea_add")}</button></div>
     ${planViewMode === "calendar" ? planCalendar(plan) : `<div class="tablewrap"><table class="plantable"><thead><tr>
-      <th>${T("plan_date")}</th><th>${T("plan_time")}</th><th>${T("plan_title")}</th><th>${T("plan_type")}</th><th>${T("plan_format")}</th><th>${T("plan_template")}</th><th>${T("plan_status")}</th><th></th>
+      <th>${T("plan_datetime")}</th><th>${T("plan_title")}</th><th>${T("plan_type")}</th><th>${T("plan_format")}</th><th>${T("plan_template")}</th><th>${T("plan_status")}</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table></div>`}
     <div class="mut" id="planmsg" style="margin-top:.6rem">${planViewMode === "calendar" ? T("plan_cal_hint") : ""}</div></div>`;
   C.querySelectorAll("[data-pv]").forEach(b => b.onclick = () => { planViewMode = b.dataset.pv; renderPlan(C); });
