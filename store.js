@@ -189,6 +189,18 @@ export function saveProposal(p) {
   persistProps(); return props[p.id];
 }
 export function setProposalStatus(id, status) { if (props[id]) { props[id].status = status; persistProps(); } return props[id]; }
+
+// ── Fresh start ── wipe content-state (plans, studio drafts, proposals, content
+// overrides, review notes) for a clean rebuild under a new identity. Keeps cfg
+// (API keys), characters, custom templates, and the published log.
+export function resetForFreshStart() {
+  plans = {}; persistPlans();
+  stu = {}; persistStu();
+  props = {}; persistProps();
+  ov = {}; persistOv();
+  mem = {}; persist();
+  return { ok: true };
+}
 export function nightlyRanOn() { return cfgGet("NIGHTLY_LAST") || ""; }
 export function markNightlyRan(dateStr) { cfgSet({ NIGHTLY_LAST: dateStr }); }
 

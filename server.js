@@ -523,12 +523,15 @@ app.get("/media/character/:id", (req, res) => {
 // (server-side variations) + new authentic-Omani characters (Gemini), for approval.
 const TPL_BASE_NAME = { classic: "الأبيض", luxe: "الفخم", spotlight: "الحضور" };
 const ACCENT_NAME = { orange: "برتقالي", magenta: "أرجواني", plum: "خمري", gold: "ذهبي" };
+// Approved dress rules: Omani man = white dishdasha + furakha + kummah/massar (NOT
+// ghutra/egal); Omani woman = plain BLACK abaya + BLACK hijab (face visible, NOT
+// niqab, no colourful patterns); occasional Arab (Egyptian) man = shirt + trousers.
 const NIGHTLY_CHAR_PROMPTS = [
-  { label: "تاجرة عُمانية · أزياء", text: "Photorealistic vertical portrait of an authentic Omani woman shop owner in a modern fashion boutique, wearing an elegant Omani abaya with a colourful embroidered Omani shela head covering (traditional Omani style, NOT a plain black Gulf look, NOT niqab), holding a tablet. Warm natural light, premium editorial photography, real skin texture, clean empty space top and bottom for text. Authentic Omani identity from Muscat, Oman." },
+  { label: "تاجرة عُمانية · أزياء", text: "Photorealistic vertical portrait of an authentic Omani woman shop owner in a modern fashion boutique, wearing a plain elegant BLACK abaya and a BLACK hijab head covering (solid black, no colourful patterns, face fully visible, NOT niqab), holding a tablet. Warm natural light, premium editorial photography, real skin texture, clean empty space top and bottom for text. Muscat, Oman." },
   { label: "تاجر عُماني · مقهى مختص", text: "Photorealistic vertical portrait of an authentic Omani man owner in a specialty coffee shop, wearing a white Omani dishdasha with the furakha tassel and an embroidered Omani kummah cap (NOT a Gulf ghutra or egal). Warm light, real photography, space for text. Muscat, Oman." },
   { label: "تاجر عُماني · تمور وحلوى", text: "Photorealistic vertical portrait of an authentic Omani man selling dates and Omani halwa in a traditional shop, wearing a white Omani dishdasha and an Omani massar (wrapped Kashmiri-paisley turban, NOT a Gulf ghutra/egal). Warm light, editorial photography, space for text. Oman." },
-  { label: "تاجرة عُمانية · عطور", text: "Photorealistic vertical portrait of an authentic Omani woman perfumer in an Omani perfume and bukhoor shop, wearing an elegant Omani abaya with a colourful embroidered Omani head covering, holding a bottle of Omani perfume. Warm light, premium photography, space for text. Muscat, Oman. Authentic Omani identity, not generic Gulf." },
-  { label: "تاجر عُماني · ذهب ومجوهرات", text: "Photorealistic vertical portrait of an authentic Omani man goldsmith in a jewellery shop, wearing a white Omani dishdasha with furakha and an embroidered Omani kummah (NOT ghutra/egal). Warm light, editorial photography, space for text. Oman." },
+  { label: "تاجرة عُمانية · عطور", text: "Photorealistic vertical portrait of an authentic Omani woman perfumer in an Omani perfume and bukhoor shop, wearing a plain elegant BLACK abaya and a BLACK hijab (solid black, no patterns, face visible, NOT niqab), holding a bottle of Omani perfume. Warm light, premium photography, space for text. Muscat, Oman." },
+  { label: "موظف عربي (مصري) · دعم", text: "Photorealistic vertical portrait of an Arab (Egyptian) man customer-support employee in a modern office, wearing a smart casual buttoned shirt and trousers (NOT Gulf dress), friendly, holding a headset. Warm light, editorial photography, space for text." },
   { label: "تاجر عُماني · إلكترونيات", text: "Photorealistic vertical portrait of a young authentic Omani man in a modern electronics and phone shop, wearing a white Omani dishdasha and Omani kummah, holding a smartphone. Warm light, real photography, space for text. Muscat, Oman. Authentic Omani, not Gulf ghutra/egal." },
 ];
 let nightlyBusy = false, charPromptCursor = 0;
@@ -627,13 +630,18 @@ function editorialScene(text, light) {
   const side = "on the FAR RIGHT third, large clean negative space on the LEFT for a headline.";
   const has = (arr) => arr.some((w) => t.includes(w));
   if (has(["كاشير", "نقطة بيع", "نقطة البيع"])) return { layout: "side", prompt: `A sleek modern POS cashier terminal with a glowing touchscreen showing a sale, ${light ? "soft studio spotlight and gentle reflection" : "dramatic cinematic spotlight and rim light"}, ${grade}, the device ${side}${rm}` };
-  if (has(["مدفوعات", "بطاقة", "الدفع", "محفظة", "فيزا"])) return { layout: "side", prompt: `A premium ${light ? "light cream" : "matte dark"} bank payment card floating at a dynamic angle with ${light ? "soft studio lighting and warm reflection" : "dramatic rim lighting and warm orange glow"}, ${grade}, the card ${side}${rm}` };
+  if (has(["مدفوعات", "بطاقة", "الدفع", "محفظة", "فيزا"])) return { layout: "side", prompt: `A realistic premium ${light ? "light cream" : "matte dark"} bank payment card with a visible embossed card number and a small "MatjarLink" logo printed on it, floating at a dynamic angle with ${light ? "soft studio lighting and warm reflection" : "dramatic rim lighting and warm orange glow"}, ${grade}, the card ${side}${rm}` };
   if (has(["محاسبة", "حسابات", "حساباتك", "تقارير", "أرباح"])) return { layout: "center", prompt: `A glowing modern accounting and finance dashboard on a laptop and tablet with charts on a premium ${light ? "bright" : "dark"} desk, focused lighting, ${grade}, clean empty area at the TOP for a headline.${rm}` };
   if (has(["سوق", "أسواق", "وصّل", "توصيل", "كل مكان", "كل عُمان", "كل عمان"])) return { layout: "center", prompt: `A ${light ? "bright vibrant Omani marketplace / modern retail street with daylight and colorful shopfronts" : "warm cinematic Omani souq marketplace with lanterns and rich stalls"}, atmospheric depth, ${grade}, clean empty area at the TOP for a headline.${rm}` };
   if (has(["محل", "المحل", "مفتوح", "متجرك", "فرع"])) return { layout: "center", prompt: `A beautiful modern premium Omani retail shop interior with elegant shelves and ${light ? "big windows, soft natural daylight, airy and clean" : "warm illuminated shelves at night, cinematic atmosphere"}, ${grade}, clean empty area at the TOP for a headline.${rm}` };
-  if (has(["جوال", "بجيبك", "تطبيق", "أينما", "موبايل"])) return { layout: "center", prompt: `A modern smartphone held in hand clearly showing an online store app with products, ${light ? "clean bright white background, soft warm light" : "dramatic spotlight on the phone, dark background"}, ${grade}, clean empty area at the TOP for a headline.${rm}` };
+  if (has(["جوال", "بجيبك", "تطبيق", "أينما", "موبايل"])) return { layout: "center", prompt: `A modern smartphone held in hand clearly showing a realistic, believable online store app UI with real-looking product photos and prices, ${light ? "clean bright white background, soft warm light" : "dramatic spotlight on the phone, dark background"}, ${grade}, clean empty area at the TOP for a headline.${rm}` };
   const woman = has(["ابدئي", "سيدة", "تاجرة", "بائعة"]);
-  const who = woman ? "an authentic Omani woman shop owner in an elegant Omani abaya with a colourful embroidered Omani shela head covering (NOT plain black Gulf, NOT niqab)" : "an authentic Omani man merchant (white Omani dishdasha with furakha tassel and an embroidered Omani kummah cap, NOT a Gulf ghutra or egal)";
+  const egyptian = has(["مصري", "عربي", "موظف", "فريق العمل"]);
+  const who = woman
+    ? "an authentic Omani woman shop owner wearing a plain elegant BLACK abaya and a BLACK hijab head covering (solid black, no colourful patterns, NOT niqab, face fully visible)"
+    : egyptian
+      ? "an Arab (Egyptian) man employee wearing a smart casual buttoned shirt and trousers (NOT Gulf dress)"
+      : "an authentic Omani man merchant wearing a white Omani dishdasha with the furakha tassel and either an embroidered Omani kummah cap or an Omani massar wrapped turban (NOT a Gulf ghutra or egal)";
   return { layout: "side", prompt: `${who} holding a smartphone showing an online store app, ${light ? "clean bright WHITE studio background, soft studio light with gentle separation" : "dramatic spotlight and rim light separating them from the background"}, ${grade}, the subject ${side}${rm}` };
 }
 // Render an editorial design to /media/design/<id>. Returns { url }.
@@ -707,6 +715,8 @@ app.post("/api/hybrid-sample", async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 app.post("/api/proposals/run-now", async (req, res) => { const r = await generateNightlyBatch(); res.json({ ok: true, ...r }); });
+// Fresh start: wipe plans/drafts/proposals/overrides/notes (new-identity rebuild).
+app.post("/api/admin/reset", (req, res) => { res.json(store.resetForFreshStart()); });
 
 // ── Studio ── instant design creation: pick type/template/character/idea →
 // render on the spot → preview → publish now / schedule / download. Drafts live
