@@ -262,6 +262,20 @@ export function updateLead(id, patch) { const l = leads.find((x) => x.id === id)
 export function deleteLead(id) { leads = leads.filter((x) => x.id !== id); persistLeads(); return true; }
 export function addLeadOutreach(id, entry) { const l = leads.find((x) => x.id === id); if (!l) return null; (l.outreach = l.outreach || []).unshift({ ...entry, at: new Date().toISOString() }); persistLeads(); return l; }
 
+// ── Clothing references ── owner-uploaded Omani garments (massar/kummah/abaya…)
+// that condition the nightly character generation so heroes wear the real dress.
+// Only metadata here; the image bytes live as files in the designs dir.
+const CLOTH_FILE = sp("clothing.json");
+let cloth = [];
+try { cloth = JSON.parse(fs.readFileSync(CLOTH_FILE, "utf8")); } catch (e) { cloth = []; }
+function persistCloth() { try { writeDurable(CLOTH_FILE, JSON.stringify(cloth)); } catch (e) {} }
+export function getClothing() { return cloth; }
+export function addClothing(c) {
+  const item = { id: c.id || "cl-" + Math.random().toString(36).slice(2, 8), type: c.type || "", label: (c.label || "").trim(), file: c.file, at: new Date().toISOString() };
+  cloth.unshift(item); persistCloth(); return item;
+}
+export function removeClothing(id) { cloth = cloth.filter((x) => x.id !== id); persistCloth(); return true; }
+
 // ── Agent self-improvement state ── approved suggestions raise the agent's level.
 const AG_FILE = sp("agents_state.json");
 let ag = {};

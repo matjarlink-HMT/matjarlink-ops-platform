@@ -751,10 +751,11 @@ async function renderProposals(host, C) {
 
 // Brand characters — authentic Omani people (Gemini-generated, owner-adopted).
 // Selecting one makes every "spotlight" design use it as the full-bleed hero.
+const CLOTHING_TYPES = [["massar", "مصر عُماني"], ["kummah", "كُمّة"], ["dishdasha", "دشداشة"], ["furakha", "فراخة/شماغ"], ["abaya", "عباية سوداء"], ["hijab", "حجاب أسود"]];
 async function renderCharacters(host, activeTpl) {
   if (!host) return;
-  let d = null;
-  try { d = await fetch("/api/characters").then(r => r.json()); } catch (e) {}
+  let d = null, cloth = { clothing: [] };
+  try { [d, cloth] = await Promise.all([fetch("/api/characters").then(r => r.json()), fetch("/api/clothing").then(r => r.json()).catch(() => ({ clothing: [] }))]); } catch (e) {}
   if (!d || !d.ok || !d.characters.length) { host.innerHTML = ""; return; }
   const v = Date.now();
   const noneOn = !d.active;
@@ -779,14 +780,47 @@ async function renderCharacters(host, activeTpl) {
         <div class="tplshots" style="min-height:6rem;display:flex;align-items:center;justify-content:center;color:var(--mut)">—</div>
         ${noneOn ? `<button class="btn ok sm" disabled>✓ ${T("tpl_active")}</button>` : `<button class="btn sm charpick" data-char="">${T("char_use")}</button>`}
       </div>
-    </div><div class="mut" id="charmsg" style="margin-top:.6rem"></div>`;
+    </div><div class="mut" id="charmsg" style="margin-top:.6rem"></div>
+    <div class="sec-h" style="margin-top:1.6rem"><h3>👕 ${T("cloth_title")}</h3></div>
+    <div class="note-info">${T("cloth_hint")}</div>
+    <div class="pcard nofloat" style="margin:.6rem 0">
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+        <select class="psel" id="cltype">${CLOTHING_TYPES.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
+        <input class="pinput" id="cllabel" placeholder="${T("cloth_label")}" style="max-width:14rem" autocomplete="off">
+        <input type="file" id="clfile" accept="image/*" style="max-width:16rem">
+        <button class="btn sm" id="clup">⬆ ${T("cloth_upload")}</button>
+        <span class="ok-s" id="clmsg"></span></div></div>
+    <div class="grid g3 tplgrid" id="clgrid">${clothCards(cloth.clothing || [])}</div>`;
   host.querySelectorAll(".charpick").forEach(b => b.onclick = async () => {
     b.disabled = true; b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
     const r = await fetch("/api/characters/set", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ character: b.dataset.char }) }).then(x => x.json()).catch(() => null);
     if (r && r.ok) { renderCharacters(host, activeTpl); const m = $("#charmsg"); if (m) m.textContent = "✓ " + T("char_saved"); }
     else { b.disabled = false; b.textContent = T("char_use"); }
   });
+  bindClothing(host, activeTpl);
   bindDzDelete(host, () => renderCharacters(host, activeTpl));
+}
+const clothTypeLabel = (t) => (CLOTHING_TYPES.find(([v]) => v === t) || [, t])[1] || t;
+function clothCards(list) {
+  if (!list.length) return `<div class="mut" style="padding:.5rem">${T("cloth_empty")}</div>`;
+  return list.map(c => `<div class="tplcard" data-clid="${c.id}">
+    <div class="tplhd"><span class="tplname">👕 ${escapeHtml(c.label || clothTypeLabel(c.type))}</span><span class="pill p-info">${escapeHtml(clothTypeLabel(c.type))}</span></div>
+    <div class="tplshots"><img loading="lazy" src="${c.thumb}?v=${Date.now()}" alt="clothing" style="grid-column:span 2;object-fit:cover;max-height:14rem"></div>
+    <div style="margin-top:.3rem"><button class="btn ghost sm cldel" data-clid="${c.id}">🗑 ${T("del")}</button></div></div>`).join("");
+}
+function bindClothing(host, activeTpl) {
+  const up = host.querySelector("#clup");
+  if (up) up.onclick = async () => {
+    const f = host.querySelector("#clfile").files[0], msg = host.querySelector("#clmsg");
+    if (!f) { msg.textContent = "✗ " + T("cloth_pick"); return; }
+    up.disabled = true; up.textContent = "…";
+    try {
+      const dataUrl = await new Promise((res, rej) => { const rd = new FileReader(); rd.onload = () => res(rd.result); rd.onerror = rej; rd.readAsDataURL(f); });
+      const r = await fetch("/api/clothing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: host.querySelector("#cltype").value, label: host.querySelector("#cllabel").value.trim(), dataUrl }) }).then(x => x.json());
+      if (r.ok) renderCharacters(host, activeTpl); else { msg.textContent = "✗ " + (r.error || ""); up.disabled = false; up.textContent = "⬆ " + T("cloth_upload"); }
+    } catch (e) { msg.textContent = "✗"; up.disabled = false; up.textContent = "⬆ " + T("cloth_upload"); }
+  };
+  host.querySelectorAll(".cldel").forEach(b => b.onclick = async () => { await fetch("/api/clothing/" + b.dataset.clid, { method: "DELETE" }); renderCharacters(host, activeTpl); });
 }
 
 // Build a ready Canva "Magic Design" brief (Omani characters + brand colors),

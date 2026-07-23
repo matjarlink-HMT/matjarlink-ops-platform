@@ -22,7 +22,7 @@ import * as gemini from "./integrations/gemini.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf; } })); // rawBody: webhook HMAC verification
+app.use(express.json({ limit: "8mb", verify: (req, res, buf) => { req.rawBody = buf; } })); // 8mb: clothing-reference image uploads · rawBody: webhook HMAC verification
 app.use(express.urlencoded({ extended: true }));
 
 const MODE = process.env.MODE || "mock";
@@ -542,6 +542,51 @@ app.get("/media/character/:id", (req, res) => {
   fs.createReadStream(p).pipe(res);
 });
 
+// ── Clothing references ── upload Omani garments (massar/kummah/abaya…) that
+// condition the nightly character generation so heroes wear the real dress.
+const CLOTHING_TYPES = ["massar", "kummah", "dishdasha", "furakha", "abaya", "hijab"];
+app.get("/api/clothing", (req, res) => res.json({ ok: true, clothing: store.getClothing().map((c) => ({ id: c.id, type: c.type, label: c.label, thumb: `/media/clothing/${c.id}` })) }));
+app.post("/api/clothing", (req, res) => {
+  const { type, label, dataUrl } = req.body || {};
+  if (!dataUrl || !/^data:image\//.test(dataUrl)) return res.status(400).json({ ok: false, error: "image required" });
+  const b64 = dataUrl.split(",")[1] || "";
+  const buf = Buffer.from(b64, "base64");
+  if (!buf.length || buf.length > 8 * 1024 * 1024) return res.status(400).json({ ok: false, error: "bad image size" });
+  const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
+  const id = "cl-" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+  const file = `_cloth-${id}.png`;
+  const fd = fs.openSync(path.join(dir, file), "w"); try { fs.writeSync(fd, buf); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  const item = store.addClothing({ id, type: CLOTHING_TYPES.includes(type) ? type : "", label, file });
+  res.json({ ok: true, item: { id: item.id, type: item.type, label: item.label, thumb: `/media/clothing/${item.id}` } });
+});
+app.delete("/api/clothing/:id", (req, res) => {
+  const c = store.getClothing().find((x) => x.id === req.params.id);
+  if (c) { try { fs.unlinkSync(path.join(designsDir(), c.file)); } catch (e) {} store.removeClothing(c.id); }
+  res.json({ ok: true });
+});
+app.get("/media/clothing/:id", (req, res) => {
+  const c = store.getClothing().find((x) => x.id === req.params.id);
+  if (!c) return res.status(404).send("no clothing");
+  const f = path.join(designsDir(), c.file);
+  if (!fs.existsSync(f)) return res.status(404).send("no file");
+  res.setHeader("Content-Type", "image/png"); res.setHeader("Cache-Control", "public, max-age=86400");
+  fs.createReadStream(f).pipe(res);
+});
+// Pick uploaded garment references matching a character prompt (by gender/type),
+// returning inline base64 refs + a prompt clause instructing exact-match dress.
+function clothingRefsFor(text) {
+  const list = store.getClothing(); if (!list.length) return { refs: [], note: "" };
+  const isWoman = /woman|abaya|hijab/i.test(text);
+  const want = isWoman ? ["abaya", "hijab"] : ["massar", "kummah", "dishdasha", "furakha"];
+  let picks = list.filter((c) => want.includes(c.type));
+  if (!picks.length) picks = list;
+  picks = picks.slice(0, 2);
+  const refs = [];
+  for (const c of picks) { try { refs.push({ data: fs.readFileSync(path.join(designsDir(), c.file)).toString("base64"), mime: "image/png" }); } catch (e) {} }
+  const note = refs.length ? " IMPORTANT: the person MUST wear exactly the authentic Omani garment(s) shown in the attached reference image(s) — match the fabric, colour, pattern, and how it is worn precisely." : "";
+  return { refs, note };
+}
+
 // ── Nightly invention ── 01:00–05:00 Asia/Muscat: propose new brand-kit templates
 // (server-side variations) + new authentic-Omani characters (Gemini), for approval.
 const TPL_BASE_NAME = { classic: "الأبيض", luxe: "الفخم", spotlight: "الحضور" };
@@ -572,7 +617,8 @@ async function makeCharacterProposal() {
   const p = NIGHTLY_CHAR_PROMPTS[charPromptCursor % NIGHTLY_CHAR_PROMPTS.length]; charPromptCursor++;
   const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
   const id = "char-" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
-  const { buffer } = await gemini.generateImage(p.text);
+  const { refs, note } = clothingRefsFor(p.text);   // owner-uploaded garments condition the dress
+  const { buffer } = await gemini.generateImage(p.text + note, refs);
   const name = `_propchar-${id}`, file = `${name}.png`; // file (with .png) is what charPathAny reads
   const fd = fs.openSync(path.join(dir, file), "w"); try { fs.writeSync(fd, buffer); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
   store.saveProposal({ id, kind: "character", label: p.label, dress: p.label, prompt: p.text, file, previewUrl: `/media/design/${name}?v=${Date.now()}` });

@@ -10,13 +10,17 @@ const KEY = () => store.cfgGet("GEMINI_API_KEY");
 const MODEL = () => store.cfgGet("GEMINI_IMAGE_MODEL") || "gemini-2.5-flash-image";
 export const geminiReady = () => Boolean(KEY());
 
-// Generate one image from a text prompt. Returns { buffer, mime } or throws.
-export async function generateImage(prompt) {
+// Generate one image from a text prompt, optionally conditioned on reference
+// images (e.g. uploaded Omani garments the character must wear exactly).
+// refs: [{ data: <base64>, mime: "image/png" }]. Returns { buffer, mime } or throws.
+export async function generateImage(prompt, refs = []) {
   const key = KEY();
   if (!key) throw new Error("GEMINI_API_KEY not set");
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL()}:generateContent?key=${key}`;
+  const parts = [{ text: prompt }];
+  for (const rf of refs || []) { if (rf?.data) parts.push({ inlineData: { mimeType: rf.mime || "image/png", data: rf.data } }); }
   const body = {
-    contents: [{ parts: [{ text: prompt }] }],
+    contents: [{ parts }],
     generationConfig: { responseModalities: ["IMAGE"], temperature: 1.0 },
   };
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -26,8 +30,8 @@ export async function generateImage(prompt) {
     throw new Error(`gemini ${msg}`);
   }
   const j = await r.json();
-  const parts = j.candidates?.[0]?.content?.parts || [];
-  const img = parts.find((p) => p.inlineData?.data || p.inline_data?.data);
+  const respParts = j.candidates?.[0]?.content?.parts || [];
+  const img = respParts.find((p) => p.inlineData?.data || p.inline_data?.data);
   const inline = img?.inlineData || img?.inline_data;
   if (!inline?.data) throw new Error("gemini returned no image");
   return { buffer: Buffer.from(inline.data, "base64"), mime: inline.mimeType || inline.mime_type || "image/png" };
