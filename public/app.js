@@ -659,22 +659,35 @@ function bindBulkDelete(C, refresh) {
 }
 async function renderTemplatesTab(C) {
   C.innerHTML = `<div class="loading">…</div>`;
-  let data = { custom: [] };
-  try { data = await fetch("/api/templates").then(r => r.json()); } catch (e) {}
+  let data = { custom: [] }, props = { posts: [] };
+  try { [data, props] = await Promise.all([fetch("/api/templates").then(r => r.json()), fetch("/api/proposals").then(r => r.json()).catch(() => ({ posts: [] }))]); } catch (e) {}
   const v = Date.now();
+  // Real design samples made with each template (from the publish queue + pending
+  // proposals), shown beside the template so the owner sees it in action.
+  const samples = { "editorial-white": [], "editorial-dark": [] };
+  (props.posts || []).forEach(p => { if (samples[p.template]) samples[p.template].push(p.previewUrl); });
+  (S.queue || []).forEach(q => { if (samples[q.template] && q.mediaUrl) samples[q.template].push(q.mediaUrl); });
   // The two ADOPTED editorial templates — they auto-alternate white/dark on every
   // design, so there's nothing to "select"; shown here as the house style.
   const editorial = [
-    { name: T("tpl_ed_white"), desc: T("tpl_ed_white_d"), bg: "linear-gradient(135deg,#FBE3C8,#ffffff)", fg: "#2D081E", kick: "#F5821F", bar: "#F5821F" },
-    { name: T("tpl_ed_dark"), desc: T("tpl_ed_dark_d"), bg: "radial-gradient(120% 120% at 70% 30%,#4a1230,#2D081E)", fg: "#ffffff", kick: "#F5821F", bar: "#F5821F" },
+    { id: "editorial-white", name: T("tpl_ed_white"), desc: T("tpl_ed_white_d"), bg: "linear-gradient(135deg,#FBE3C8,#ffffff)", fg: "#2D081E", kick: "#F5821F", bar: "#F5821F" },
+    { id: "editorial-dark", name: T("tpl_ed_dark"), desc: T("tpl_ed_dark_d"), bg: "radial-gradient(120% 120% at 70% 30%,#4a1230,#2D081E)", fg: "#ffffff", kick: "#F5821F", bar: "#F5821F" },
   ];
-  const ecard = (e) => `<div class="tplcard on">
+  const ecard = (e) => {
+    const s = (samples[e.id] || []).slice(0, 4);
+    return `<div class="tplcard on">
       <div class="tplhd"><span class="tplname">🖼 ${e.name}</span><span class="pill p-ok">✓ ${T("tpl_adopted")}</span></div>
-      <div style="height:11rem;border-radius:.6rem;background:${e.bg};display:flex;flex-direction:column;justify-content:center;padding:1.1rem;gap:.45rem;overflow:hidden">
-        <div style="color:${e.kick};font-weight:800;font-size:.72rem;letter-spacing:.05em">متجرلينك</div>
-        <div style="color:${e.fg};font-weight:900;font-size:1.25rem;line-height:1.2">تجارتك كلها<br>في مكان واحد</div>
-        <div style="background:${e.bar};color:#fff;font-weight:800;padding:.2rem .6rem;border-radius:.3rem;align-self:flex-start;font-size:.8rem;transform:skewX(-6deg)">قريبًا في عُمان</div></div>
+      <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:.5rem;align-items:stretch">
+        <div style="min-height:11rem;border-radius:.6rem;background:${e.bg};display:flex;flex-direction:column;justify-content:center;padding:1.1rem;gap:.45rem;overflow:hidden">
+          <div style="color:${e.kick};font-weight:800;font-size:.72rem;letter-spacing:.05em">متجرلينك</div>
+          <div style="color:${e.fg};font-weight:900;font-size:1.2rem;line-height:1.2">تجارتك كلها<br>في مكان واحد</div>
+          <div style="background:${e.bar};color:#fff;font-weight:800;padding:.2rem .6rem;border-radius:.3rem;align-self:flex-start;font-size:.78rem;transform:skewX(-6deg)">قريبًا في عُمان</div></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.3rem;align-content:start">
+          ${s.length ? s.map(u => `<img loading="lazy" src="${u}" style="width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:.35rem;border:1px solid var(--line)" onerror="this.style.visibility='hidden'">`).join("") : `<div class="mut" style="grid-column:1/-1;align-self:center;text-align:center;font-size:.74rem">${T("tpl_no_samples")}</div>`}
+        </div>
+      </div>
       <div class="tpldesc" style="margin-top:.45rem">${e.desc}</div></div>`;
+  };
   const ccard = (c) => `<div class="tplcard">
       <div class="tplhd"><span class="tplname"><input type="checkbox" class="selchk" data-kind="template" data-id="${c.id}" title="${T("dz_select")}"> 🌙 ${escapeHtml(c.name)}</span></div>
       <div class="tplshots"><img loading="lazy" src="/media/template/${c.id}/cover?v=${v}"><img loading="lazy" src="/media/template/${c.id}/slide?v=${v}"></div></div>`;
@@ -739,7 +752,7 @@ async function renderApprovals(C) {
   // Designs get big previews; characters/templates get small thumbnails.
   const card = (p, big) => `<div class="tplcard">
       <div class="tplhd"><span class="tplname">${APPR_ICON[p.kind]} ${escapeHtml(p.name || p.label || p.t || "")}</span>${p.date ? `<span class="pill p-info">${escapeHtml((p.date || "").split(" · ")[0])}${p.ty ? " · " + escapeHtml(p.ty) : ""}</span>` : ""}</div>
-      <div class="tplshots" style="grid-template-columns:1fr"><img loading="lazy" src="${p.previewUrl}" style="width:100%;max-height:${big ? "28rem" : "10rem"};object-fit:${big ? "contain" : "cover"};border-radius:.5rem"></div>
+      <div class="tplshots" style="grid-template-columns:1fr"><img loading="lazy" src="${p.previewUrl}" style="width:100%;${big ? "aspect-ratio:4/5" : "max-height:9rem"};object-fit:cover;border-radius:.5rem"></div>
       <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.4rem">
         <button class="btn ok sm aappr" data-appr="${p.id}">✓ ${T("appr_approve")}</button>
         ${p.kind === "template" ? "" : `<button class="btn sm aedit" data-appr="${p.id}">✎ ${T("appr_edit")}</button>`}
@@ -757,7 +770,7 @@ async function renderApprovals(C) {
       <button class="btn sm" id="apprrun">⚡ ${T("prop_run")}</button>
       <span class="mut">${T("appr_route_note")}</span>
     </div>
-    ${total ? `${section("🖼", T("appr_sec_designs"), posts, "g2", true)}${section("🧑🏻", T("appr_sec_characters"), chars, "g4 tplgrid", false)}${section("🎨", T("appr_sec_templates"), tpls, "g4 tplgrid", false)}` : `<div class="mut" style="padding:1rem">${T("appr_empty")}</div>`}`;
+    ${total ? `${section("🖼", T("appr_sec_designs"), posts, "g3 tplgrid", true)}${section("🧑🏻", T("appr_sec_characters"), chars, "g4 tplgrid", false)}${section("🎨", T("appr_sec_templates"), tpls, "g4 tplgrid", false)}` : `<div class="mut" style="padding:1rem">${T("appr_empty")}</div>`}`;
   const run = $("#apprrun");
   if (run) run.onclick = async () => { run.disabled = true; run.innerHTML = `<span class="dots"><i></i><i></i><i></i></span> ${T("prop_running")}`; await fetch("/api/proposals/run-now", { method: "POST" }).catch(() => {}); renderApprovals(C); };
   const msg = (id) => C.querySelector(`.amsg[data-appr="${id}"]`);
