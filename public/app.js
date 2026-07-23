@@ -756,7 +756,12 @@ async function renderApprovals(C) {
   C.querySelectorAll(".aappr").forEach(b => b.onclick = async () => {
     const m = msg(b.dataset.appr); if (m) m.textContent = "…";
     const r = await fetch("/api/proposals/approve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: b.dataset.appr }) }).then(x => x.json()).catch(() => null);
-    if (r && r.ok) { if (m) m.textContent = "✓ " + T("appr_approved"); setTimeout(() => renderApprovals(C), 600); } else if (m) m.textContent = "⚠ " + ((r && r.error) || "");
+    if (r && r.ok) {
+      // Refresh state so the newly-approved design is immediately visible in قائمة النشر.
+      try { S = await fetch("/api/state").then(x => x.json()); buildChrome(); } catch (e) {}
+      if (m) m.textContent = "✓ " + T(r.routedTo === "pipeline" ? "appr_to_pipeline" : "appr_approved");
+      setTimeout(() => renderApprovals(C), 900);
+    } else if (m) m.textContent = "⚠ " + ((r && r.error) || "");
   });
   C.querySelectorAll(".arej").forEach(b => b.onclick = async () => {
     await fetch("/api/proposals/reject", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: b.dataset.appr }) }).catch(() => {});

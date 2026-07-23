@@ -728,11 +728,29 @@ app.get("/api/proposals", (req, res) => {
 app.post("/api/proposals/approve", (req, res) => {
   const p = store.getProposals()[(req.body || {}).id];
   if (!p || p.status !== "pending") return res.status(404).json({ ok: false, error: "proposal not found" });
-  if (p.kind === "template") store.addCustomTemplate({ id: p.id, name: p.name, base: p.base, accent: p.accent });
-  else if (p.kind === "post") store.saveStudioDraft({ id: p.id, t: p.t, t2: p.t2 || "", cta: p.cta || "", ty: STUDIO_TYPES.post, mediaUrl: (p.previewUrl || "").split("?")[0], images: [], type: "post", template: p.template, platform: "instagram", date: p.date || "", approved: true, at: new Date().toISOString() });
-  else store.addCustomCharacter({ id: p.id, label: p.label, dress: p.dress, file: p.file });
+  let routedTo = "";
+  if (p.kind === "template") { store.addCustomTemplate({ id: p.id, name: p.name, base: p.base, accent: p.accent }); routedTo = "templates"; }
+  else if (p.kind === "post") {
+    // Approved design → drop it into the publish queue (قائمة النشر), marked
+    // approved (owner explicitly approved it here) so it's ready to publish.
+    const idNum = nextIdNum(baseState().queue);
+    const qid = "MJ-" + String(idNum).padStart(3, "0");
+    const media = (p.previewUrl || "").split("?")[0];  // /media/design/<id> (serves <id>.png)
+    const { date: today } = muscatDateHour();
+    const isReel = /\.mp4/.test(p.previewUrl || "") || (p.ty || "").includes("ريل");
+    appendPost({
+      id: qid, t: p.t, t2: p.t2 || "", cta: p.cta || "",
+      cap: `${p.t}${p.t2 ? " · " + p.t2 : ""}${p.cta ? "\n\n" + p.cta : ""}`,
+      ty: isReel ? "ريل نوعي" : "منشور علامة", ch: "IG", tyc: "#6E1444",
+      date: p.date || `${today} · 20:00`,
+      mediaUrl: media, images: [], gen: true, template: p.template,
+    });
+    store.approve(qid);   // status «معتمد» → shows approved & publish-ready in the queue
+    routedTo = "pipeline";
+  }
+  else { store.addCustomCharacter({ id: p.id, label: p.label, dress: p.dress, file: p.file }); routedTo = "characters"; }
   store.setProposalStatus(p.id, "approved");
-  res.json({ ok: true });
+  res.json({ ok: true, routedTo });
 });
 app.post("/api/proposals/reject", (req, res) => { store.setProposalStatus((req.body || {}).id, "rejected"); res.json({ ok: true }); });
 // Regenerate a pending proposal with the reviewer's note (edit-and-retry).
