@@ -669,8 +669,9 @@ function heroRefs(text) {
   const hasFace = (face.refs || []).length, hasGarment = (garment.refs || []).length;
   let note = "";
   if (hasFace && hasGarment) {
-    // Face from the character, clothing from the wardrobe garment — never invented.
-    note = " CRITICAL: recreate the person's FACE and features from the FIRST reference image; they MUST wear EXACTLY the Omani garment shown in the SUBSEQUENT garment reference image(s) — copy only the clothing from them. Do NOT invent, change or add any clothing.";
+    // Face + base outfit from the character portrait; the specific piece from the
+    // wardrobe garment. Nothing is invented.
+    note = " CRITICAL: recreate the person's FACE and their overall outfit from the FIRST reference image, then dress them in the exact Omani garment shown in the SUBSEQUENT garment reference image(s) — the clothing must come ONLY from these references. Do NOT invent, add or change any clothing.";
   } else if (hasFace) {
     // No wardrobe garment chosen → use the character's OWN outfit from its portrait,
     // so the clothing is never invented (matches the selected character exactly).
@@ -927,11 +928,14 @@ function editorialScene(text, light) {
   if (person) {
     const woman = has(["ابدئي", "سيدة", "تاجرة", "بائعة", "امرأة"]);
     const egyptian = has(["مصري", "موظف", "دعم", "فريق العمل"]);
+    // Clothing is defined by the reference images (character portrait / wardrobe
+    // garment) — the prompt gives only identity, no specific dress, so it never
+    // competes with or overrides the chosen garment.
     const who = woman
-      ? "an authentic Omani woman shop owner wearing a plain elegant BLACK abaya and a BLACK hijab head covering (solid black, no colourful patterns, NOT niqab, face fully visible)"
+      ? "an authentic Omani woman shop owner (modest, face fully visible, NOT niqab)"
       : egyptian
-        ? "an Arab (Egyptian) man employee wearing a smart casual buttoned shirt and trousers (NOT Gulf dress)"
-        : "an authentic Omani man merchant wearing a white Omani dishdasha with the furakha tassel and either an embroidered Omani kummah cap or an Omani massar wrapped turban (NOT a Gulf ghutra or egal)";
+        ? "an Arab (Egyptian) man employee in a smart casual buttoned shirt and trousers (NOT Gulf dress)"
+        : "an authentic Omani man merchant";
     return { layout: "side", prompt: `${who} holding a smartphone showing an online store app, ${light ? "clean bright WHITE studio background, soft studio light with gentle separation" : "dramatic spotlight and rim light separating them from the background"}, ${grade}, the subject ${side}${rm}` };
   }
   // Default (no explicit person keyword) → a product/device hero, NOT a person.
@@ -959,7 +963,7 @@ async function makeEditorialReel({ id, light = false, headline, pop, cta, valueL
   const grade = light ? "bright airy, clean white and warm-orange tones (brand colors #F5821F and #2D081E, NOT purple)" : "deep AUBERGINE-PLUM and warm-ORANGE cinematic color grade (brand colors #2D081E and #F5821F, NOT purple)";
   const rm = " Photorealistic cinematic vertical composition, realistic, NOT 3D render, NOT AI illustration. No text, no words, no logos.";
   const scenePrompts = [
-    `Cinematic VERTICAL 9:16 portrait of an authentic Omani man merchant (white Omani dishdasha with furakha and an embroidered Omani kummah cap, NOT a Gulf ghutra or egal) in his elegant modern shop, dramatic warm rim lighting, ${grade}. Frame him from the chest up with his FACE at the VERTICAL CENTRE of the frame — leave a large clean EMPTY area in the TOP THIRD for a headline and empty space at the BOTTOM; do NOT place the head or face in the top third.${rm}`,
+    `Cinematic VERTICAL 9:16 portrait of an authentic Omani man merchant in his elegant modern shop, dramatic warm rim lighting, ${grade}. Frame him from the chest up with his FACE at the VERTICAL CENTRE of the frame — leave a large clean EMPTY area in the TOP THIRD for a headline and empty space at the BOTTOM; do NOT place the head or face in the top third.${rm}`,
     `Cinematic VERTICAL 9:16 close-up of a modern smartphone and a glowing POS cashier screen showing an online store and a sale, dramatic focused lighting, ${grade}, the device in the lower-centre with a large clean EMPTY area in the TOP THIRD for a headline.${rm}`,
     `Cinematic VERTICAL 9:16 wide shot of a premium modern Omani shop or marketplace with warm inviting light, atmospheric depth, ${grade}, clean empty space in the CENTER for a call to action.${rm}`,
   ];
