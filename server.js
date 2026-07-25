@@ -666,6 +666,18 @@ function heroRefs(text) {
   const face = characterFaceRef(text), garment = clothingRefsFor(text);
   return { refs: [...(face.refs || []), ...(garment.refs || [])], note: (face.note || "") + (garment.note || "") };
 }
+// Turn the owner's idea DESCRIPTION into VISUAL-only scene guidance so the
+// background is coherent with the headline. Strips quoted phrases + digits so no
+// text/number leaks into the render (the description briefs the design, it is
+// NEVER drawn as text). Returns "" when there's nothing usable.
+function sceneGuidance(desc) {
+  let s = String(desc || "")
+    .replace(/[«»“”"'‘’‹›].*?[«»“”"'‘’‹›]/g, " ")   // drop anything quoted (likely intended text)
+    .replace(/[0-9٠-٩٪%]+/g, " ")            // drop digits/percent
+    .replace(/\s+/g, " ").trim();
+  if (s.length < 6) return "";
+  return ` The BACKGROUND scene must visually match this idea: «${s.slice(0, 220)}». It is a background only — render absolutely NO text, words, letters, numbers or logos.`;
+}
 
 // ── Nightly invention ── 01:00–05:00 Asia/Muscat: propose new brand-kit templates
 // (server-side variations) + new authentic-Omani characters (Gemini), for approval.
@@ -851,10 +863,16 @@ app.post("/api/proposals/regenerate", async (req, res) => {
   const note = (b.note || "").trim();
   try {
     if (p.kind === "post") {
+      // Regenerate in the SAME format as the proposal (reel stays a reel, etc.).
       const light = p.template === "editorial-white";
-      const sc = editorialScene([p.t, note].join(" "), light);
-      const ed = await makeEditorial({ light, layout: sc.layout, kicker: "متجرلينك", headline: p.t, pop: p.t2 || "", cta: p.cta || "", prompt: sc.prompt + (note ? ` Owner note: ${note}.` : ""), id: p.id });
-      store.saveProposal({ ...p, previewUrl: ed.url });
+      const fmt = p.format || (p.images && p.images.length > 1 ? "كاروسيل" : /\.mp4/.test(p.previewUrl || "") ? "ريل" : "منشور");
+      const headline = p.t, cta = p.cta || "قريبًا في عُمان";
+      const hint = sceneGuidance(p.desc) + (note ? ` Owner note (visual direction only, NOT text): ${note}.` : "");
+      let ed, images = [];
+      if (fmt.includes("ريل")) { ed = await makeEditorialReel({ id: p.id, light, headline, pop: p.t2 || "", cta, valueLine: "متجر · كاشير · محاسبة", sceneHint: hint }); }
+      else if (fmt.includes("كاروسيل")) { const c = await makeEditorialCarousel({ id: p.id, light, headline, cta, points: p.points, sceneHint: hint }); ed = { url: c.url }; images = c.images; }
+      else { const sc = editorialScene([p.t, note].join(" "), light); ed = await makeEditorial({ light, layout: sc.layout, kicker: "متجرلينك", headline, pop: p.t2 || "", cta, prompt: sc.prompt + hint, id: p.id }); }
+      store.saveProposal({ ...p, previewUrl: ed.url, images });
     } else if (p.kind === "character") {
       const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
       const { refs, note: cnote } = clothingRefsFor(p.prompt);
@@ -919,7 +937,7 @@ async function makeEditorial({ light, layout, kicker, headline, pop, cta, prompt
 }
 // Editorial REEL: 3 vertical (9:16) Gemini cinematic scenes + our text, animated
 // (Ken Burns per scene, lossless concat). Returns { url } (.mp4).
-async function makeEditorialReel({ id, light = false, headline, pop, cta, valueLine }) {
+async function makeEditorialReel({ id, light = false, headline, pop, cta, valueLine, sceneHint = "" }) {
   if (!gemini.geminiReady()) throw new Error("قالب «الإعلاني» يحتاج ربط Gemini أولاً");
   const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
   const eng = await import("./data/designEngine.js");
@@ -940,7 +958,7 @@ async function makeEditorialReel({ id, light = false, headline, pop, cta, valueL
   try {
     for (let i = 0; i < 3; i++) {
       const { refs, note } = heroRefs(scenePrompts[i]);   // character FACE + wardrobe GARMENT on the person scene
-      const { buffer } = await gemini.generateImage(scenePrompts[i] + note, refs);
+      const { buffer } = await gemini.generateImage(scenePrompts[i] + note + (i === 0 ? sceneHint : ""), refs);
       const bgFile = path.join(dir, `_rlbg-${id}-${i}.png`); junk.push(bgFile);
       let fd0 = fs.openSync(bgFile, "w"); try { fs.writeSync(fd0, buffer); fs.fsyncSync(fd0); } finally { fs.closeSync(fd0); }
       const png = await eng.renderEditorial({ bg: bgFile, h: 1920, layout: "center", light, kicker: texts[i].kicker || "متجرلينك", headline: texts[i].headline, pop: texts[i].pop, cta: "", biz: store.getBrandData() });
@@ -955,7 +973,7 @@ async function makeEditorialReel({ id, light = false, headline, pop, cta, valueL
 }
 // Editorial CAROUSEL: a cover + content slides, each its own editorial scene.
 // Returns { url (cover), images: [cover, slide1, …] } for the carousel queue post.
-async function makeEditorialCarousel({ id, light = false, headline, cta, points = [] }) {
+async function makeEditorialCarousel({ id, light = false, headline, cta, points = [], sceneHint = "" }) {
   if (!gemini.geminiReady()) throw new Error("قالب «الإعلاني» يحتاج ربط Gemini أولاً");
   const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
   const eng = await import("./data/designEngine.js");
@@ -964,7 +982,7 @@ async function makeEditorialCarousel({ id, light = false, headline, cta, points 
   const renderSlide = async (slug, hl, kicker, isLight) => {
     const sc = editorialScene(hl, isLight);
     const { refs, note } = heroRefs(sc.prompt);
-    const { buffer } = await gemini.generateImage(sc.prompt + note, refs);
+    const { buffer } = await gemini.generateImage(sc.prompt + note + sceneHint, refs);
     const bg = path.join(dir, `_cbg-${slug}.png`);
     const fd0 = fs.openSync(bg, "w"); try { fs.writeSync(fd0, buffer); fs.fsyncSync(fd0); } finally { fs.closeSync(fd0); }
     const png = await eng.renderEditorial({ bg, kicker, headline: hl, pop: "", cta: "", light: isLight, layout: sc.layout, biz });
@@ -1028,21 +1046,22 @@ async function designPlanItem(plan, it) {
   const pid = "post-" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
   const planMonth = `${plan.year}-${String(plan.month).padStart(2, "0")}`;
   const fmt = it.format || "منشور";
+  const hint = sceneGuidance(it.desc);   // background follows the idea; text is coherent with the visuals
   let previewUrl, images = [], qty;
   if (fmt.includes("ريل")) {
     // valueLine is the reel's short on-screen middle line — a product value prop,
     // NEVER the idea description (that only briefs the design, it is never text).
-    const ed = await makeEditorialReel({ id: pid, light, headline, pop: "", cta, valueLine: "متجر · كاشير · محاسبة" });
+    const ed = await makeEditorialReel({ id: pid, light, headline, pop: "", cta, valueLine: "متجر · كاشير · محاسبة", sceneHint: hint });
     previewUrl = ed.url; qty = "ريل نوعي";
   } else if (fmt.includes("كاروسيل")) {
-    const ed = await makeEditorialCarousel({ id: pid, light, headline, cta, points: it.points });
+    const ed = await makeEditorialCarousel({ id: pid, light, headline, cta, points: it.points, sceneHint: hint });
     previewUrl = ed.url; images = ed.images; qty = "كاروسيل توعوي";
   } else {
     const sc = editorialScene(headline, light);
-    const ed = await makeEditorial({ light, layout: sc.layout, kicker: "متجرلينك", headline, pop: "", cta, prompt: sc.prompt, id: pid });
+    const ed = await makeEditorial({ light, layout: sc.layout, kicker: "متجرلينك", headline, pop: "", cta, prompt: sc.prompt + hint, id: pid });
     previewUrl = ed.url; qty = "منشور علامة";
   }
-  store.saveProposal({ id: pid, kind: "post", template, t: headline, t2: "", cta, cap: it.cap || "", ty: it.ty, format: fmt, qty, images, name: `${headline} · ${dateStr.split(" · ")[0]}`, date: dateStr, previewUrl, planMonth, planItemKey: it.key });
+  store.saveProposal({ id: pid, kind: "post", template, t: headline, t2: "", cta, cap: it.cap || "", ty: it.ty, format: fmt, desc: it.desc || "", points: it.points || [], qty, images, name: `${headline} · ${dateStr.split(" · ")[0]}`, date: dateStr, previewUrl, planMonth, planItemKey: it.key });
   it.designed = true; it.proposalId = pid;
   return pid;
 }
