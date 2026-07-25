@@ -1086,11 +1086,13 @@ function ovv() {
     <div class="toplist">${tp.map((m, i) => `<div class="toprow"><span class="topr">${i + 1}</span>
       <span class="topt">${m.url ? `<a class="link" target="_blank" href="${m.url}">${escapeHtml((m.t || "").slice(0, 42))} ↗</a>` : escapeHtml((m.t || "").slice(0, 42))}</span>
       <span class="topm">❤ ${nf(m.likes)} · 💬 ${nf(m.comments)}${m.saved ? ` · 🔖 ${nf(m.saved)}` : ""}${m.reach != null ? ` · 👁 ${nf(m.reach)}` : ""}</span></div>`).join("")}</div></div>` : "";
+  // Detailed analytics (trend/insights/top-posts/comparison) now live on the
+  // Analytics page — the dashboard stays focused on "what needs me today".
   return `${briefCard()}<div class="grid g4" style="margin-top:1rem">${k}</div>
-    <div class="grid g2" style="margin-top:1rem">${pipeHealth}${trend}</div>
-    <div class="grid g2" style="margin-top:1rem">${ins}${topCard || sched}</div>
-    ${topCard ? `<div style="margin-top:1rem">${sched}</div>` : ""}
-    <div style="margin-top:1rem">${cmp}</div>`;
+    <div class="grid g2" style="margin-top:1rem">${pipeHealth}${sched}</div>
+    <div class="card" style="margin-top:1rem;text-align:center;padding:1.1rem">
+      <div style="font-weight:800">📊 ${T("dash_analytics_moved")}</div>
+      <button class="btn sm" data-goview="analytics" style="margin-top:.55rem">${T("dash_open_analytics")}</button></div>`;
 }
 
 // ── agents (with self-improvement approval) ───────────────────────
@@ -1433,10 +1435,41 @@ async function publishPost(id, btn) {
 // ── analytics ─────────────────────────────────────────────────────
 async function renderAnalytics(C) {
   const range = A?.range || "7d";
+  const insights = S.insights ? (() => { const st = (kk, v) => `<div class="astat"><span class="an">${nf(v)}</span><span class="al">${T(kk)}</span></div>`; const i = S.insights; return `<div class="card" style="margin-top:1rem"><div class="sec-h"><h2>${T("perf")} (Windsor)</h2><span class="pill p-ok">${T("conn_on")}</span></div><div class="astats">${st("followers", i.followers)}${st("reach", i.reach)}${st("impressions", i.impressions)}${st("engagement", i.engagement)}${st("clicks", i.clicks)}</div></div>`; })() : "";
   C.innerHTML = `<div class="rangebar"><button data-r="7d" class="rbtn ${range === "7d" ? "on" : ""}">${T("range7")}</button><button data-r="30d" class="rbtn ${range === "30d" ? "on" : ""}">${T("range30")}</button></div>
     <div class="grid g2" id="anwrap">${A.platforms.map(anCard).join("")}</div>
+    ${insights}
+    <div class="card" style="margin-top:1rem"><div class="sec-h"><h2>🧠 ${T("an_advice")}</h2><button class="btn sm" id="anadvice">✨ ${T("an_analyze")}</button></div><div id="advicebody" class="mut">${T("an_advice_hint")}</div></div>
+    <div class="card" style="margin-top:1rem"><div class="sec-h"><h2>📊 ${T("an_perpost")}</h2></div><div id="postsbody"><div class="loading">…</div></div></div>
     <div class="card" style="margin-top:1rem"><div class="sec-h"><h2>${T("comparison")}</h2></div>${compareBars()}</div>`;
   document.querySelectorAll(".rbtn").forEach(b => b.onclick = async () => { A = await fetch("/api/analytics?range=" + b.dataset.r).then(r => r.json()); renderAnalytics(C); });
+  loadPerPost();
+  const ab = $("#anadvice"); if (ab) ab.onclick = loadAdvice;
+}
+async function loadPerPost() {
+  const host = $("#postsbody"); if (!host) return;
+  let d = { posts: [] };
+  try { d = await fetch("/api/analytics/posts").then(r => r.json()); } catch (e) {}
+  if (!d.posts || !d.posts.length) { host.innerHTML = `<div class="mut" style="padding:.5rem">${T("an_noposts")}</div>`; return; }
+  const emoji = (t) => t === "ريل" ? "🎬" : t === "كاروسيل" ? "🎠" : "🖼";
+  const rows = d.posts.map(p => `<tr>
+      <td style="white-space:nowrap">${emoji(p.type)} ${p.type}</td>
+      <td style="max-width:16rem">${p.permalink ? `<a class="link" target="_blank" href="${p.permalink}">${escapeHtml((p.t || "").slice(0, 44))} ↗</a>` : escapeHtml((p.t || "").slice(0, 44))}</td>
+      <td>${p.reach != null ? nf(p.reach) : "—"}</td>
+      <td>❤ ${nf(p.likes)}</td><td>💬 ${nf(p.comments)}</td><td>🔖 ${nf(p.saved)}</td><td>↗ ${nf(p.shares)}</td>
+      <td><b>${nf(p.eng)}</b></td>
+      <td>${p.engRate != null ? `<span class="pill ${p.engRate >= 5 ? "p-ok" : p.engRate >= 2 ? "p-info" : "p-idle"}">${p.engRate}%</span>` : "—"}</td>
+    </tr>`).join("");
+  host.innerHTML = `<div class="tablewrap"><table class="plantable"><thead><tr><th>${T("plan_format")}</th><th>${T("an_post")}</th><th>${T("reach")}</th><th>${T("an_likes")}</th><th>${T("an_comments")}</th><th>${T("an_saves")}</th><th>${T("an_shares")}</th><th>${T("engagement")}</th><th>${T("an_rate")}</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+async function loadAdvice() {
+  const btn = $("#anadvice"), body = $("#advicebody");
+  btn.disabled = true; btn.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
+  const d = await fetch("/api/analytics/advice").then(r => r.json()).catch(() => null);
+  btn.disabled = false; btn.innerHTML = `✨ ${T("an_analyze")}`;
+  if (!d || !d.ok) { body.textContent = "⚠ " + ((d && d.error) || ""); return; }
+  if (!d.advice.length) { body.textContent = T("an_noposts"); return; }
+  body.innerHTML = `<div class="grid g2">${d.advice.map(a => `<div class="card" style="box-shadow:none;border:1px solid var(--line)"><div style="font-weight:800;color:var(--plum)">💡 ${escapeHtml(a.title || "")}</div><div class="mut" style="margin:.3rem 0">${escapeHtml(a.detail || "")}</div>${a.action ? `<div style="font-size:.82rem"><b>↪ ${escapeHtml(a.action)}</b></div>` : ""}</div>`).join("")}</div>`;
 }
 function anCard(p) {
   if (!p.active) return `<div class="card" style="opacity:.75"><div class="acc"><div class="ic" style="background:${p.color}">${GLYPH[p.key] || p.key}</div><div style="flex:1"><div style="font-weight:800">${p.name}</div><div class="mut">${p.note || T("inactive")}</div></div>${pill([T("inactive"), "p-idle"])}</div></div>`;

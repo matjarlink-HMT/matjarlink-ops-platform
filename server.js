@@ -1329,6 +1329,40 @@ app.get("/api/analytics", async (req, res) => {
   res.json(getAnalytics(range, windsorData));
 });
 
+// Per-post analytics — real Instagram metrics for every published post.
+app.get("/api/analytics/posts", async (req, res) => {
+  let pub = [];
+  try { pub = await enrichPublished(await cached("published", 120, () => meta.getPublished())) || []; } catch (e) {}
+  const posts = pub.map((m) => {
+    const eng = (m.likes || 0) + (m.comments || 0) + (m.saved || 0) + (m.shares || 0);
+    const type = m.type === "VIDEO" ? "ريل" : m.type === "CAROUSEL_ALBUM" ? "كاروسيل" : "منشور";
+    const rate = m.reach ? +((eng / m.reach) * 100).toFixed(1) : null;
+    return { id: m.id, t: m.t || "", type, reach: m.reach ?? null, likes: m.likes || 0, comments: m.comments || 0, saved: m.saved || 0, shares: m.shares || 0, eng, engRate: rate, permalink: m.permalink || m.url || "", thumb: m.thumbnail || m.media_url || "", at: m.timestamp || m.at || "" };
+  }).sort((a, b) => b.eng - a.eng);
+  res.json({ ok: true, posts, live: meta.metaReady() });
+});
+
+// AI performance analysis → actionable recommendations from the real numbers.
+app.get("/api/analytics/advice", async (req, res) => {
+  if (!claude.claudeReady()) return res.json({ ok: false, error: "يحتاج ربط Claude (المدير الذكي) لتحليل الأرقام" });
+  let pub = [];
+  try { pub = await enrichPublished(await cached("published", 120, () => meta.getPublished())) || []; } catch (e) {}
+  if (!pub.length) return res.json({ ok: true, advice: [{ title: "لا بيانات نشر بعد", detail: "بعد نشر أول منشورات الإطلاق ستظهر هنا توصيات مبنية على أرقامك الحقيقية (الوصول، التفاعل، الحفظ، أفضل الصيغ والمواضيع).", action: "ابدأ النشر من قائمة النشر" }] });
+  const rows = pub.slice(0, 20).map((m) => {
+    const eng = (m.likes || 0) + (m.comments || 0) + (m.saved || 0) + (m.shares || 0);
+    const type = m.type === "VIDEO" ? "ريل" : m.type === "CAROUSEL_ALBUM" ? "كاروسيل" : "منشور";
+    const rate = m.reach ? ((eng / m.reach) * 100).toFixed(1) : "?";
+    return `${type} | «${(m.t || "").slice(0, 45)}» | وصول ${m.reach ?? "?"} | ❤${m.likes || 0} 💬${m.comments || 0} 🔖${m.saved || 0} ↗${m.shares || 0} | تفاعل ${eng} | معدل التفاعل ${rate}%`;
+  }).join("\n");
+  const system = `أنت محلل أداء إنستغرام لعلامة «متجرلينك» (منصة عُمانية للتجار قبل الإطلاق). ستُعطى أرقام منشورات حقيقية. حلّلها بعمق وأعطِ توصيات عملية دقيقة: أي الصيغ/المواضيع تنجح أكثر، ماذا نكرّر، ماذا نحسّن أو نتجنّب، وأفكار محددة للخطة القادمة. باللهجة العُمانية، عملي ومختصر.
+أعد **JSON فقط**: {"advice":[{"title":"<توصية قصيرة>","detail":"<شرح عملي مبني على الأرقام>","action":"<خطوة قابلة للتنفيذ>"}, ... 4-6 عناصر]}`;
+  try {
+    const raw = await claude.chat([{ role: "user", text: `الأرقام:\n${rows}\n\nحلّل وأعطِ التوصيات. JSON فقط.` }], system, { maxTokens: 2000 });
+    let out = null; try { const mm = String(raw || "").match(/\{[\s\S]*\}/); if (mm) out = JSON.parse(mm[0]); } catch (e) {}
+    res.json({ ok: true, advice: (out && Array.isArray(out.advice)) ? out.advice : [] });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 // ── Manager chat (CAIMO) — powered by Claude when a key is set ───────
 app.get("/api/chat", (req, res) => res.json({ history: store.getChat(), ready: claude.claudeReady() }));
 app.post("/api/chat", async (req, res) => {
