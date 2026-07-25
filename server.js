@@ -921,13 +921,16 @@ async function makeEditorialCarousel({ id, light = false, headline, cta, points 
     try { fs.unlinkSync(bg); } catch (e) {}
     return png;
   };
-  const slidePoints = (points && points.length ? points : ["متجر إلكتروني احترافي", "كاشير ذكي يربط كل شي", "محاسبة وتقارير تلقائية"]).slice(0, 4);
+  // Keep the slide count small — each slide is a full Skia render + Gemini image,
+  // and the container is memory-constrained (too many in a row OOM-kills it).
+  const slidePoints = (points && points.length ? points : ["متجر إلكتروني احترافي", "كاشير ذكي يربط كل شي", "محاسبة وتقارير تلقائية"]).slice(0, 3);
   const urls = [];
-  const cover = await renderSlide(`${id}-c`, headline, "متجرلينك", light);
-  writePng(id, cover); urls.push(`/media/design/${id}`);
+  let cover = await renderSlide(`${id}-c`, headline, "متجرلينك", light);
+  writePng(id, cover); cover = null; urls.push(`/media/design/${id}`);
   for (let i = 0; i < slidePoints.length; i++) {
-    const png = await renderSlide(`${id}-${i + 1}`, slidePoints[i], i === slidePoints.length - 1 ? "متجرلينك · " + (cta || "قريبًا") : "", light);
-    writePng(`${id}-${i + 1}`, png); urls.push(`/media/design/${id}-${i + 1}`);
+    let png = await renderSlide(`${id}-${i + 1}`, slidePoints[i], i === slidePoints.length - 1 ? "متجرلينك · " + (cta || "قريبًا") : "", light);
+    writePng(`${id}-${i + 1}`, png); png = null; urls.push(`/media/design/${id}-${i + 1}`);
+    if (global.gc) { try { global.gc(); } catch (e) {} }   // release Skia/native memory between slides when exposed
   }
   return { url: `/media/design/${id}?v=${Date.now()}`, images: urls };
 }
@@ -993,21 +996,28 @@ async function designPlanItem(plan, it) {
   it.designed = true; it.proposalId = pid;
   return pid;
 }
+// Serialize heavy design generation — only ONE at a time, so overlapping
+// reel/carousel renders can't stack up and OOM the memory-constrained container.
+let designBusy = false;
 // Design a single plan item on demand (owner clicks 🎨 on the row).
 app.post("/api/plan/design-item", async (req, res) => {
   if (!gemini.geminiReady()) return res.status(400).json({ ok: false, error: "يحتاج ربط Gemini أولاً" });
+  if (designBusy) return res.status(429).json({ ok: false, error: "جارٍ توليد تصميم آخر — انتظر ثوانٍ ثم أعد المحاولة" });
   const { month, key } = req.body || {};
   const plans = store.getPlans();
   const plan = (month && plans[month]) || Object.values(plans).find((p) => (p.items || []).some((i) => i.key === key));
   const it = plan && (plan.items || []).find((i) => i.key === key);
   if (!it) return res.status(404).json({ ok: false, error: "عنصر غير موجود" });
+  designBusy = true;
   try { const pid = await designPlanItem(plan, it); store.setPlan(plan); res.json({ ok: true, proposalId: pid }); }
   catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  finally { designBusy = false; }
 });
 // Approve the whole plan → design ALL not-yet-designed FUTURE items at once,
 // each → «الاعتماد» carrying its plan date+time for individual approval.
 app.post("/api/plan/approve", async (req, res) => {
   if (!gemini.geminiReady()) return res.status(400).json({ ok: false, error: "يحتاج ربط Gemini أولاً" });
+  if (designBusy) return res.status(429).json({ ok: false, error: "جارٍ توليد تصميم — انتظر ثوانٍ ثم أعد المحاولة" });
   const key = (req.body || {}).month;
   const plans = store.getPlans();
   const plan = (key && plans[key]) || Object.values(plans).sort((a, b) => (b.generatedAt || "").localeCompare(a.generatedAt || ""))[0];
@@ -1016,7 +1026,9 @@ app.post("/api/plan/approve", async (req, res) => {
   const today0 = Date.UTC(mn.getUTCFullYear(), mn.getUTCMonth(), mn.getUTCDate());
   const items = (plan.items || []).filter((it) => Date.UTC(plan.year, plan.month - 1, it.day) >= today0 && !it.designed);
   const out = { generated: 0, errors: [] };
-  for (const it of items) { try { await designPlanItem(plan, it); out.generated++; } catch (e) { out.errors.push(e.message); } }
+  designBusy = true;
+  try { for (const it of items) { try { await designPlanItem(plan, it); out.generated++; } catch (e) { out.errors.push(e.message); } } }
+  finally { designBusy = false; }
   plan.approved = true; plan.approvedAt = new Date().toISOString();
   store.setPlan(plan);
   res.json({ ok: true, ...out });
