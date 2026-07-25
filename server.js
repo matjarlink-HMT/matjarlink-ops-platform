@@ -69,7 +69,7 @@ app.get("/api/state", async (req, res) => {
   // Never let a hanging external call (Meta/Windsor) stall /api/state — cap each
   // at 8s and fall back, so the dashboard always loads (a hang here 502'd it).
   const settle = (p, fb) => Promise.race([
-    Promise.resolve(p).catch((e) => { console.error(e.message); return fb; }),
+    Promise.resolve(p).then((v) => v ?? fb).catch((e) => { console.error(e.message); return fb; }), // v ?? fb: a call that RESOLVES to undefined (e.g. Meta returns nothing) must still fall back, else `.length` throws
     new Promise((res) => setTimeout(() => res(fb), 8000)),
   ]);
   // Short-TTL cache: /api/state is polled every 60s per open tab, and getComments
@@ -78,11 +78,11 @@ app.get("/api/state", async (req, res) => {
     settle(cached("comments", 240, () => meta.getComments()), []), settle(cached("igmsgs", 240, () => meta.getMessages()), []),
     settle(cached("published", 120, () => meta.getPublished()), []), settle(cached("insights", 600, () => windsor.getInsights()), null)
   ]);
-  const waMsgs = wa.getMessages();
-  if (comments.length) state.comments = comments;
-  const merged = [...igMsgs, ...waMsgs];
+  const waMsgs = wa.getMessages() || [];
+  if (comments?.length) state.comments = comments;
+  const merged = [...(igMsgs || []), ...(waMsgs || [])];
   if (merged.length) state.messages = merged;
-  if (published.length) {
+  if (published?.length) {
     const withInsights = await settle(enrichPublished(published), published);
     state.published = withInsights;
     state.topPosts = live.topPosts(withInsights, 5);
