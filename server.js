@@ -132,7 +132,8 @@ app.get("/api/state", async (req, res) => {
   res.json(state);
  } catch (e) {
   console.error("[api/state]", (e && e.stack) || e);
-  try { res.json({ ...baseState(), stateError: String((e && e.message) || e) }); } catch (_) { res.status(200).json({ agents: [], queue: [], needs: [] }); }
+  const where = String((e && e.stack) || e).split("\n").slice(0, 4).map((l) => l.trim()).join(" | ");
+  try { res.json({ ...baseState(), stateError: where }); } catch (_) { res.status(200).json({ agents: [], queue: [], needs: [] }); }
  }
 });
 
