@@ -499,13 +499,15 @@ export async function renderEditorial({ bg = null, kicker = "متجرلينك", 
   };
   if (layout === "center") {
     if (logo) { const lw = 240, lh = lw * (logo.height / logo.width); ctx.drawImage(logo, W / 2 - lw / 2, 34, lw, lh); }
-    ctx.textAlign = "center"; let y = Math.round(H * 0.24);
+    // Headline sits in the TOP zone (below the logo) — never over the vertical
+    // centre where the hero's face lives, so text never covers the person.
+    ctx.textAlign = "center"; let y = H >= 1600 ? 300 : 280;   // below the logo, in the top zone
     if (kicker) { ctx.font = "36px TajawalB"; ctx.fillStyle = ORANGEB; ctx.fillText(kicker, W / 2, y); y += 22; }
-    let size = 92; ctx.font = size + "px TajawalXB";
+    let size = H >= 1600 ? 82 : 92; ctx.font = size + "px TajawalXB";
     let lines = wrapLines(ctx, headline, W - 200);
-    while (lines.length > 3 && size > 58) { size -= 6; ctx.font = size + "px TajawalXB"; lines = wrapLines(ctx, headline, W - 200); }
+    while (lines.length > 3 && size > 54) { size -= 6; ctx.font = size + "px TajawalXB"; lines = wrapLines(ctx, headline, W - 200); }
     lines = lines.slice(0, 3); const lh = size * 1.2; y += size; ctx.fillStyle = HEAD;
-    for (const ln of lines) { ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.32)"; ctx.shadowBlur = 14; ctx.fillText(ln, W / 2, y); ctx.restore(); y += lh; }
+    for (const ln of lines) { ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.45)"; ctx.shadowBlur = 16; ctx.fillText(ln, W / 2, y); ctx.restore(); y += lh; }
     if (pop) { drawPop(0, y, Math.round(size * 0.9), true); }
     if (cta) drawCta(0, H - 196, true);
   } else {

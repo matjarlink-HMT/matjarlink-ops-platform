@@ -945,9 +945,9 @@ async function makeEditorialReel({ id, light = false, headline, pop, cta, valueL
   const grade = light ? "bright airy, clean white and warm-orange tones (brand colors #F5821F and #2D081E, NOT purple)" : "deep AUBERGINE-PLUM and warm-ORANGE cinematic color grade (brand colors #2D081E and #F5821F, NOT purple)";
   const rm = " Photorealistic cinematic vertical composition, realistic, NOT 3D render, NOT AI illustration. No text, no words, no logos.";
   const scenePrompts = [
-    `Cinematic VERTICAL 9:16 portrait of an authentic Omani man merchant (white Omani dishdasha with furakha and an embroidered Omani kummah cap, NOT a Gulf ghutra or egal) in his elegant modern shop, dramatic warm rim lighting, ${grade}, the subject centered with clean space at the TOP and BOTTOM for text.${rm}`,
-    `Cinematic VERTICAL 9:16 close-up of a modern smartphone and a glowing POS cashier screen showing an online store and a sale, dramatic focused lighting, ${grade}, clean space at the TOP and BOTTOM for text.${rm}`,
-    `Cinematic VERTICAL 9:16 wide shot of a premium modern Omani shop or marketplace with warm inviting light, atmospheric depth, ${grade}, clean space in the CENTER for a call to action.${rm}`,
+    `Cinematic VERTICAL 9:16 portrait of an authentic Omani man merchant (white Omani dishdasha with furakha and an embroidered Omani kummah cap, NOT a Gulf ghutra or egal) in his elegant modern shop, dramatic warm rim lighting, ${grade}. Frame him from the chest up with his FACE at the VERTICAL CENTRE of the frame — leave a large clean EMPTY area in the TOP THIRD for a headline and empty space at the BOTTOM; do NOT place the head or face in the top third.${rm}`,
+    `Cinematic VERTICAL 9:16 close-up of a modern smartphone and a glowing POS cashier screen showing an online store and a sale, dramatic focused lighting, ${grade}, the device in the lower-centre with a large clean EMPTY area in the TOP THIRD for a headline.${rm}`,
+    `Cinematic VERTICAL 9:16 wide shot of a premium modern Omani shop or marketplace with warm inviting light, atmospheric depth, ${grade}, clean empty space in the CENTER for a call to action.${rm}`,
   ];
   const texts = [
     { kicker: "متجرلينك", headline, pop },
