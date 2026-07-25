@@ -61,7 +61,12 @@ app.get("/api/state", async (req, res) => {
 
   // Attempt live pulls for whichever integrations are connected; each returns
   // empty/null instantly when not ready, so mock mode stays fast.
-  const settle = async (p, fb) => { try { return await p; } catch (e) { console.error(e.message); return fb; } };
+  // Never let a hanging external call (Meta/Windsor) stall /api/state — cap each
+  // at 8s and fall back, so the dashboard always loads (a hang here 502'd it).
+  const settle = (p, fb) => Promise.race([
+    Promise.resolve(p).catch((e) => { console.error(e.message); return fb; }),
+    new Promise((res) => setTimeout(() => res(fb), 8000)),
+  ]);
   // Short-TTL cache: /api/state is polled every 60s per open tab, and getComments
   // alone is ~9 sequential Graph calls — uncached this exhausts IG rate limits.
   const [comments, igMsgs, published, insights] = await Promise.all([
@@ -73,7 +78,7 @@ app.get("/api/state", async (req, res) => {
   const merged = [...igMsgs, ...waMsgs];
   if (merged.length) state.messages = merged;
   if (published.length) {
-    const withInsights = await enrichPublished(published);
+    const withInsights = await settle(enrichPublished(published), published);
     state.published = withInsights;
     state.topPosts = live.topPosts(withInsights, 5);
   }
