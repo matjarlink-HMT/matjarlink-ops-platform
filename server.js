@@ -1084,7 +1084,9 @@ function studioToPost(d, date) {
 }
 app.get("/api/studio/drafts", (req, res) => {
   const drafts = Object.values(store.getStudioDrafts()).sort((a, b) => (b.at || "").localeCompare(a.at || ""));
-  res.json({ ok: true, drafts, types: STUDIO_TYPES, templates: [...EDITORIAL_TEMPLATES, ...DESIGN_TEMPLATES], characters: charMod.CHARACTERS.map((c) => ({ id: c.id, label: c.label })) });
+  // Use the LIVE character set (builtin ∪ approved − hidden) so Studio stays in
+  // sync with the Characters page (deletions/additions reflect immediately).
+  res.json({ ok: true, drafts, types: STUDIO_TYPES, templates: [...EDITORIAL_TEMPLATES, ...store.getCustomTemplates().map((t) => t.id)], characters: allCharacters().map((c) => ({ id: c.id, label: c.label })) });
 });
 app.post("/api/studio/generate", async (req, res) => {
   const b = req.body || {};

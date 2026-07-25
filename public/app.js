@@ -23,12 +23,10 @@ const chan = (k) => `<span class="chan" style="background:${CH[k] || "#888"}">${
 const pill = (a) => a ? `<span class="pill ${a[1]}">${a[0]}</span>` : "";
 const STMAP = { online: "p-ok", working: "p-info", scheduled: "p-info", idle: "p-idle", action: "p-bad", new: "p-new" };
 const GROUPS = [
-  { items: ["needs"] },
-  { items: ["overview"] },
-  { label: "g_manage", items: ["approvals", "agents"] },
-  { label: "g_content", items: ["templates", "plan", "pipeline"] },
+  { label: "g_workflow", items: ["plan", "approvals", "analytics", "pipeline", "templates"] },
+  { label: "g_home", items: ["overview", "needs"] },
   { label: "g_engage", items: ["comments", "messages", "leads"] },
-  { label: "g_perf", items: ["analytics", "camp"] },
+  { label: "g_team", items: ["agents", "camp"] },
   { label: "g_settings", items: ["settings"] }
 ];
 const HAS_COUNT = { agents: "agents", needs: "needs", pipeline: "queue", comments: "comments", messages: "messages", leads: "leads" };
@@ -557,15 +555,21 @@ async function renderPlan(C) {
   // 🎨 design ONE plan item on demand → saves the plan first (so the edited
   // title/caption are used), then generates the design into «الاعتماد».
   C.querySelectorAll(".designone").forEach(b => b.onclick = async () => {
-    const key = b.dataset.key, label = b.innerHTML;
-    b.disabled = true; b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
+    const key = b.dataset.key, label = b.innerHTML, msg = $("#planmsg");
+    b.disabled = true;
+    // Live elapsed timer so it's obvious the system is generating the design.
+    let sec = 0;
+    const paint = () => { b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span> ${sec}s`; if (msg) msg.innerHTML = `⏳ ${T("plan_designing")} — <b>${sec}s</b>`; };
+    paint();
+    const timer = setInterval(() => { sec++; paint(); }, 1000);
     await save();
     const r = await fetch("/api/plan/design-item", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ month: active.key, key }) }).then(x => x.json()).catch(() => null);
+    clearInterval(timer);
     if (r && r.ok) {
       try { S = await fetch("/api/state").then(x => x.json()); } catch (e) {}
-      $("#planmsg").textContent = "✓ " + T("plan_design_done");
       renderPlan(C);
-    } else { b.disabled = false; b.innerHTML = label; $("#planmsg").textContent = "⚠ " + ((r && r.error) || ""); }
+      const m2 = $("#planmsg"); if (m2) m2.textContent = `✓ ${T("plan_design_done")} (${sec}s)`;
+    } else { b.disabled = false; b.innerHTML = label; if (msg) msg.textContent = "⚠ " + ((r && r.error) || ""); }
   });
   const addIdea = async () => {
     const inp = $("#ideain"), text = inp.value.trim(); if (!text) return;
