@@ -1446,14 +1446,12 @@ async function renderAnalytics(C) {
   const range = A?.range || "7d";
   const insights = S.insights ? (() => { const st = (kk, v) => `<div class="astat"><span class="an">${nf(v)}</span><span class="al">${T(kk)}</span></div>`; const i = S.insights; return `<div class="card" style="margin-top:1rem"><div class="sec-h"><h2>${T("perf")} (Windsor)</h2><span class="pill p-ok">${T("conn_on")}</span></div><div class="astats">${st("followers", i.followers)}${st("reach", i.reach)}${st("impressions", i.impressions)}${st("engagement", i.engagement)}${st("clicks", i.clicks)}</div></div>`; })() : "";
   clearInterval(anTimer);
-  C.innerHTML = `<div class="rangebar" style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap"><button data-r="7d" class="rbtn ${range === "7d" ? "on" : ""}">${T("range7")}</button><button data-r="30d" class="rbtn ${range === "30d" ? "on" : ""}">${T("range30")}</button><span id="anlive" class="mut" style="margin-inline-start:auto;font-size:.8rem"></span><button class="btn ghost sm" id="anrefresh">🔄 ${T("an_refresh")}</button></div>
-    <div class="grid g2" id="anwrap">${A.platforms.map(anCard).join("")}</div>
-    <div class="card" style="margin-top:1rem"><div class="sec-h"><h2>📷 ${T("an_ig_insights")}</h2><span class="pill p-ok">Instagram</span></div><div id="igbody"><div class="loading">…</div></div></div>
+  C.innerHTML = `<div class="rangebar" style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap"><span style="font-weight:800">📊 ${T("nav_analytics")}</span><span id="anlive" class="mut" style="margin-inline-start:auto;font-size:.8rem"></span><button class="btn ghost sm" id="anrefresh">🔄 ${T("an_refresh")}</button></div>
+    <div class="note-info">✅ ${T("an_real_note")}</div>
+    <div class="card" style="margin-top:.6rem"><div class="sec-h"><h2>📷 ${T("an_ig_insights")}</h2><span class="pill p-ok">Instagram</span></div><div id="igbody"><div class="loading">…</div></div></div>
     ${insights}
     <div class="card" style="margin-top:1rem"><div class="sec-h"><h2>🧠 ${T("an_advice")}</h2><button class="btn sm" id="anadvice">✨ ${T("an_analyze")}</button></div><div id="advicebody" class="mut">${T("an_advice_hint")}</div></div>
-    <div class="card" style="margin-top:1rem"><div class="sec-h"><h2>📊 ${T("an_perpost")}</h2></div><div id="postsbody"><div class="loading">…</div></div></div>
-    <div class="card" style="margin-top:1rem"><div class="sec-h"><h2>${T("comparison")}</h2></div>${compareBars()}</div>`;
-  document.querySelectorAll(".rbtn").forEach(b => b.onclick = async () => { try { A = await fetch("/api/analytics?range=" + b.dataset.r).then(r => r.json()); } catch (e) {} renderAnalytics(C); });
+    <div class="card" style="margin-top:1rem"><div class="sec-h"><h2>📊 ${T("an_perpost")}</h2></div><div id="postsbody"><div class="loading">…</div></div></div>`;
   const stamp = () => { const el = $("#anlive"); if (el) el.textContent = `🟢 ${T("an_live")} · ${T("an_updated")} ${new Date().toLocaleTimeString(lang === "en" ? "en" : "ar-EG", { hour: "2-digit", minute: "2-digit" })}`; };
   const refresh = (fresh) => { loadInstagram(fresh); loadPerPost(fresh); stamp(); };
   refresh(false); stamp();
