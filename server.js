@@ -663,8 +663,22 @@ function characterFaceRef(text) {
 // Combined hero references for a design: character FACE (from the characters list)
 // + wardrobe GARMENT (from the clothing list). Empty for non-person scenes.
 function heroRefs(text) {
+  if (!isPersonText(text) || isEgyptianText(text)) return { refs: [], note: "" };
   const face = characterFaceRef(text), garment = clothingRefsFor(text);
-  return { refs: [...(face.refs || []), ...(garment.refs || [])], note: (face.note || "") + (garment.note || "") };
+  const refs = [...(face.refs || []), ...(garment.refs || [])];
+  const hasFace = (face.refs || []).length, hasGarment = (garment.refs || []).length;
+  let note = "";
+  if (hasFace && hasGarment) {
+    // Face from the character, clothing from the wardrobe garment — never invented.
+    note = " CRITICAL: recreate the person's FACE and features from the FIRST reference image; they MUST wear EXACTLY the Omani garment shown in the SUBSEQUENT garment reference image(s) — copy only the clothing from them. Do NOT invent, change or add any clothing.";
+  } else if (hasFace) {
+    // No wardrobe garment chosen → use the character's OWN outfit from its portrait,
+    // so the clothing is never invented (matches the selected character exactly).
+    note = " CRITICAL: recreate the SAME person as the reference image — the EXACT same face AND the EXACT same clothing/outfit shown in the reference. Do NOT invent, change or add any clothing; the dress must match the reference person exactly.";
+  } else if (hasGarment) {
+    note = " CRITICAL: the person MUST wear EXACTLY the Omani garment shown in the reference image(s) — copy only the clothing. Do NOT invent different clothing.";
+  }
+  return { refs, note };
 }
 // Turn the owner's idea DESCRIPTION into VISUAL-only scene guidance so the
 // background is coherent with the headline. Strips quoted phrases + digits so no
