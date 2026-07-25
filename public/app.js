@@ -31,6 +31,12 @@ const GROUPS = [
 ];
 const HAS_COUNT = { agents: "agents", needs: "needs", pipeline: "queue", comments: "comments", messages: "messages", leads: "leads" };
 const escapeHtml = (s) => (s || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])).replace(/\n/g, "<br>");
+// Turn a raw backend error into a clear message (e.g. Gemini billing/quota → Arabic).
+function friendlyErr(msg) {
+  const m = String(msg || "");
+  if (/credit|billing|depleted|prepay|quota|resource[_ ]?exhausted|limit:\s*0/i.test(m)) return `<b>${escapeHtml(T("err_gemini_billing"))}</b>`;
+  return escapeHtml(m);
+}
 let chatReady = false;
 
 let gc = 0;
@@ -569,7 +575,7 @@ async function renderPlan(C) {
       try { S = await fetch("/api/state").then(x => x.json()); } catch (e) {}
       renderPlan(C);
       const m2 = $("#planmsg"); if (m2) m2.textContent = `✓ ${T("plan_design_done")} (${sec}s)`;
-    } else { b.disabled = false; b.innerHTML = label; if (msg) msg.textContent = "⚠ " + ((r && r.error) || ""); }
+    } else { b.disabled = false; b.innerHTML = label; if (msg) msg.innerHTML = "⚠ " + friendlyErr((r && r.error) || ""); }
   });
   const addIdea = async () => {
     const inp = $("#ideain"), text = inp.value.trim(); if (!text) return;
