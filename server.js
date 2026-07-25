@@ -625,21 +625,46 @@ app.get("/media/clothing/:id", (req, res) => {
 // design that features an Omani person, so characters always wear the real dress.
 // Returns inline base64 refs + a prompt clause instructing exact-match dress.
 // Skips non-person scenes (device/card/shop) and the Egyptian (non-Omani dress).
+const isPersonText = (t) => /\bman\b|woman|person|owner|employee|merchant|shopkeeper|portrait|dishdasha|kummah|massar|abaya|hijab|رجل|امرأة|سيدة|تاجر|تاجرة|بائع|موظف|شخص/i.test(String(t || ""));
+const isWomanText = (t) => /woman|abaya|hijab|سيدة|تاجرة|امرأة|بائعة|ابدئي/i.test(String(t || ""));
+const isEgyptianText = (t) => /Egyptian|مصري|buttoned shirt/i.test(String(t || ""));
+// GARMENTS ONLY from the wardrobe: take just the clothing from the reference image,
+// never its face/person. Owner uploads a garment and its type; we use that type.
 function clothingRefsFor(text) {
   const list = store.getClothing(); if (!list.length) return { refs: [], note: "" };
   const t = String(text || "");
-  if (/Egyptian|مصري|buttoned shirt/i.test(t)) return { refs: [], note: "" }; // wears shirt+trousers, not Omani garments
-  const isWoman = /woman|abaya|hijab|سيدة|تاجرة|امرأة/i.test(t);
-  const isPerson = isWoman || /\bman\b|person|owner|employee|merchant|shopkeeper|portrait|dishdasha|kummah|massar|رجل|تاجر|شخص/i.test(t);
-  if (!isPerson) return { refs: [], note: "" };
+  if (isEgyptianText(t) || !isPersonText(t)) return { refs: [], note: "" };
+  const isWoman = isWomanText(t);
   const want = isWoman ? ["abaya", "hijab"] : ["massar", "kummah", "dishdasha", "furakha"];
   let picks = list.filter((c) => want.includes(c.type));
   if (!picks.length) picks = list;
   picks = picks.slice(0, 2);
   const refs = [];
   for (const c of picks) { try { refs.push({ data: fs.readFileSync(path.join(designsDir(), c.file)).toString("base64"), mime: "image/png" }); } catch (e) {} }
-  const note = refs.length ? " IMPORTANT: the person MUST wear exactly the authentic Omani garment(s) shown in the attached reference image(s) — match the fabric, colour, pattern, and how it is worn precisely." : "";
+  const note = refs.length ? " GARMENT REFERENCE: the person must wear EXACTLY the Omani garment shown in the attached garment image(s) — copy ONLY the clothing (its fabric, colour, pattern and how it is worn). Do NOT copy the face or the person from the garment image; that image is for the clothing only." : "";
   return { refs, note };
+}
+// FACE/FEATURES from the characters list: pick an approved character matching the
+// gender and use its portrait so the generated person looks like a chosen character.
+function characterFaceRef(text) {
+  const t = String(text || "");
+  if (isEgyptianText(t) || !isPersonText(t)) return { refs: [], note: "" };
+  const woman = isWomanText(t);
+  const chars = allCharacters();
+  const isWomanChar = (c) => /امرأة|سيدة|تاجرة|woman|عباية|abaya|حجاب|hijab/i.test(`${c.label} ${c.dress || ""}`);
+  const matched = chars.filter((c) => woman ? isWomanChar(c) : !isWomanChar(c) && !/مصري|egyptian/i.test(`${c.label} ${c.dress || ""}`));
+  const pick = matched[0] || chars[0];
+  if (!pick) return { refs: [], note: "" };
+  const p = charPathAny(pick.id);
+  if (!p) return { refs: [], note: "" };
+  try { return { refs: [{ data: fs.readFileSync(p).toString("base64"), mime: "image/png" }], note: " FACE REFERENCE: the person's FACE and features (face shape, skin tone, features) must match the attached reference person image — same person's face." }; }
+  catch (e) { return { refs: [], note: "" }; }
+}
+// Combined hero references for a design: character FACE (from the characters list)
+// + wardrobe GARMENT (from the clothing list). Empty for non-person scenes.
+function heroRefs(text) {
+  const face = characterFaceRef(text), garment = clothingRefsFor(text);
+  return { refs: [...(face.refs || []), ...(garment.refs || [])], note: (face.note || "") + (garment.note || "") };
 }
 
 // ── Nightly invention ── 01:00–05:00 Asia/Muscat: propose new brand-kit templates
@@ -861,18 +886,28 @@ function editorialScene(text, light) {
   if (has(["سوق", "أسواق", "وصّل", "توصيل", "كل مكان", "كل عُمان", "كل عمان"])) return { layout: "center", prompt: `A ${light ? "bright vibrant Omani marketplace / modern retail street with daylight and colorful shopfronts" : "warm cinematic Omani souq marketplace with lanterns and rich stalls"}, atmospheric depth, ${grade}, clean empty area at the TOP for a headline.${rm}` };
   if (has(["محل", "المحل", "مفتوح", "متجرك", "فرع"])) return { layout: "center", prompt: `A beautiful modern premium Omani retail shop interior with elegant shelves and ${light ? "big windows, soft natural daylight, airy and clean" : "warm illuminated shelves at night, cinematic atmosphere"}, ${grade}, clean empty area at the TOP for a headline.${rm}` };
   if (has(["جوال", "بجيبك", "تطبيق", "أينما", "موبايل"])) return { layout: "center", prompt: `A modern smartphone held in hand clearly showing a realistic, believable online store app UI with real-looking product photos and prices, ${light ? "clean bright white background, soft warm light" : "dramatic spotlight on the phone, dark background"}, ${grade}, clean empty area at the TOP for a headline.${rm}` };
-  const woman = has(["ابدئي", "سيدة", "تاجرة", "بائعة"]);
-  const egyptian = has(["مصري", "عربي", "موظف", "فريق العمل"]);
-  const who = woman
-    ? "an authentic Omani woman shop owner wearing a plain elegant BLACK abaya and a BLACK hijab head covering (solid black, no colourful patterns, NOT niqab, face fully visible)"
-    : egyptian
-      ? "an Arab (Egyptian) man employee wearing a smart casual buttoned shirt and trousers (NOT Gulf dress)"
-      : "an authentic Omani man merchant wearing a white Omani dishdasha with the furakha tassel and either an embroidered Omani kummah cap or an Omani massar wrapped turban (NOT a Gulf ghutra or egal)";
-  return { layout: "side", prompt: `${who} holding a smartphone showing an online store app, ${light ? "clean bright WHITE studio background, soft studio light with gentle separation" : "dramatic spotlight and rim light separating them from the background"}, ${grade}, the subject ${side}${rm}` };
+  if (has(["هدية", "هدايا", "توزيعات", "ورد", "مناسبة"])) return { layout: "side", prompt: `An elegant premium gift box and a branded shopping bag with a ribbon, ${light ? "soft bright studio light" : "dramatic warm light, dark"}, ${grade}, the objects ${side}${rm}` };
+  if (has(["منتج", "منتجات", "بضاعة", "مخزون", "طلب", "شحن", "طرد", "تغليف"])) return { layout: "center", prompt: `Neatly arranged premium product boxes and a branded delivery package ready to ship on a clean surface, ${light ? "bright soft light" : "warm dramatic light"}, ${grade}, clean empty area at the TOP for a headline.${rm}` };
+  if (has(["رقم", "أرقام", "إحصائ", "%", "٪", "نسبة", "ضِعف", "ضعف", "أكثر", "نمو", "زيادة"])) return { layout: "center", prompt: `A bold minimalist premium composition with abstract 3D shapes, rising bars and glowing accents suggesting growth — render NO readable text or numbers, ${grade}, large clean empty area for a big headline.${rm}` };
+  // Person heroes ONLY when the text explicitly implies a person — otherwise a
+  // product/device is the hero (varied, and always tied to the message).
+  const person = has(["تاجر", "تاجرة", "سيدة", "بائع", "بائعة", "ابدئي", "موظف", "شخص", "رجل", "صاحب", "عميل", "دعم"]);
+  if (person) {
+    const woman = has(["ابدئي", "سيدة", "تاجرة", "بائعة", "امرأة"]);
+    const egyptian = has(["مصري", "موظف", "دعم", "فريق العمل"]);
+    const who = woman
+      ? "an authentic Omani woman shop owner wearing a plain elegant BLACK abaya and a BLACK hijab head covering (solid black, no colourful patterns, NOT niqab, face fully visible)"
+      : egyptian
+        ? "an Arab (Egyptian) man employee wearing a smart casual buttoned shirt and trousers (NOT Gulf dress)"
+        : "an authentic Omani man merchant wearing a white Omani dishdasha with the furakha tassel and either an embroidered Omani kummah cap or an Omani massar wrapped turban (NOT a Gulf ghutra or egal)";
+    return { layout: "side", prompt: `${who} holding a smartphone showing an online store app, ${light ? "clean bright WHITE studio background, soft studio light with gentle separation" : "dramatic spotlight and rim light separating them from the background"}, ${grade}, the subject ${side}${rm}` };
+  }
+  // Default (no explicit person keyword) → a product/device hero, NOT a person.
+  return { layout: "side", prompt: `A modern smartphone showing a realistic MatjarLink online store app with real product photos, beside a subtle branded shopping bag and a product box, ${light ? "clean bright studio, soft warm light" : "dramatic spotlight, dark cinematic"}, ${grade}, the objects ${side}${rm}` };
 }
 // Render an editorial design to /media/design/<id>. Returns { url }.
 async function makeEditorial({ light, layout, kicker, headline, pop, cta, prompt, id }) {
-  const { refs, note } = clothingRefsFor(prompt);   // draw dress from the wardrobe when the scene has a person
+  const { refs, note } = heroRefs(prompt);   // character FACE + wardrobe GARMENT when the scene has a person
   const { buffer } = await gemini.generateImage(prompt + note, refs);
   const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
   const bgFile = path.join(dir, `_edbg-${id}.png`);
@@ -904,7 +939,7 @@ async function makeEditorialReel({ id, light = false, headline, pop, cta, valueL
   const frames = [], junk = [];
   try {
     for (let i = 0; i < 3; i++) {
-      const { refs, note } = clothingRefsFor(scenePrompts[i]);   // wardrobe dress on the person scene
+      const { refs, note } = heroRefs(scenePrompts[i]);   // character FACE + wardrobe GARMENT on the person scene
       const { buffer } = await gemini.generateImage(scenePrompts[i] + note, refs);
       const bgFile = path.join(dir, `_rlbg-${id}-${i}.png`); junk.push(bgFile);
       let fd0 = fs.openSync(bgFile, "w"); try { fs.writeSync(fd0, buffer); fs.fsyncSync(fd0); } finally { fs.closeSync(fd0); }
@@ -928,7 +963,7 @@ async function makeEditorialCarousel({ id, light = false, headline, cta, points 
   const writePng = (name, buf) => { const fd = fs.openSync(path.join(dir, name + ".png"), "w"); try { fs.writeSync(fd, buf); fs.fsyncSync(fd); } finally { fs.closeSync(fd); } };
   const renderSlide = async (slug, hl, kicker, isLight) => {
     const sc = editorialScene(hl, isLight);
-    const { refs, note } = clothingRefsFor(sc.prompt);
+    const { refs, note } = heroRefs(sc.prompt);
     const { buffer } = await gemini.generateImage(sc.prompt + note, refs);
     const bg = path.join(dir, `_cbg-${slug}.png`);
     const fd0 = fs.openSync(bg, "w"); try { fs.writeSync(fd0, buffer); fs.fsyncSync(fd0); } finally { fs.closeSync(fd0); }
@@ -1333,15 +1368,17 @@ app.get("/api/analytics", async (req, res) => {
 // interactions, follower demographics…). Cached 10 min (IG rate limits).
 app.get("/api/analytics/instagram", async (req, res) => {
   if (!meta.metaReady()) return res.json({ ok: false, error: "اربط Instagram (Meta) لعرض الإحصائيات" });
+  const ttl = req.query.fresh ? 0 : 90; // near-live; refresh button bypasses cache
   let data = null;
-  try { data = await cached("igAccountInsights", 600, () => meta.getAccountInsights()); } catch (e) { return res.json({ ok: false, error: e.message }); }
-  res.json({ ok: true, insights: data });
+  try { data = await cached("igAccountInsights", ttl, () => meta.getAccountInsights()); } catch (e) { return res.json({ ok: false, error: e.message }); }
+  res.json({ ok: true, insights: data, at: new Date().toISOString() });
 });
 
 // Per-post analytics — real Instagram metrics for every published post.
 app.get("/api/analytics/posts", async (req, res) => {
+  const ttl = req.query.fresh ? 0 : 90;
   let pub = [];
-  try { pub = await enrichPublished(await cached("published", 120, () => meta.getPublished())) || []; } catch (e) {}
+  try { pub = await enrichPublished(await cached("published", ttl, () => meta.getPublished())) || []; } catch (e) {}
   const posts = pub.map((m) => {
     const eng = (m.likes || 0) + (m.comments || 0) + (m.saved || 0) + (m.shares || 0);
     const type = m.type === "VIDEO" ? "ريل" : m.type === "CAROUSEL_ALBUM" ? "كاروسيل" : "منشور";

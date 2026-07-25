@@ -618,7 +618,7 @@ const TEMPLATE_META = {
 // ── «التصميم» ── one page, tabbed: studio · templates · characters · brand kit · style.
 let designTab = "studio";
 function renderTemplates(C) {
-  const tabs = [["studio", "🎨 " + T("dz_studio")], ["templates", "🖼 " + T("dz_templates")], ["characters", "🧑🏻 " + T("dz_characters")], ["brand", "🎯 " + T("dz_brand")], ["style", "✨ " + T("dz_style")]];
+  const tabs = [["studio", "🎨 " + T("dz_studio")], ["templates", "🖼 " + T("dz_templates")], ["characters", "🧑🏻 " + T("dz_characters")], ["wardrobe", "👕 " + T("dz_wardrobe")], ["brand", "🎯 " + T("dz_brand")], ["style", "✨ " + T("dz_style")]];
   C.innerHTML = `<div class="dztabs">${tabs.map(([k, l]) => `<button type="button" class="dztab ${k === designTab ? "on" : ""}" data-dz="${k}">${l}</button>`).join("")}</div><div id="dzbody"></div>`;
   C.querySelectorAll(".dztab").forEach(b => b.onclick = () => { designTab = b.dataset.dz; C.querySelectorAll(".dztab").forEach(x => x.classList.remove("on")); b.classList.add("on"); dzRender(); });
   dzRender();
@@ -627,6 +627,7 @@ function dzRender() {
   const body = $("#dzbody"); if (!body) return;
   if (designTab === "studio") renderStudio(body);
   else if (designTab === "characters") renderCharacters(body, "spotlight");
+  else if (designTab === "wardrobe") renderWardrobe(body);
   else if (designTab === "brand") renderBrandKit(body);
   else if (designTab === "style") body.innerHTML = dzStyle();
   else renderTemplatesTab(body);
@@ -848,8 +849,8 @@ async function renderProposals(host, C) {
 const CLOTHING_TYPES = [["massar", "مصر عُماني"], ["kummah", "كُمّة"], ["dishdasha", "دشداشة"], ["furakha", "فراخة/شماغ"], ["abaya", "عباية سوداء"], ["hijab", "حجاب أسود"]];
 async function renderCharacters(host, activeTpl) {
   if (!host) return;
-  let d = null, cloth = { clothing: [] };
-  try { [d, cloth] = await Promise.all([fetch("/api/characters").then(r => r.json()), fetch("/api/clothing").then(r => r.json()).catch(() => ({ clothing: [] }))]); } catch (e) {}
+  let d = null;
+  try { d = await fetch("/api/characters").then(r => r.json()); } catch (e) {}
   if (!d || !d.ok || !d.characters.length) { host.innerHTML = ""; return; }
   const v = Date.now();
   const noneOn = !d.active;
@@ -865,19 +866,8 @@ async function renderCharacters(host, activeTpl) {
     </div>`;
   }).join("");
   host.innerHTML = `
-    <div class="sec-h" style="margin-top:.2rem"><h3>👕 ${T("cloth_title")}</h3></div>
-    <div class="note-info">${T("cloth_hint")}</div>
-    <div class="pcard nofloat" style="margin:.6rem 0">
-      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
-        <select class="psel" id="cltype" style="max-width:12rem">${CLOTHING_TYPES.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
-        <input class="pinput" id="cllabel" placeholder="${T("cloth_label")}" style="max-width:14rem" autocomplete="off">
-        <input type="file" id="clfile" accept="image/*" style="max-width:16rem">
-        <button class="btn sm" id="clup">⬆ ${T("cloth_upload")}</button>
-        <span class="ok-s" id="clmsg"></span></div></div>
-    <div class="grid g3 tplgrid" id="clgrid">${clothCards(cloth.clothing || [])}</div>
-
-    <h3 style="margin:1.6rem 0 .5rem">🧑🏻 ${T("char_title")}</h3>
-    <div class="note-info">${T("char_hint")}</div>
+    <h3 style="margin:.2rem 0 .5rem">🧑🏻 ${T("char_title")}</h3>
+    <div class="note-info">${T("char_faces_hint")}</div>
     ${dzBulkBar()}
     <div class="grid g3 tplgrid">${cards}
       <div class="tplcard ${noneOn ? "on" : ""}">
@@ -893,8 +883,27 @@ async function renderCharacters(host, activeTpl) {
     if (r && r.ok) { renderCharacters(host, activeTpl); const m = $("#charmsg"); if (m) m.textContent = "✓ " + T("char_saved"); }
     else { b.disabled = false; b.textContent = T("char_use"); }
   });
-  bindClothing(host, activeTpl);
   bindBulkDelete(host, () => renderCharacters(host, activeTpl));
+}
+// «خزانة الملابس» — its OWN tab now, separate from the characters. Only the GARMENT
+// in each uploaded image is used (never the face); the owner sets the garment type.
+async function renderWardrobe(host) {
+  if (!host) return;
+  let cloth = { clothing: [] };
+  try { cloth = await fetch("/api/clothing").then(r => r.json()); } catch (e) {}
+  host.innerHTML = `
+    <h3 style="margin:.2rem 0 .5rem">👕 ${T("dz_wardrobe")}</h3>
+    <div class="note-info">${T("cloth_hint2")}</div>
+    <div class="pcard nofloat" style="margin:.6rem 0">
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+        <select class="psel" id="cltype" style="max-width:12rem">${CLOTHING_TYPES.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
+        <input class="pinput" id="cllabel" placeholder="${T("cloth_label")}" style="max-width:14rem" autocomplete="off">
+        <input type="file" id="clfile" accept="image/*" style="max-width:16rem">
+        <button class="btn sm" id="clup">⬆ ${T("cloth_upload")}</button>
+        <span class="ok-s" id="clmsg"></span></div>
+      <div class="mut" style="margin-top:.5rem;font-size:.8rem">🔒 ${T("cloth_face_note")}</div></div>
+    <div class="grid g3 tplgrid" id="clgrid">${clothCards(cloth.clothing || [])}</div>`;
+  bindClothing(host);
 }
 const clothTypeLabel = (t) => (CLOTHING_TYPES.find(([v]) => v === t) || [, t])[1] || t;
 function clothCards(list) {
@@ -904,7 +913,7 @@ function clothCards(list) {
     <div class="tplshots"><img loading="lazy" src="${c.thumb}?v=${Date.now()}" alt="clothing" style="grid-column:span 2;object-fit:cover;max-height:14rem"></div>
     <div style="margin-top:.3rem"><button class="btn ghost sm cldel" data-clid="${c.id}">🗑 ${T("del")}</button></div></div>`).join("");
 }
-function bindClothing(host, activeTpl) {
+function bindClothing(host) {
   const up = host.querySelector("#clup");
   if (up) up.onclick = async () => {
     const f = host.querySelector("#clfile").files[0], msg = host.querySelector("#clmsg");
@@ -913,10 +922,10 @@ function bindClothing(host, activeTpl) {
     try {
       const dataUrl = await new Promise((res, rej) => { const rd = new FileReader(); rd.onload = () => res(rd.result); rd.onerror = rej; rd.readAsDataURL(f); });
       const r = await fetch("/api/clothing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: host.querySelector("#cltype").value, label: host.querySelector("#cllabel").value.trim(), dataUrl }) }).then(x => x.json());
-      if (r.ok) renderCharacters(host, activeTpl); else { msg.textContent = "✗ " + (r.error || ""); up.disabled = false; up.textContent = "⬆ " + T("cloth_upload"); }
+      if (r.ok) renderWardrobe(host); else { msg.textContent = "✗ " + (r.error || ""); up.disabled = false; up.textContent = "⬆ " + T("cloth_upload"); }
     } catch (e) { msg.textContent = "✗"; up.disabled = false; up.textContent = "⬆ " + T("cloth_upload"); }
   };
-  host.querySelectorAll(".cldel").forEach(b => b.onclick = async () => { await fetch("/api/clothing/" + b.dataset.clid, { method: "DELETE" }); renderCharacters(host, activeTpl); });
+  host.querySelectorAll(".cldel").forEach(b => b.onclick = async () => { await fetch("/api/clothing/" + b.dataset.clid, { method: "DELETE" }); renderWardrobe(host); });
 }
 
 // Build a ready Canva "Magic Design" brief (Omani characters + brand colors),
@@ -1436,22 +1445,28 @@ async function publishPost(id, btn) {
 async function renderAnalytics(C) {
   const range = A?.range || "7d";
   const insights = S.insights ? (() => { const st = (kk, v) => `<div class="astat"><span class="an">${nf(v)}</span><span class="al">${T(kk)}</span></div>`; const i = S.insights; return `<div class="card" style="margin-top:1rem"><div class="sec-h"><h2>${T("perf")} (Windsor)</h2><span class="pill p-ok">${T("conn_on")}</span></div><div class="astats">${st("followers", i.followers)}${st("reach", i.reach)}${st("impressions", i.impressions)}${st("engagement", i.engagement)}${st("clicks", i.clicks)}</div></div>`; })() : "";
-  C.innerHTML = `<div class="rangebar"><button data-r="7d" class="rbtn ${range === "7d" ? "on" : ""}">${T("range7")}</button><button data-r="30d" class="rbtn ${range === "30d" ? "on" : ""}">${T("range30")}</button></div>
+  clearInterval(anTimer);
+  C.innerHTML = `<div class="rangebar" style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap"><button data-r="7d" class="rbtn ${range === "7d" ? "on" : ""}">${T("range7")}</button><button data-r="30d" class="rbtn ${range === "30d" ? "on" : ""}">${T("range30")}</button><span id="anlive" class="mut" style="margin-inline-start:auto;font-size:.8rem"></span><button class="btn ghost sm" id="anrefresh">🔄 ${T("an_refresh")}</button></div>
     <div class="grid g2" id="anwrap">${A.platforms.map(anCard).join("")}</div>
     <div class="card" style="margin-top:1rem"><div class="sec-h"><h2>📷 ${T("an_ig_insights")}</h2><span class="pill p-ok">Instagram</span></div><div id="igbody"><div class="loading">…</div></div></div>
     ${insights}
     <div class="card" style="margin-top:1rem"><div class="sec-h"><h2>🧠 ${T("an_advice")}</h2><button class="btn sm" id="anadvice">✨ ${T("an_analyze")}</button></div><div id="advicebody" class="mut">${T("an_advice_hint")}</div></div>
     <div class="card" style="margin-top:1rem"><div class="sec-h"><h2>📊 ${T("an_perpost")}</h2></div><div id="postsbody"><div class="loading">…</div></div></div>
     <div class="card" style="margin-top:1rem"><div class="sec-h"><h2>${T("comparison")}</h2></div>${compareBars()}</div>`;
-  document.querySelectorAll(".rbtn").forEach(b => b.onclick = async () => { A = await fetch("/api/analytics?range=" + b.dataset.r).then(r => r.json()); renderAnalytics(C); });
-  loadInstagram();
-  loadPerPost();
+  document.querySelectorAll(".rbtn").forEach(b => b.onclick = async () => { try { A = await fetch("/api/analytics?range=" + b.dataset.r).then(r => r.json()); } catch (e) {} renderAnalytics(C); });
+  const stamp = () => { const el = $("#anlive"); if (el) el.textContent = `🟢 ${T("an_live")} · ${T("an_updated")} ${new Date().toLocaleTimeString(lang === "en" ? "en" : "ar-EG", { hour: "2-digit", minute: "2-digit" })}`; };
+  const refresh = (fresh) => { loadInstagram(fresh); loadPerPost(fresh); stamp(); };
+  refresh(false); stamp();
+  const rf = $("#anrefresh"); if (rf) rf.onclick = () => refresh(true);
   const ab = $("#anadvice"); if (ab) ab.onclick = loadAdvice;
+  // Auto-refresh the live Instagram numbers every 90s while the page is open.
+  anTimer = setInterval(() => { if (document.querySelector("#anlive")) refresh(true); else clearInterval(anTimer); }, 90000);
 }
-async function loadInstagram() {
+let anTimer = null;
+async function loadInstagram(fresh) {
   const host = $("#igbody"); if (!host) return;
   let d = null;
-  try { d = await fetch("/api/analytics/instagram").then(r => r.json()); } catch (e) {}
+  try { d = await fetch("/api/analytics/instagram" + (fresh ? "?fresh=1" : "")).then(r => r.json()); } catch (e) {}
   if (!d || !d.ok) { host.innerHTML = `<div class="mut" style="padding:.5rem">${(d && d.error) || T("an_ig_off")}</div>`; return; }
   const ins = d.insights || {}, t = ins.totals || {}, p = ins.profile || {}, demo = ins.demographics || {};
   const stat = (label, v) => `<div class="astat"><span class="an">${v != null ? nf(v) : "—"}</span><span class="al">${label}</span></div>`;
@@ -1468,10 +1483,10 @@ async function loadInstagram() {
       ${(demo.gender || []).length ? `<div><div class="mut" style="font-weight:700;margin-bottom:.3rem">⚧ ${T("an_gender")}</div>${bars(demo.gender)}</div>` : ""}
     </div>` : ""}`;
 }
-async function loadPerPost() {
+async function loadPerPost(fresh) {
   const host = $("#postsbody"); if (!host) return;
   let d = { posts: [] };
-  try { d = await fetch("/api/analytics/posts").then(r => r.json()); } catch (e) {}
+  try { d = await fetch("/api/analytics/posts" + (fresh ? "?fresh=1" : "")).then(r => r.json()); } catch (e) {}
   if (!d.posts || !d.posts.length) { host.innerHTML = `<div class="mut" style="padding:.5rem">${T("an_noposts")}</div>`; return; }
   const emoji = (t) => t === "ريل" ? "🎬" : t === "كاروسيل" ? "🎠" : "🖼";
   const rows = d.posts.map(p => `<tr>
