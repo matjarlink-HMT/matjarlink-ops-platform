@@ -23,6 +23,10 @@ import * as apify from "./integrations/apify.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+// Never let one bad request/async rejection take the whole server down (Node
+// exits on unhandledRejection/uncaughtException by default → Railway 502 loop).
+process.on("unhandledRejection", (e) => console.error("[unhandledRejection]", (e && e.stack) || e));
+process.on("uncaughtException", (e) => console.error("[uncaughtException]", (e && e.stack) || e));
 app.use(express.json({ limit: "8mb", verify: (req, res, buf) => { req.rawBody = buf; } })); // 8mb: clothing-reference image uploads · rawBody: webhook HMAC verification
 app.use(express.urlencoded({ extended: true }));
 
@@ -44,6 +48,7 @@ if (PW) {
 
 // ── Aggregated state ────────────────────────────────────────────────
 app.get("/api/state", async (req, res) => {
+ try {
   const state = baseState();
   // Merge Claude-generated content (plan + captions) so new batches appear automatically.
   const content = loadContent();
@@ -125,6 +130,10 @@ app.get("/api/state", async (req, res) => {
     [String(followers), "", "إنستغرام", "p-info"]
   ];
   res.json(state);
+ } catch (e) {
+  console.error("[api/state]", (e && e.stack) || e);
+  try { res.json({ ...baseState(), stateError: String((e && e.message) || e) }); } catch (_) { res.status(200).json({ agents: [], queue: [], needs: [] }); }
+ }
 });
 
 // ── Content generation (Claude) ─────────────────────────────────────
