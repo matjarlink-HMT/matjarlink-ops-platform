@@ -66,6 +66,40 @@ export async function getPublished(limit = 12) {
   return (media.data || []).map(m => ({ id: m.id, t: (m.caption || m.media_type).slice(0, 40), cap: m.caption || "", type: m.media_type, ch: "IG", d: (m.timestamp || "").slice(0, 16).replace("T", " · "), ts: m.timestamp || "", likes: m.like_count ?? 0, comments: m.comments_count ?? 0, m: `${m.like_count ?? 0} إعجاب · ${m.comments_count ?? 0} تعليق`, url: m.permalink }));
 }
 
+// Instagram ACCOUNT-level insights (the native IG "Insights" numbers): reach,
+// profile views, interactions, follower count + follower demographics. Each group
+// is fetched independently so one unsupported metric never blanks the rest.
+export async function getAccountInsights() {
+  if (!metaReady() || !IG()) return null;
+  const out = { totals: {}, demographics: {}, series: {} };
+  const until = Math.floor(Date.now() / 1000), since = until - 29 * 86400;
+  // Account totals over the last 30 days (metric_type=total_value).
+  try {
+    const r = await g(`${IG()}/insights`, { metric: "reach,profile_views,accounts_engaged,total_interactions,website_clicks", metric_type: "total_value", period: "day", since, until });
+    for (const it of r.data || []) out.totals[it.name] = it.total_value?.value ?? (it.values || []).reduce((a, v) => a + (v.value || 0), 0);
+  } catch (e) { out.totalsError = e.message; }
+  // Follower-count daily series (→ current total + trend).
+  try {
+    const r = await g(`${IG()}/insights`, { metric: "follower_count", period: "day", since, until });
+    const vals = (r.data?.[0]?.values || []).map((v) => v.value || 0);
+    out.series.followers = vals; out.gainedFollowers = vals.reduce((a, b) => a + b, 0);
+  } catch (e) {}
+  // Profile snapshot (authoritative follower/media count + username).
+  try {
+    const p = await g(`${IG()}`, { fields: "followers_count,follows_count,media_count,username,name,profile_picture_url,biography" });
+    out.profile = { followers: p.followers_count ?? null, follows: p.follows_count ?? null, media: p.media_count ?? null, username: p.username, name: p.name, pic: p.profile_picture_url, bio: p.biography };
+  } catch (e) {}
+  // Follower demographics (top breakdowns).
+  for (const bd of ["country", "city", "age", "gender"]) {
+    try {
+      const r = await g(`${IG()}/insights`, { metric: "follower_demographics", period: "lifetime", metric_type: "total_value", timeframe: "last_30_days", breakdown: bd });
+      const results = r.data?.[0]?.total_value?.breakdowns?.[0]?.results || [];
+      out.demographics[bd] = results.map((x) => ({ label: (x.dimension_values || [])[0], value: x.value })).sort((a, b) => b.value - a.value).slice(0, 6);
+    } catch (e) {}
+  }
+  return out;
+}
+
 // Reach / impressions / saved / shares for one media (Insights edge).
 export async function getMediaInsights(mediaId) {
   if (!metaReady() || !mediaId) return null;

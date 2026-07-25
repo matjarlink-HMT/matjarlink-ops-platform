@@ -1329,6 +1329,15 @@ app.get("/api/analytics", async (req, res) => {
   res.json(getAnalytics(range, windsorData));
 });
 
+// Instagram account-level insights (native IG Insights: reach, profile views,
+// interactions, follower demographics…). Cached 10 min (IG rate limits).
+app.get("/api/analytics/instagram", async (req, res) => {
+  if (!meta.metaReady()) return res.json({ ok: false, error: "اربط Instagram (Meta) لعرض الإحصائيات" });
+  let data = null;
+  try { data = await cached("igAccountInsights", 600, () => meta.getAccountInsights()); } catch (e) { return res.json({ ok: false, error: e.message }); }
+  res.json({ ok: true, insights: data });
+});
+
 // Per-post analytics — real Instagram metrics for every published post.
 app.get("/api/analytics/posts", async (req, res) => {
   let pub = [];

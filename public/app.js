@@ -1438,13 +1438,35 @@ async function renderAnalytics(C) {
   const insights = S.insights ? (() => { const st = (kk, v) => `<div class="astat"><span class="an">${nf(v)}</span><span class="al">${T(kk)}</span></div>`; const i = S.insights; return `<div class="card" style="margin-top:1rem"><div class="sec-h"><h2>${T("perf")} (Windsor)</h2><span class="pill p-ok">${T("conn_on")}</span></div><div class="astats">${st("followers", i.followers)}${st("reach", i.reach)}${st("impressions", i.impressions)}${st("engagement", i.engagement)}${st("clicks", i.clicks)}</div></div>`; })() : "";
   C.innerHTML = `<div class="rangebar"><button data-r="7d" class="rbtn ${range === "7d" ? "on" : ""}">${T("range7")}</button><button data-r="30d" class="rbtn ${range === "30d" ? "on" : ""}">${T("range30")}</button></div>
     <div class="grid g2" id="anwrap">${A.platforms.map(anCard).join("")}</div>
+    <div class="card" style="margin-top:1rem"><div class="sec-h"><h2>📷 ${T("an_ig_insights")}</h2><span class="pill p-ok">Instagram</span></div><div id="igbody"><div class="loading">…</div></div></div>
     ${insights}
     <div class="card" style="margin-top:1rem"><div class="sec-h"><h2>🧠 ${T("an_advice")}</h2><button class="btn sm" id="anadvice">✨ ${T("an_analyze")}</button></div><div id="advicebody" class="mut">${T("an_advice_hint")}</div></div>
     <div class="card" style="margin-top:1rem"><div class="sec-h"><h2>📊 ${T("an_perpost")}</h2></div><div id="postsbody"><div class="loading">…</div></div></div>
     <div class="card" style="margin-top:1rem"><div class="sec-h"><h2>${T("comparison")}</h2></div>${compareBars()}</div>`;
   document.querySelectorAll(".rbtn").forEach(b => b.onclick = async () => { A = await fetch("/api/analytics?range=" + b.dataset.r).then(r => r.json()); renderAnalytics(C); });
+  loadInstagram();
   loadPerPost();
   const ab = $("#anadvice"); if (ab) ab.onclick = loadAdvice;
+}
+async function loadInstagram() {
+  const host = $("#igbody"); if (!host) return;
+  let d = null;
+  try { d = await fetch("/api/analytics/instagram").then(r => r.json()); } catch (e) {}
+  if (!d || !d.ok) { host.innerHTML = `<div class="mut" style="padding:.5rem">${(d && d.error) || T("an_ig_off")}</div>`; return; }
+  const ins = d.insights || {}, t = ins.totals || {}, p = ins.profile || {}, demo = ins.demographics || {};
+  const stat = (label, v) => `<div class="astat"><span class="an">${v != null ? nf(v) : "—"}</span><span class="al">${label}</span></div>`;
+  const bars = (arr) => (arr && arr.length) ? arr.map(x => { const max = arr[0].value || 1; return `<div class="cbar"><span class="cbl">${escapeHtml(String(x.label ?? ""))}</span><span class="ctrack"><i style="width:${Math.max(4, x.value / max * 100)}%;background:var(--brand)"></i></span><b>${nf(x.value)}</b></div>`; }).join("") : `<div class="mut">—</div>`;
+  const hasDemo = (demo.country || []).length || (demo.city || []).length || (demo.age || []).length || (demo.gender || []).length;
+  host.innerHTML = `
+    ${p.username ? `<div style="display:flex;gap:.6rem;align-items:center;margin-bottom:.7rem">${p.pic ? `<img src="${p.pic}" style="width:46px;height:46px;border-radius:50%;object-fit:cover">` : ""}<div><div style="font-weight:800">@${escapeHtml(p.username)}</div><div class="mut">${nf(p.followers)} متابع · ${nf(p.media)} منشور${p.follows != null ? ` · يتابع ${nf(p.follows)}` : ""}</div></div></div>` : ""}
+    <div class="astats">${stat(T("reach") + " · ٣٠ي", t.reach)}${stat(T("an_profileviews"), t.profile_views)}${stat(T("an_engaged"), t.accounts_engaged)}${stat(T("engagement"), t.total_interactions)}${stat(T("an_webclicks"), t.website_clicks)}${ins.gainedFollowers != null ? stat(T("an_newfollowers") + " · ٣٠ي", ins.gainedFollowers) : ""}</div>
+    ${ins.totalsError ? `<div class="mut" style="margin-top:.4rem;font-size:.75rem">⚠ بعض الأرقام غير متاحة لهذا الحساب/الإصدار.</div>` : ""}
+    ${hasDemo ? `<div class="grid g2" style="margin-top:.9rem">
+      ${(demo.country || []).length ? `<div><div class="mut" style="font-weight:700;margin-bottom:.3rem">🌍 ${T("an_top_countries")}</div>${bars(demo.country)}</div>` : ""}
+      ${(demo.city || []).length ? `<div><div class="mut" style="font-weight:700;margin-bottom:.3rem">🏙 ${T("an_top_cities")}</div>${bars(demo.city)}</div>` : ""}
+      ${(demo.age || []).length ? `<div><div class="mut" style="font-weight:700;margin-bottom:.3rem">🎂 ${T("an_age")}</div>${bars(demo.age)}</div>` : ""}
+      ${(demo.gender || []).length ? `<div><div class="mut" style="font-weight:700;margin-bottom:.3rem">⚧ ${T("an_gender")}</div>${bars(demo.gender)}</div>` : ""}
+    </div>` : ""}`;
 }
 async function loadPerPost() {
   const host = $("#postsbody"); if (!host) return;
