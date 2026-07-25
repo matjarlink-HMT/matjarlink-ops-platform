@@ -99,7 +99,7 @@ export function deriveAgents(agents = [], ctx = {}) {
   const nextDue = queue.filter((q) => !publishedLog[q.id]).map((q) => q.date).filter(Boolean).sort()[0];
 
   const live = {
-    "Strategy Planner": plan ? { st: ["working", "يعمل"], task: `خطة ${plan.label}: ${plan.items.length} منشوراً، ${plan.items.filter((i) => i.status === "applied").length} مرفوعة للطابور.` } : null,
+    "Strategy Planner": (plan && Array.isArray(plan.items)) ? { st: ["working", "يعمل"], task: `خطة ${plan.label}: ${plan.items.length} منشوراً، ${plan.items.filter((i) => i.status === "applied").length} مرفوعة للطابور.` } : null,
     "Publish Desk": { st: pubCount ? ["working", "يعمل"] : ["scheduled", "مجدول"], task: nextDue ? `التالي: ${nextDue}. نُشر ${pubCount} حتى الآن؛ ${pending} بانتظار المراجعة.` : `نُشر ${pubCount}؛ لا مجدول قادم.` },
     "Analytics & Insights": insights ? { st: ["working", "يعمل"], sc: 85, task: `حيّ: ${insights.reach ?? insights.followers ?? 0} وصول · ${insights.engagement ?? 0} تفاعل.` } : { task: "بانتظار ربط Windsor/Meta لسحب الأداء الحيّ." },
     "Community & Platform Steward": { st: (comments.length || messages.length) ? ["online", "متصل"] : ["idle", "خامل"], task: `${comments.length} تعليق · ${messages.length} رسالة بانتظار الردّ.`, NEW: false },
