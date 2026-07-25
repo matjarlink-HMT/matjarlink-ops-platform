@@ -133,7 +133,10 @@ app.get("/api/state", async (req, res) => {
  } catch (e) {
   console.error("[api/state]", (e && e.stack) || e);
   const where = String((e && e.stack) || e).split("\n").slice(0, 4).map((l) => l.trim()).join(" | ");
-  try { res.json({ ...baseState(), stateError: where }); } catch (_) { res.status(200).json({ agents: [], queue: [], needs: [] }); }
+  try {
+    const bs = baseState();
+    res.json({ ...bs, agents: bs.agents || [], kpis: bs.kpis || [], queue: bs.queue || [], needs: bs.needs || [], accounts: bs.accounts || [], campaigns: bs.campaigns || [], comments: [], messages: [], mode: "mock", stateError: where });
+  } catch (_) { res.status(200).json({ agents: [], kpis: [], queue: [], needs: [], accounts: [], campaigns: [], comments: [], messages: [] }); }
  }
 });
 

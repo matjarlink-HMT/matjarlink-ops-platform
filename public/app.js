@@ -124,8 +124,8 @@ function render(p) {
   else if (p === "templates") renderTemplates(C);
   else if (p === "analytics") renderAnalytics(C);
   else if (p === "camp") C.innerHTML = campView();
-  else if (p === "comments") { C.innerHTML = feed(S.comments, "c", "comment"); bindReply(); }
-  else if (p === "messages") { C.innerHTML = feed(S.messages, "m", "dm"); bindReply(); }
+  else if (p === "comments") { C.innerHTML = feed(S.comments || [], "c", "comment"); bindReply(); }
+  else if (p === "messages") { C.innerHTML = feed(S.messages || [], "m", "dm"); bindReply(); }
   else if (p === "leads") renderLeads(C);
   else if (p === "manager") renderManager(C);
   else if (p === "settings") renderSettings(C);
@@ -954,7 +954,7 @@ async function openCanva(q) {
 // with the AI manager chat merged in (was a separate «المدير» page).
 async function renderTeam(C) {
   C.innerHTML = `<div class="note-info">🚀 ${T("agent_improve_hint")}</div>
-    <div class="grid g3" id="agentgrid">${S.agents.map((a, i) => agentCard(a, i)).join("")}</div>
+    <div class="grid g3" id="agentgrid">${(S.agents || []).map((a, i) => agentCard(a, i)).join("")}</div>
     <div class="sec-h" style="margin-top:1.4rem"><h2>💬 ${T("team_manager")}</h2></div>
     <div class="mut" style="margin:-.3rem 0 .6rem">${T("team_manager_d")}</div>
     <div id="mgrhost"></div>`;
@@ -1001,7 +1001,7 @@ async function sendChat() {
 // ── settings hub (accounts + connections + preferences) ───────────
 function renderSettings(C) {
   C.innerHTML = `<div class="sec-h"><h2>${T("set_accounts")}</h2></div>
-    <div class="grid g2">${S.accounts.map(accCard).join("")}</div>
+    <div class="grid g2">${(S.accounts || []).map(accCard).join("")}</div>
     <div class="sec-h" style="margin-top:1.3rem"><h2>${T("set_integrations")}</h2></div>
     <div id="connhost"><div class="loading">…</div></div>
     <div class="sec-h" style="margin-top:1.3rem"><h2>${T("set_prefs")}</h2></div>
@@ -1065,7 +1065,7 @@ function briefCard() {
 }
 function ovv() {
   const labels = [T("kpi_agents"), T("kpi_queue"), T("kpi_assets"), T("kpi_followers")];
-  const k = S.kpis.map((x, i) => `<div class="card kpi"><span class="n">${x[0]}</span><span class="l">${labels[i]}</span><span class="d">${pill([x[2], x[3]])}</span></div>`).join("");
+  const k = (S.kpis || []).map((x, i) => `<div class="card kpi"><span class="n">${x[0]}</span><span class="l">${labels[i]}</span><span class="d">${pill([x[2], x[3]])}</span></div>`).join("");
   // pipeline health breakdown
   const q = S.queue || []; let pub = 0, appr = 0, rev = 0;
   q.forEach(x => { if (S.publishedLog && S.publishedLog[x.id]) pub++; else if (((S.notes && S.notes[x.id]) || {}).status === "معتمد") appr++; else rev++; });
@@ -1568,7 +1568,7 @@ document.addEventListener("keydown", (e) => {
 // ── campaigns ─────────────────────────────────────────────────────
 const campView = () => `<div class="card" style="text-align:center;padding:1.4rem"><div style="font-weight:800;color:var(--plum)">${T("campNone")}</div>
   <p class="mut">${T("campPolicy")}</p><div class="grid g2" style="max-width:34rem;margin:auto;text-align:start">
-  ${S.campaigns.map(c => `<div class="card" style="box-shadow:none"><div style="font-weight:800;font-size:.88rem">${c.name}</div><div class="mut">${c.meta}</div><div style="margin-top:.4rem">${pill(c.st)}</div></div>`).join("")}</div></div>`;
+  ${(S.campaigns || []).map(c => `<div class="card" style="box-shadow:none"><div style="font-weight:800;font-size:.88rem">${c.name}</div><div class="mut">${c.meta}</div><div style="margin-top:.4rem">${pill(c.st)}</div></div>`).join("")}</div></div>`;
 const accCard = (a) => `<div class="card acc"><div class="ic" style="background:${CH[a.ch] || "#888"}">${GLYPH[a.ch] || a.ch}</div><div style="flex:1"><div style="font-weight:800">${a.h}</div><div class="mut">${a.s}</div></div>${pill(a.st)}</div>`;
 
 // ── leads (full CRM) ── search · import · auto-classify · WA/DM outreach ──
