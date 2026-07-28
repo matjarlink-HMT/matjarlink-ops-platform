@@ -498,7 +498,7 @@ async function renderPlan(C) {
       <td><select class="psel pty" style="min-width:5.5rem" ${dis}>${PLAN_TYPES.map(t => `<option ${t === it.ty ? "selected" : ""}>${t}</option>`).join("")}</select></td>
       <td><select class="psel pfmt" ${dis}>${PLAN_FORMATS.map(f => `<option value="${f[0]}" ${f[0] === (it.format || "منشور") ? "selected" : ""}>${f[1]}</option>`).join("")}</select></td>
       <td><select class="psel ptpl" ${dis}>${PLAN_TPLS().map(t => `<option value="${t[0]}" ${t[0] === (it.template || "") ? "selected" : ""}>${t[1]}</option>`).join("")}</select></td>
-      <td class="pstat">${it.designed ? `<span class="pill p-ok">🎨 ${T("plan_designed")}</span>` : `<span class="pill p-idle">${T("plan_draft")}</span>`}</td>
+      <td class="pstat">${it.status === "applied" ? `<span class="pill p-ok">✓ ${T("s_approved")}</span>` : it.designed ? `<span class="pill p-ok">🎨 ${T("plan_designed")}</span>` : `<span class="pill p-idle">${T("plan_draft")}</span>`}</td>
       <td class="planrowacts" style="white-space:nowrap">${hookBtn}<button class="btn ghost sm capbtn" data-key="${escapeHtml(it.key)}" title="${T("plan_caption")}">📝</button>${it.designed ? `<button class="btn ghost sm designone" data-key="${escapeHtml(it.key)}" title="${T("plan_redesign")}">↻</button>` : `<button class="btn sm designone" data-key="${escapeHtml(it.key)}">🎨 ${T("plan_design")}</button>`}</td>
     </tr>
     <tr class="caprow" data-caprow="${escapeHtml(it.key)}" style="display:none"><td colspan="7"><div style="padding:.3rem 0 .6rem">

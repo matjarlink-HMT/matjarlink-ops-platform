@@ -862,6 +862,13 @@ app.post("/api/proposals/approve", (req, res) => {
     });
     store.approve(qid);   // status «معتمد» → shows approved & publish-ready in the queue
     routedTo = "pipeline";
+    // Reflect the approval on the SOURCE plan item so «خطة المحتوى» shows it as
+    // designed + approved (locked) — not a re-designable «مسودة» as if untouched.
+    if (p.planMonth && p.planItemKey) {
+      const plan = store.getPlans()[p.planMonth];
+      const it = plan && (plan.items || []).find((i) => i.key === p.planItemKey);
+      if (it) { it.designed = true; it.status = "applied"; it.queueId = qid; store.setPlan(plan); }
+    }
   }
   else { store.addCustomCharacter({ id: p.id, label: p.label, dress: p.dress, file: p.file }); routedTo = "characters"; }
   store.setProposalStatus(p.id, "approved");
@@ -876,7 +883,7 @@ app.post("/api/proposals/reject", (req, res) => {
   if (p && p.planMonth && p.planItemKey) {
     const plan = store.getPlans()[p.planMonth];
     const it = plan && (plan.items || []).find((i) => i.key === p.planItemKey);
-    if (it) { it.designed = false; delete it.proposalId; store.setPlan(plan); }
+    if (it && it.status !== "applied") { it.designed = false; delete it.proposalId; store.setPlan(plan); }
   }
   res.json({ ok: true });
 });
