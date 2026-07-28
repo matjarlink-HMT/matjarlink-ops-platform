@@ -762,7 +762,7 @@ async function renderApprovals(C) {
       : `<img loading="lazy" src="${p.previewUrl}" style="width:100%;${big ? "aspect-ratio:4/5" : "max-height:9rem"};object-fit:cover;border-radius:.5rem">`;
     return `<div class="tplcard">
       <div class="tplhd"><span class="tplname">${APPR_ICON[p.kind]} ${escapeHtml(p.name || p.label || p.t || "")}</span>${fmtBadge || (p.date ? `<span class="pill p-info">${escapeHtml((p.date || "").split(" · ")[0])}${p.ty ? " · " + escapeHtml(p.ty) : ""}</span>` : "")}</div>
-      <div class="tplshots" style="grid-template-columns:1fr">${media}</div>
+      <div class="tplshots apreview" data-appr="${p.id}" title="اضغط للمعاينة" style="grid-template-columns:1fr;cursor:zoom-in;position:relative">${media}<span style="position:absolute;top:.45rem;left:.45rem;background:rgba(0,0,0,.6);color:#fff;border-radius:.45rem;padding:.12rem .45rem;font-size:.82rem;font-weight:700;pointer-events:none">${isVid ? "▶ تشغيل" : nSlides > 1 ? "⤢ " + nSlides + " شرائح" : "🔍 تكبير"}</span></div>
       <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.4rem">
         <button class="btn ok sm aappr" data-appr="${p.id}">✓ ${T("appr_approve")}</button>
         ${p.kind === "template" ? "" : `<button class="btn sm aedit" data-appr="${p.id}">✎ ${T("appr_edit")}</button>`}
@@ -782,6 +782,8 @@ async function renderApprovals(C) {
       <span class="mut">${T("appr_route_note")}</span>
     </div>
     ${total ? `${section("🖼", T("appr_sec_designs"), posts, "g3 tplgrid", true)}${section("🧑🏻", T("appr_sec_characters"), chars, "g4 tplgrid", false)}${section("🎨", T("appr_sec_templates"), tpls, "g4 tplgrid", false)}` : `<div class="mut" style="padding:1rem">${T("appr_empty")}</div>`}`;
+  const byId = {}; [...posts, ...chars, ...tpls].forEach(p => byId[p.id] = p);
+  C.querySelectorAll(".apreview").forEach(el => el.onclick = () => openApprovalPreview(byId[el.dataset.appr]));
   const run = $("#apprrun");
   if (run) run.onclick = async () => { run.disabled = true; run.innerHTML = `<span class="dots"><i></i><i></i><i></i></span> ${T("prop_running")}`; await fetch("/api/proposals/run-now", { method: "POST" }).catch(() => {}); renderApprovals(C); };
   const msg = (id) => C.querySelector(`.amsg[data-appr="${id}"]`);
@@ -806,6 +808,47 @@ async function renderApprovals(C) {
     const r = await fetch("/api/proposals/regenerate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, note }) }).then(x => x.json()).catch(() => null);
     if (r && r.ok) renderApprovals(C); else { if (m) m.textContent = "⚠ " + ((r && r.error) || ""); b.disabled = false; }
   });
+}
+
+// ── Full-screen preview for an approval item ──────────────────────────────
+// Reel/video → real player (controls + sound). Post → enlarged, click to zoom.
+// Carousel → page through every slide (arrows, keyboard, dots, counter).
+function openApprovalPreview(p) {
+  if (!p || !p.previewUrl) return;
+  const isVid = /\.mp4/.test(p.previewUrl);
+  const slides = (p.images && p.images.length > 1) ? p.images.slice() : [p.previewUrl];
+  let i = 0, zoom = false;
+  const ov = document.createElement("div");
+  ov.style.cssText = "position:fixed;inset:0;z-index:99999;background:rgba(8,3,10,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1rem;gap:.7rem;backdrop-filter:blur(3px)";
+  const stage = "max-height:82vh;max-width:94vw;object-fit:contain;border-radius:.7rem;box-shadow:0 12px 48px rgba(0,0,0,.6)";
+  const arrowCss = "background:rgba(255,255,255,.14);color:#fff;border:none;border-radius:50%;width:2.6rem;height:2.6rem;font-size:1.5rem;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none";
+  const close = () => { document.removeEventListener("keydown", onKey); ov.remove(); };
+  const nav = (d) => { i = (i + d + slides.length) % slides.length; zoom = false; render(); };
+  const onKey = (e) => { if (e.key === "Escape") close(); else if (e.key === "ArrowLeft") nav(1); else if (e.key === "ArrowRight") nav(-1); };
+  function render() {
+    const multi = slides.length > 1;
+    const body = isVid
+      ? `<video src="${p.previewUrl}" controls autoplay playsinline style="${stage}"></video>`
+      : `<img id="lbximg" src="${slides[i]}" style="${stage};cursor:${zoom ? "zoom-out" : "zoom-in"};${zoom ? "transform:scale(1.7);" : ""}transition:transform .18s">`;
+    const dots = multi ? `<div style="display:flex;gap:.4rem;justify-content:center">${slides.map((_, k) => `<span style="width:.6rem;height:.6rem;border-radius:50%;background:${k === i ? "#F5821F" : "rgba(255,255,255,.35)"}"></span>`).join("")}</div>` : "";
+    ov.innerHTML = `
+      <button id="lbxclose" style="position:absolute;top:1rem;left:1rem;background:rgba(255,255,255,.14);color:#fff;border:none;border-radius:50%;width:2.4rem;height:2.4rem;font-size:1.2rem;cursor:pointer">✕</button>
+      <div style="color:#fff;font-weight:800;text-align:center;max-width:92vw;font-size:.95rem">${escapeHtml(p.name || p.t || "")}${multi ? ` <span style="color:#F5A24F;font-weight:700">· ${i + 1}/${slides.length}</span>` : ""}</div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:.8rem;width:100%;flex:1;min-height:0">
+        ${multi ? `<button class="lbxnav" data-d="1" style="${arrowCss}">›</button>` : ""}
+        ${body}
+        ${multi ? `<button class="lbxnav" data-d="-1" style="${arrowCss}">‹</button>` : ""}
+      </div>
+      ${dots}`;
+    ov.querySelector("#lbxclose").onclick = close;
+    ov.querySelectorAll(".lbxnav").forEach(b => b.onclick = (e) => { e.stopPropagation(); nav(+b.dataset.d); });
+    const im = ov.querySelector("#lbximg");
+    if (im) im.onclick = (e) => { e.stopPropagation(); zoom = !zoom; render(); };
+  }
+  ov.onclick = (e) => { if (e.target === ov) close(); };
+  document.addEventListener("keydown", onKey);
+  document.body.appendChild(ov);
+  render();
 }
 
 // Nightly-invented proposals (templates + characters) awaiting the owner's approval.

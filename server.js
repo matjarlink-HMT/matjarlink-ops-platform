@@ -1024,7 +1024,7 @@ async function makeEditorialCarousel({ id, light = false, headline, cta, points 
   let cover = await renderSlide(`${id}-c`, headline, "متجرلينك", light);
   writePng(id, cover); cover = null; urls.push(`/media/design/${id}`);
   for (let i = 0; i < slidePoints.length; i++) {
-    let png = await renderSlide(`${id}-${i + 1}`, slidePoints[i], i === slidePoints.length - 1 ? "متجرلينك · " + (cta || "قريبًا") : "", light);
+    let png = await renderSlide(`${id}-${i + 1}`, slidePoints[i], i === slidePoints.length - 1 ? (cta || "قريبًا") : "", light);
     writePng(`${id}-${i + 1}`, png); png = null; urls.push(`/media/design/${id}-${i + 1}`);
     if (global.gc) { try { global.gc(); } catch (e) {} }   // release Skia/native memory between slides when exposed
   }
