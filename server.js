@@ -895,7 +895,21 @@ app.post("/api/proposals/regenerate", async (req, res) => {
       const hint = sceneGuidance(p.desc) + (note ? ` Owner note (visual direction only, NOT text): ${note}.` : "");
       let ed, images = [];
       if (fmt.includes("ريل")) { ed = await makeEditorialReel({ id: p.id, light, headline, pop: p.t2 || "", cta, valueLine: "متجر · كاشير · محاسبة", sceneHint: hint }); }
-      else if (fmt.includes("كاروسيل")) { const c = await makeEditorialCarousel({ id: p.id, light, headline, cta, points: p.points, sceneHint: hint }); ed = { url: c.url }; images = c.images; }
+      else if (fmt.includes("كاروسيل")) {
+        // A note on a carousel RE-PLANS the slides (add/remove/reshape a slide —
+        // e.g. "add a closing slide showing متجرلينك as the solution"), not just
+        // a visual tweak. Ask the planner for fresh slides, keep the closing one last.
+        let points = p.points || [];
+        if (note) {
+          try {
+            const out = await generator.regeneratePost({ t: p.t, ty: p.ty, cap: p.cap, brief: p.desc }, [{ role: "user", text: note }], "ar", store.hookPrefLine());
+            const slides = (out && out.slides) || [];
+            if (slides.length) points = slides.map((s, i) => (i === slides.length - 1 ? (s.t2 || s.t) : s.t)).filter(Boolean);
+          } catch (e) { /* keep existing points on planner failure */ }
+        }
+        if (points.length > 4) points = [...points.slice(0, 3), points[points.length - 1]]; // ≤4 content slides; always keep the closing/solution slide
+        const c = await makeEditorialCarousel({ id: p.id, light, headline, cta, points, sceneHint: sceneGuidance(p.desc) }); ed = { url: c.url }; images = c.images;
+      }
       else { const sc = editorialScene([p.t, note].join(" "), light); ed = await makeEditorial({ light, layout: sc.layout, kicker: "متجرلينك", headline, pop: p.t2 || "", cta, prompt: sc.prompt + hint, id: p.id }); }
       store.saveProposal({ ...p, previewUrl: ed.url, images });
     } else if (p.kind === "character") {
@@ -1019,7 +1033,7 @@ async function makeEditorialCarousel({ id, light = false, headline, cta, points 
   };
   // Keep the slide count small — each slide is a full Skia render + Gemini image,
   // and the container is memory-constrained (too many in a row OOM-kills it).
-  const slidePoints = (points && points.length ? points : ["متجر إلكتروني احترافي", "كاشير ذكي يربط كل شي", "محاسبة وتقارير تلقائية"]).slice(0, 3);
+  const slidePoints = (points && points.length ? points : ["متجر إلكتروني احترافي", "كاشير ذكي يربط كل شي", "محاسبة وتقارير تلقائية"]).slice(0, 4);
   const urls = [];
   let cover = await renderSlide(`${id}-c`, headline, "متجرلينك", light);
   writePng(id, cover); cover = null; urls.push(`/media/design/${id}`);
