@@ -83,6 +83,11 @@ function drawFrame(ctx, W, H) {
   sparkle(ctx, 905, 615, 18, PINK);
   sparkle(ctx, 150, 905, 16, PINK);
 }
+// The logo lockup ALREADY contains the brand name (MATJARLINK + متجرلينك), so a
+// kicker equal to the brand name just prints it twice — unprofessional. Any such
+// kicker is treated as empty so the name shows once (in the logo) only.
+const isBrandName = (s) => /^\s*(متجر\s*لينك|matjarlink|متجرلينك)\s*$/i.test(s || "");
+
 function drawLogo(ctx, img) {
   if (img) ctx.drawImage(img, 78, 46, 250, 250); // logo-full.png is a padded square lockup
 }
@@ -263,7 +268,7 @@ export async function renderDesign({ headline = "", headline2 = "", cta = "", bo
     y = 660;
   } else {
     const kickY = photoImg ? 396 : 470;
-    if (kicker) { ctx.fillStyle = SUB; ctx.font = "38px TajawalB"; ctx.fillText(kicker, CX, kickY); }
+    if (kicker && !isBrandName(kicker)) { ctx.fillStyle = SUB; ctx.font = "38px TajawalB"; ctx.fillText(kicker, CX, kickY); }
     y = photoImg ? 440 : 560;
   }
 
@@ -404,7 +409,7 @@ export async function renderReelFrame({ kind = "hook", headline = "", body = "",
     }
   } else {
     drawLogo(ctx, logo);
-    if (kicker) { ctx.fillStyle = SUB; ctx.font = "44px TajawalB"; ctx.fillText(kicker, CX, 700); }
+    if (kicker && !isBrandName(kicker)) { ctx.fillStyle = SUB; ctx.font = "44px TajawalB"; ctx.fillText(kicker, CX, 700); }
     let size = kind === "hook" ? 104 : 84;
     const maxW = W - 200;
     let lines = wrapLines((ctx.font = size + "px TajawalXB", ctx), headline, maxW);
@@ -445,7 +450,8 @@ function drawOmaniLattice(ctx, x, y, w, h, color, alpha, cell = 118) {
   }
   ctx.restore(); ctx.globalAlpha = 1;
 }
-export async function renderEditorial({ bg = null, kicker = "متجرلينك", headline = "", pop = "", cta = "", light = false, layout = "side", motif = false, h = 1350, biz = {} } = {}) {
+export async function renderEditorial({ bg = null, kicker = "", headline = "", pop = "", cta = "", light = false, layout = "side", motif = false, h = 1350, biz = {} } = {}) {
+  if (isBrandName(kicker)) kicker = ""; // logo already carries the brand name
   const W = 1080, H = h; // h=1350 for posts (4:5), h=1920 for reel frames (9:16)
   const cv = createCanvas(W, H); const ctx = cv.getContext("2d");
   ctx.fillStyle = light ? "#FBEEDF" : AUB; ctx.fillRect(0, 0, W, H);
