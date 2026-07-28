@@ -283,10 +283,10 @@ app.post("/api/plan/generate", async (req, res) => {
   // Fallback format rotation (biased to reels/carousels) when the model omits it.
   const FMT_ROT = ["ريل", "كاروسيل", "ريل", "منشور", "كاروسيل", "ريل", "كاروسيل", "منشور", "ريل", "كاروسيل", "ريل", "منشور"];
   const normFmt = (f) => { const s = String(f || ""); return s.includes("ريل") ? "ريل" : s.includes("كاروسيل") ? "كاروسيل" : s.includes("منشور") || s.includes("بوست") ? "منشور" : ""; };
-  const items = (out.concepts || []).slice(0, Math.min(12, maxFit)).map((c, i) => {
+  const items = (out.concepts || []).slice(0, Math.min(15, maxFit)).map((c, i) => {
     const day = Math.min(startDay + i * 2, dim);
     const format = normFmt(c.format) || FMT_ROT[i % FMT_ROT.length];
-    return { key: `${year}-${month}-${i}`, day, time: i % 2 ? "20:30" : "20:00", t: String(c.t || ""), ty: String(c.ty || "توعية"), format, pillar: String(c.ty || c.pillar || ""), hook: String(c.hook || ""), desc: String(c.desc || ""), points: Array.isArray(c.points) ? c.points.map(String).slice(0, 5) : [], cap: String(c.cap || ""), status: "draft", id: null };
+    return { key: `${year}-${month}-${i}`, day, time: i % 2 ? "20:30" : "20:00", t: String(c.t || ""), ty: String(c.ty || "توعية"), format, pillar: String(c.ty || c.pillar || ""), hook: String(c.hook || ""), desc: String(c.desc || ""), cta: String(c.cta || ""), points: Array.isArray(c.points) ? c.points.map(String).slice(0, 5) : [], cap: String(c.cap || ""), status: "draft", id: null };
   });
   const plan = store.setPlan({ label, year, month, goal: String(out.goal || ""), pillars: (out.pillars || []).map(String).slice(0, 6), items, generatedAt: new Date().toISOString() });
   res.json({ ok: true, plan });
@@ -1063,7 +1063,7 @@ async function designPlanItem(plan, it) {
   const light = template === "editorial-white";
   const dateStr = `${plan.year}-${String(plan.month).padStart(2, "0")}-${String(it.day).padStart(2, "0")} · ${it.time || "20:00"}`;
   const headline = it.t || "متجرلينك";
-  const cta = CTA_FOR(it.ty);
+  const cta = (it.cta && it.cta.trim()) || CTA_FOR(it.ty);
   const pid = "post-" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
   const planMonth = `${plan.year}-${String(plan.month).padStart(2, "0")}`;
   const fmt = it.format || "منشور";
