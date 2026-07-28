@@ -299,7 +299,14 @@ app.put("/api/plan", (req, res) => {
   const cur = store.getPlan(`${p.year}-${String(p.month).padStart(2, "0")}`) || {};
   // keep applied ids/status authoritative from the server side
   const byKey = Object.fromEntries((cur.items || []).map((i) => [i.key, i]));
-  p.items = p.items.map((i) => ({ ...i, status: byKey[i.key]?.status === "applied" ? "applied" : "draft", id: byKey[i.key]?.id || null }));
+  // Keep server-applied items authoritative; also allow the owner to LOCK an
+  // already-done item (e.g. a post already published to Instagram) by sending
+  // status:"applied" + designed:true — so the plan can reflect real history.
+  p.items = p.items.map((i) => {
+    const wasApplied = byKey[i.key]?.status === "applied";
+    const ownerLock = i.status === "applied" && i.designed === true;
+    return { ...i, status: wasApplied || ownerLock ? "applied" : "draft", id: byKey[i.key]?.id || i.id || null };
+  });
   res.json({ ok: true, plan: store.setPlan({ ...cur, ...p }) });
 });
 
