@@ -139,7 +139,7 @@ export async function reviewReel(reel = {}) {
 حلّل بعين المحترف: الهوك (أول ٣ ثوانٍ)، السيناريو، الإيقاع واللحظات الميتة، النصوص وقراءتها على الجوال، المؤثرات، الصوت، تدرّج الألوان، النهاية والـCTA، وتوافق الهوية.
 أعد **JSON فقط** بهذا الشكل:
 {"score":<0-100>,"scoreRationale":"<تبرير الدرجة بجملة واحدة>","analysis":"<تحليل موجز ٢-٣ جمل>","strengths":["<نقطة قوة>","..."],"weaknesses":["<نقطة ضعف>","..."],"hookRewrite":"<هوك بديل أقوى لأول ٣ ثوانٍ — ≤٦ كلمات>","improvements":["<تحسين مونتاجي/بصري محدد وقابل للتنفيذ>","..."],"pacing":"<توجيه الإيقاع: أي مشهد يُقصَّر أو يُطوَّل>","colorMood":"<warm أو bright>","keywords":["<كلمة مفتاحية تُبرز في الكابشن>","..."],"retentionTips":["<نصيحة لرفع الاحتفاظ Retention>","..."],"engagementTips":["<نصيحة لرفع التفاعل Engagement>","..."]}`;
-  const out = parseJSON(await chat([{ role: "user", text: "حلّل الريل الآن كمونتير محترف. JSON فقط." }], system, { maxTokens: 2200 }));
+  const out = parseJSON(await chat([{ role: "user", text: "حلّل الريل الآن كمونتير محترف. JSON فقط." }], system, { maxTokens: 4000 }));
   if (!out || typeof out.score === "undefined") return null;
   return out;
 }
