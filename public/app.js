@@ -420,7 +420,7 @@ async function renderPlan(C) {
   if (current) tabs.push({ key: curKey, label: current.label, kind: "current" });
   Object.keys(plans).sort().forEach(k => { if (!tabs.some(t => t.key === k)) tabs.push({ key: k, label: plans[k].label, kind: "plan" }); });
   if (!tabs.some(t => t.key === nextKey)) tabs.push({ key: nextKey, label: `${ARMONTHS_CLIENT[nm - 1]} ${ny}`, kind: "new" });
-  if (!planActiveKey || !tabs.some(t => t.key === planActiveKey)) planActiveKey = plans[nextKey] ? nextKey : (tabs.find(t => t.kind === "plan")?.key || tabs[0]?.key);
+  if (!planActiveKey || !tabs.some(t => t.key === planActiveKey)) planActiveKey = plans[curKey] ? curKey : plans[nextKey] ? nextKey : (tabs.find(t => t.kind === "plan")?.key || tabs[0]?.key);
   const active = tabs.find(t => t.key === planActiveKey) || tabs[0];
   const tabBar = `<div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap"><div class="montabs" style="margin:0">${tabs.map(t => `<button class="montab ${t.key === active.key ? "on" : ""}" data-mk="${t.key}">${escapeHtml(t.label)}${t.kind === "current" ? " • " + T("plan_this_month") : t.kind === "new" && !plans[t.key] ? " +" : ""}</button>`).join("")}</div><button class="btn sm" id="planapprove">✅ ${T("plan_approve")}</button></div><div class="mut" id="planregmsg" style="margin:.2rem 0 .6rem">${active && plans[active.key]?.approved ? "✓ " + T("plan_approved_at") + " " + (plans[active.key].approvedAt || "").slice(0, 10) : ""}</div><div id="mktresearch"></div>`;
 
@@ -443,7 +443,7 @@ async function renderPlan(C) {
   const detailData = (it) => [it.cap, it.brief ? "📐 " + it.brief : "", it.drive ? "🖼 Drive: " + it.drive : ""].filter(Boolean).join("\n\n");
 
   // ── current month: real scheduled queue as an Excel-like table + calendar ──
-  if (active.kind === "current" && current) {
+  if (active.kind === "current" && current && !plans[active.key]) {
     const rows = current.items.map(it => `<tr>
         <td class="pdate">${escapeHtml(fullDate(current, it))}</td>
         <td>${escapeHtml(weekdayOf(current, it))}</td>
