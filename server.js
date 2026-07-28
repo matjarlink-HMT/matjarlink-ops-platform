@@ -90,6 +90,7 @@ app.get("/api/state", async (req, res) => {
   if (insights) state.insights = insights;
   // Ensure the Publish Verifier is always on the roster (added dynamically).
   if (!state.agents.some((a) => a.n === "Publish Verifier")) state.agents = [...state.agents, { ...live.PUBLISH_VERIFIER }];
+  if (!state.agents.some((a) => a.n === "Video Editor")) state.agents = [...state.agents, { ...live.VIDEO_EDITOR }];
   // Merge approved agent self-improvements (raised level, updated task/eval/suggestion + changelog).
   const agState = store.getAgentState();
   state.agents = state.agents.map((a) => {
@@ -929,6 +930,41 @@ app.post("/api/proposals/regenerate", async (req, res) => {
     } else return res.status(400).json({ ok: false, error: "لا يدعم إعادة توليد القوالب" });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ── «المونتير» ── Senior Creative Video Editor: analyzes a reel and applies a
+// commercial-grade re-render (brand colour grade + vignette + film grain +
+// micro-sharpen) to the finished mp4. Grading always runs from a pristine
+// «.orig» backup, so repeated reviews never compound the grade.
+let editorBusy = false;
+app.post("/api/reel/review", async (req, res) => {
+  const p = store.getProposals()[(req.body || {}).id];
+  if (!p || p.status !== "pending") return res.status(404).json({ ok: false, error: "proposal not found" });
+  const isReel = /\.mp4/.test(p.previewUrl || "") || (p.format || "").includes("ريل");
+  if (!isReel) return res.status(400).json({ ok: false, error: "أداة المونتير للريلز فقط" });
+  if (editorBusy) return res.status(429).json({ ok: false, error: "المونتير مشغول بريل آخر — انتظر ثوانٍ" });
+  editorBusy = true;
+  try {
+    const report = await generator.reviewReel({ t: p.t, t2: p.t2, cta: p.cta, ty: p.ty, desc: p.desc });
+    if (!report) return res.status(502).json({ ok: false, error: "تعذّر تحليل المونتير — تحقق من ربط Claude" });
+    let graded = false;
+    const dir = designsDir();
+    const src = path.join(dir, `${p.id}.mp4`);
+    if (fs.existsSync(src)) {
+      const orig = path.join(dir, `${p.id}.orig.mp4`);
+      if (!fs.existsSync(orig)) fs.copyFileSync(src, orig); // pristine source, graded once
+      const { renderProReel } = await import("./data/reelEngine.js");
+      const tmp = path.join(dir, `${p.id}.pro.mp4`);
+      await renderProReel(orig, tmp, { light: p.template === "editorial-white", grade: report.colorMood });
+      fs.renameSync(tmp, src);
+      const fd = fs.openSync(src, "r+"); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+      graded = true;
+    }
+    const previewUrl = `/media/design/${p.id}.mp4?v=${Date.now()}`;
+    store.saveProposal({ ...p, previewUrl, editorReport: report, editorGraded: graded });
+    res.json({ ok: true, report, graded, previewUrl });
+  } catch (e) { console.error("[montير]", e.message); res.status(500).json({ ok: false, error: e.message }); }
+  finally { editorBusy = false; }
 });
 // ── Editorial style (adopted templates 6 = dark, 7 = white) ──────────────────
 // Gemini generates a content-matched premium SCENE (person/device/card/place),

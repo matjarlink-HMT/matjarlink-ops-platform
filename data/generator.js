@@ -123,3 +123,23 @@ export async function generatePlan(monthLabel = "", year = 2026, month = 1, lang
   if (!out || !Array.isArray(out.concepts)) return null;
   return out;
 }
+
+// ── «المونتير» — Senior Creative Video Editor review ──────────────────────────
+// Analyzes a reel (its script/hook/pacing/text/CTA/brand fit) as a senior editor
+// at a global creative agency would, and returns a professional, actionable
+// report: strengths/weaknesses, a stronger hook, concrete montage/visual
+// improvements, pacing + colour direction, retention/engagement tips, and a
+// final /100 score with a rationale. The colorMood ("warm"|"bright") drives the
+// automatic pro-grade re-render.
+export async function reviewReel(reel = {}) {
+  if (!claudeReady()) return null;
+  const system = `${BRAND}
+أنت «المونتير» — Senior Creative Video Editor في وكالة إبداعية عالمية، خبير ريلز إنستغرام/تيك توك/يوتيوب شورتس التجارية. هدفك رفع الريل من مستوى «AI Generated» إلى «Commercial Quality» مع الحفاظ على أسلوب **بسيط سريع جذّاب** وهوية متجرلينك (خمري #2D081E + برتقالي #F5821F). القاعدة الذهبية: الاحتراف لا الاستعراض — بلا إفراط في المؤثرات أو الانتقالات أو النصوص.
+الريل الحالي: ٣ مشاهد رأسية (9:16) بحركة Ken Burns وقطعات وميض أبيض، مدة ~٨ ثوانٍ، بلا تعليق صوتي. العنوان «${reel.t || ""}»${reel.t2 ? " — " + reel.t2 : ""}. الـCTA «${reel.cta || ""}». النوع «${reel.ty || ""}». الفكرة: ${(reel.desc || "").slice(0, 300)}.
+حلّل بعين المحترف: الهوك (أول ٣ ثوانٍ)، السيناريو، الإيقاع واللحظات الميتة، النصوص وقراءتها على الجوال، المؤثرات، الصوت، تدرّج الألوان، النهاية والـCTA، وتوافق الهوية.
+أعد **JSON فقط** بهذا الشكل:
+{"score":<0-100>,"scoreRationale":"<تبرير الدرجة بجملة واحدة>","analysis":"<تحليل موجز ٢-٣ جمل>","strengths":["<نقطة قوة>","..."],"weaknesses":["<نقطة ضعف>","..."],"hookRewrite":"<هوك بديل أقوى لأول ٣ ثوانٍ — ≤٦ كلمات>","improvements":["<تحسين مونتاجي/بصري محدد وقابل للتنفيذ>","..."],"pacing":"<توجيه الإيقاع: أي مشهد يُقصَّر أو يُطوَّل>","colorMood":"<warm أو bright>","keywords":["<كلمة مفتاحية تُبرز في الكابشن>","..."],"retentionTips":["<نصيحة لرفع الاحتفاظ Retention>","..."],"engagementTips":["<نصيحة لرفع التفاعل Engagement>","..."]}`;
+  const out = parseJSON(await chat([{ role: "user", text: "حلّل الريل الآن كمونتير محترف. JSON فقط." }], system, { maxTokens: 2200 }));
+  if (!out || typeof out.score === "undefined") return null;
+  return out;
+}

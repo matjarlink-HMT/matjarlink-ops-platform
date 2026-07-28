@@ -109,6 +109,16 @@ export function deriveAgents(agents = [], ctx = {}) {
   return agents.map((a) => live[a.n] ? { ...a, ...live[a.n] } : a);
 }
 
+// «المونتير» — Senior Creative Video Editor (added to the roster). Turns the
+// auto-motion reels into commercial-quality video: reviews each reel, scores it
+// /100, and applies a cinematic brand grade on the finished mp4.
+export const VIDEO_EDITOR = {
+  n: "Video Editor", r: "المونتير — محرّر الفيديو الإبداعي", c: "#E8890F", st: ["new", "جديد"],
+  task: "يحوّل الريلز من مستوى «AI» إلى جودة تجارية — مراجعة، تقييم /100، وتدرّج ألوان سينمائي بالهوية.",
+  sc: 0, ev: "يحلّل الهوك والإيقاع والنصوص والألوان ثم يعيد الإخراج على الريل النهائي.",
+  sug: "راجِع كل ريل قبل الاعتماد من زر «🎬 مراجعة المونتير».",
+};
+
 // The Publish Verifier agent (added to the roster so it always shows live).
 export const PUBLISH_VERIFIER = {
   n: "Publish Verifier", r: "وكيل التحقق من النشر", c: "#0E8C6A", st: ["new", "جديد"],

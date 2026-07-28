@@ -756,7 +756,8 @@ async function renderApprovals(C) {
   const card = (p, big) => {
     const isVid = /\.mp4/.test(p.previewUrl || "");
     const nSlides = (p.images || []).length;
-    const fmtBadge = isVid ? `<span class="pill p-new">🎬 ${T("plan_fmt_reel")}</span>` : nSlides > 1 ? `<span class="pill p-new">🎠 ${nSlides}</span>` : "";
+    const er = p.editorReport;
+    const fmtBadge = (isVid ? `<span class="pill p-new">🎬 ${T("plan_fmt_reel")}</span>` : nSlides > 1 ? `<span class="pill p-new">🎠 ${nSlides}</span>` : "") + (er && typeof er.score !== "undefined" ? ` <span class="pill p-ok" title="تقييم المونتير">🎬 ${er.score}/100</span>` : "");
     const media = isVid
       ? `<video src="${p.previewUrl}" muted loop autoplay playsinline style="width:100%;${big ? "aspect-ratio:9/16;max-height:26rem" : "max-height:9rem"};object-fit:cover;border-radius:.5rem"></video>`
       : `<img loading="lazy" src="${p.previewUrl}" style="width:100%;${big ? "aspect-ratio:4/5" : "max-height:9rem"};object-fit:cover;border-radius:.5rem">`;
@@ -765,6 +766,8 @@ async function renderApprovals(C) {
       <div class="tplshots apreview" data-appr="${p.id}" title="اضغط للمعاينة" style="grid-template-columns:1fr;cursor:zoom-in;position:relative">${media}<span style="position:absolute;top:.45rem;left:.45rem;background:rgba(0,0,0,.6);color:#fff;border-radius:.45rem;padding:.12rem .45rem;font-size:.82rem;font-weight:700;pointer-events:none">${isVid ? "▶ تشغيل" : nSlides > 1 ? "⤢ " + nSlides + " شرائح" : "🔍 تكبير"}</span></div>
       <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.4rem">
         <button class="btn ok sm aappr" data-appr="${p.id}">✓ ${T("appr_approve")}</button>
+        ${isVid ? `<button class="btn sm amontir" data-appr="${p.id}" title="مراجعة وتحسين احترافي للريل">🎬 المونتير</button>` : ""}
+        ${er ? `<button class="btn ghost sm areport" data-appr="${p.id}">📋 التقرير</button>` : ""}
         ${p.kind === "template" ? "" : `<button class="btn sm aedit" data-appr="${p.id}">✎ ${T("appr_edit")}</button>`}
         <button class="btn ghost sm arej" data-appr="${p.id}">✕ ${T("appr_reject")}</button>
       </div>
@@ -784,6 +787,17 @@ async function renderApprovals(C) {
     ${total ? `${section("🖼", T("appr_sec_designs"), posts, "g3 tplgrid", true)}${section("🧑🏻", T("appr_sec_characters"), chars, "g4 tplgrid", false)}${section("🎨", T("appr_sec_templates"), tpls, "g4 tplgrid", false)}` : `<div class="mut" style="padding:1rem">${T("appr_empty")}</div>`}`;
   const byId = {}; [...posts, ...chars, ...tpls].forEach(p => byId[p.id] = p);
   C.querySelectorAll(".apreview").forEach(el => el.onclick = () => openApprovalPreview(byId[el.dataset.appr]));
+  C.querySelectorAll(".areport").forEach(b => b.onclick = () => { const p = byId[b.dataset.appr]; if (p && p.editorReport) openEditorReport(p.editorReport, p.t); });
+  C.querySelectorAll(".amontir").forEach(b => b.onclick = async () => {
+    const id = b.dataset.appr, m = msg(id), label = b.innerHTML;
+    b.disabled = true; let sec = 0; if (m) m.textContent = "🎬 المونتير يحلّل ويعالج…";
+    b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span> 0s`;
+    const t = setInterval(() => { sec++; b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span> ${sec}s`; }, 1000);
+    const r = await fetch("/api/reel/review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).then(x => x.json()).catch(() => null);
+    clearInterval(t); b.disabled = false; b.innerHTML = label;
+    if (r && r.ok) { if (byId[id]) byId[id].editorReport = r.report; openEditorReport(r.report, (byId[id] || {}).t, r.graded); setTimeout(() => renderApprovals(C), 400); }
+    else if (m) m.textContent = "⚠ " + friendlyErr((r && r.error) || "");
+  });
   const run = $("#apprrun");
   if (run) run.onclick = async () => { run.disabled = true; run.innerHTML = `<span class="dots"><i></i><i></i><i></i></span> ${T("prop_running")}`; await fetch("/api/proposals/run-now", { method: "POST" }).catch(() => {}); renderApprovals(C); };
   const msg = (id) => C.querySelector(`.amsg[data-appr="${id}"]`);
@@ -849,6 +863,40 @@ function openApprovalPreview(p) {
   document.addEventListener("keydown", onKey);
   document.body.appendChild(ov);
   render();
+}
+
+// ── «المونتير» report modal — score ring + analysis + actionable improvements ──
+function openEditorReport(r, title = "", graded) {
+  if (!r) return;
+  const sc = Math.max(0, Math.min(100, +r.score || 0));
+  const scColor = sc >= 80 ? "#0E8C6A" : sc >= 60 ? "#E8890F" : "#B83B76";
+  const list = (arr, ic) => (arr && arr.length) ? `<ul style="margin:.3rem 0 .2rem;padding-inline-start:1.1rem;display:flex;flex-direction:column;gap:.25rem;font-size:.9rem;line-height:1.55">${arr.map(x => `<li>${ic ? ic + " " : ""}${escapeHtml(String(x))}</li>`).join("")}</ul>` : "";
+  const sec = (t, body) => body ? `<div style="margin-top:.7rem"><div style="font-weight:800;color:#F5A24F;font-size:.9rem">${t}</div>${body}</div>` : "";
+  const ov = document.createElement("div");
+  ov.style.cssText = "position:fixed;inset:0;z-index:99999;background:rgba(8,3,10,.9);display:flex;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(3px)";
+  ov.innerHTML = `<div dir="rtl" style="background:#1a0a14;color:#f3e9ef;border:1px solid #40203a;border-radius:1rem;max-width:640px;width:100%;max-height:88vh;overflow:auto;padding:1.3rem">
+    <button id="erx" style="position:sticky;top:0;float:left;background:rgba(255,255,255,.12);color:#fff;border:none;border-radius:50%;width:2.2rem;height:2.2rem;font-size:1.1rem;cursor:pointer">✕</button>
+    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:.3rem">
+      <div style="flex:none;width:5rem;height:5rem;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:1.5rem;color:#fff;background:conic-gradient(${scColor} ${sc * 3.6}deg,#33172b 0)"><span style="background:#1a0a14;width:3.7rem;height:3.7rem;border-radius:50%;display:flex;align-items:center;justify-content:center">${sc}</span></div>
+      <div><div style="font-weight:900;font-size:1.05rem">🎬 تقرير المونتير</div><div class="mut" style="font-size:.85rem">${escapeHtml(title || "")}</div>${graded ? `<div style="color:#2ec4a0;font-size:.8rem;font-weight:700;margin-top:.2rem">✓ طُبِّق التدرّج السينمائي على الريل</div>` : ""}</div>
+    </div>
+    ${r.scoreRationale ? `<div class="mut" style="font-size:.9rem;line-height:1.55">${escapeHtml(r.scoreRationale)}</div>` : ""}
+    ${sec("التحليل", r.analysis ? `<div style="font-size:.92rem;line-height:1.6">${escapeHtml(r.analysis)}</div>` : "")}
+    ${sec("✅ نقاط القوة", list(r.strengths))}
+    ${sec("⚠️ نقاط الضعف", list(r.weaknesses))}
+    ${r.hookRewrite ? sec("🎣 هوك أقوى مقترح", `<div style="background:#33172b;border-radius:.5rem;padding:.5rem .7rem;font-weight:800">${escapeHtml(r.hookRewrite)}</div>`) : ""}
+    ${sec("✂️ تحسينات المونتاج", list(r.improvements, "•"))}
+    ${r.pacing ? sec("⏱️ الإيقاع", `<div style="font-size:.9rem;line-height:1.55">${escapeHtml(r.pacing)}</div>`) : ""}
+    ${(r.keywords && r.keywords.length) ? sec("🔑 كلمات مفتاحية", `<div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.3rem">${r.keywords.map(k => `<span class="pill p-info">${escapeHtml(k)}</span>`).join("")}</div>`) : ""}
+    ${sec("📈 رفع الاحتفاظ (Retention)", list(r.retentionTips, "▸"))}
+    ${sec("💬 رفع التفاعل (Engagement)", list(r.engagementTips, "▸"))}
+  </div>`;
+  ov.onclick = (e) => { if (e.target === ov) close(); };
+  const close = () => { ov.remove(); document.removeEventListener("keydown", onKey); };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  ov.querySelector("#erx").onclick = close;
+  document.addEventListener("keydown", onKey);
+  document.body.appendChild(ov);
 }
 
 // Nightly-invented proposals (templates + characters) awaiting the owner's approval.

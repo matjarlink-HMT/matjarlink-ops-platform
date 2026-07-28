@@ -118,6 +118,54 @@ export async function renderLiveReel(footageSrc, { hook = "", cta = "قريبً�
   }
 }
 
+// ── «المونتير» PRO PASS ── take a FINISHED reel mp4 and lift it from
+// "AI-generated" to commercial quality with a cinematic brand grade: subtle
+// contrast/saturation, a plum-shadow → orange-highlight brand balance, a soft
+// vignette, light temporal film grain and a crisp micro-sharpen. Optional
+// licensed music bed (looped + faded, mixed under the silent track). This is a
+// SINGLE decode→filter→encode pass on the finished file — no minterpolate, no
+// second video stream — so it stays well under the container's memory budget
+// and never touches the fragile per-scene generator. Grade always runs from the
+// PRISTINE source the caller hands us, so repeated reviews never compound.
+export async function renderProReel(inMp4, outPath, opts = {}) {
+  if (!fs.existsSync(inMp4)) throw new Error("reel not found for pro-pass");
+  if (busy) throw new Error("reel engine busy — try again in a minute");
+  const { light = false, grain = 6, vignette = true, sharpen = true, music = null, musicVol = 0.85 } = opts;
+  busy = true;
+  const dir = path.dirname(outPath); fs.mkdirSync(dir, { recursive: true });
+  try {
+    const bin = await ffmpegPath();
+    const chain = [];
+    // Brand cinematic grade (subtle — the owner asked for professional, not showy).
+    if (light) {
+      chain.push("eq=contrast=1.05:saturation=1.10:brightness=0.02:gamma=1.02");
+      chain.push("colorbalance=rh=0.03:bh=-0.03");            // warm highlights, clean whites
+    } else {
+      chain.push("eq=contrast=1.07:saturation=1.14:gamma=0.97");
+      chain.push("colorbalance=rs=0.03:bs=-0.02:rh=0.04:bh=-0.05"); // plum shadows, orange highlights
+    }
+    if (sharpen) chain.push("unsharp=3:3:0.4");
+    if (grain > 0) chain.push(`noise=alls=${Math.min(Math.max(grain, 0), 12)}:allf=t`); // temporal film grain
+    if (vignette) chain.push(`vignette=${light ? "PI/6" : "PI/5"}`);
+    chain.push("format=yuv420p");
+    const vf = chain.join(",");
+    const V = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "22", "-threads", "1",
+      "-x264-params", "ref=1:bframes=0:rc-lookahead=0:keyint=50", "-movflags", "+faststart"];
+    const args = ["-y", "-i", inMp4];
+    if (music && fs.existsSync(music)) {
+      // Loop the bed to cover the reel, grade video, fade music in, mix at musicVol.
+      args.push("-stream_loop", "-1", "-i", music,
+        "-filter_complex", `[0:v]${vf}[v];[1:a]afade=t=in:st=0:d=0.8,volume=${musicVol}[a]`,
+        "-map", "[v]", "-map", "[a]", "-c:a", "aac", "-b:a", "128k", "-shortest", ...V, outPath);
+    } else {
+      args.push("-vf", vf, "-c:a", "copy", ...V, outPath); // keep the existing silent track
+    }
+    await run(bin, args);
+    const fd = fs.openSync(outPath, "r+"); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    return outPath;
+  } finally { busy = false; }
+}
+
 // scenes: [{kind, headline, body, kicker}, ...] (2-4). Writes outPath (.mp4).
 // template applies the active brand template (classic/luxe/spotlight) to frames.
 export async function renderReel(scenes, outPath, template = "classic") {
