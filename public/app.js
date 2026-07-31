@@ -755,12 +755,18 @@ function dzStyle() {
 // Approve → routes to its home (design→publish queue, template→التصميم, character→
 // الشخصيات). Edit → note + regenerate. Reject → discard.
 const APPR_ICON = { post: "🖼", template: "🌙", character: "🧑🏻" };
+let apprSort = "new"; // new = newest generated first · old = oldest first · date = by publish date
+const APPR_SORTERS = {
+  new: (a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""),
+  old: (a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""),
+  date: (a, b) => (a.date || "~").localeCompare(b.date || "~"),
+};
 async function renderApprovals(C) {
   C.innerHTML = `<div class="loading">…</div>`;
   let d = null;
   try { d = await fetch("/api/proposals").then(r => r.json()); } catch (e) {}
   if (!d || !d.ok) { C.innerHTML = `<div class="note-info">${T("appr_hint")}</div><div class="mut">${T("appr_empty")}</div>`; return; }
-  const posts = (d.posts || []).map(p => ({ ...p, kind: "post" }));
+  const posts = (d.posts || []).map(p => ({ ...p, kind: "post" })).sort(APPR_SORTERS[apprSort] || APPR_SORTERS.new);
   const chars = (d.characters || []).map(p => ({ ...p, kind: "character" }));
   const tpls = (d.templates || []).map(p => ({ ...p, kind: "template" }));
   const total = posts.length + chars.length + tpls.length;
@@ -794,10 +800,17 @@ async function renderApprovals(C) {
   C.innerHTML = `<div class="note-info">🗳 ${T("appr_hint")}</div>
     <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:.4rem 0 1rem">
       <button class="btn sm" id="apprrun">⚡ ${T("prop_run")}</button>
+      ${posts.length > 1 ? `<label class="mut" style="display:flex;align-items:center;gap:.3rem">↕ ترتيب:
+        <select id="apprsort" class="sinput sm" style="width:auto">
+          <option value="new"${apprSort === "new" ? " selected" : ""}>الأحدث توليداً</option>
+          <option value="old"${apprSort === "old" ? " selected" : ""}>الأقدم توليداً</option>
+          <option value="date"${apprSort === "date" ? " selected" : ""}>حسب موعد النشر</option>
+        </select></label>` : ""}
       <span class="mut">${T("appr_route_note")}</span>
     </div>
     ${total ? `${section("🖼", T("appr_sec_designs"), posts, "g3 tplgrid", true)}${section("🧑🏻", T("appr_sec_characters"), chars, "g4 tplgrid", false)}${section("🎨", T("appr_sec_templates"), tpls, "g4 tplgrid", false)}` : `<div class="mut" style="padding:1rem">${T("appr_empty")}</div>`}`;
   const byId = {}; [...posts, ...chars, ...tpls].forEach(p => byId[p.id] = p);
+  const sortSel = $("#apprsort"); if (sortSel) sortSel.onchange = () => { apprSort = sortSel.value; renderApprovals(C); };
   C.querySelectorAll(".apreview").forEach(el => el.onclick = () => openApprovalPreview(byId[el.dataset.appr]));
   C.querySelectorAll(".areport").forEach(b => b.onclick = () => { const p = byId[b.dataset.appr]; if (p && p.editorReport) openEditorReport(p.editorReport, p.t); });
   C.querySelectorAll(".amontir").forEach(b => b.onclick = async () => {

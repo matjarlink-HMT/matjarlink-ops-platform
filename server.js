@@ -648,16 +648,29 @@ app.get("/media/clothing/:id", (req, res) => {
 const isPersonText = (t) => /\bman\b|woman|person|owner|employee|merchant|shopkeeper|portrait|dishdasha|kummah|massar|abaya|hijab|رجل|امرأة|سيدة|تاجر|تاجرة|بائع|موظف|شخص/i.test(String(t || ""));
 const isWomanText = (t) => /woman|abaya|hijab|سيدة|تاجرة|امرأة|بائعة|ابدئي/i.test(String(t || ""));
 const isEgyptianText = (t) => /Egyptian|مصري|buttoned shirt/i.test(String(t || ""));
+const hashInt = (s) => { let h = 0; s = String(s || ""); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; };
+// One shared persona decision so the PROMPT, the FACE reference and the GARMENT
+// all agree on who appears — and so GENERIC person scenes rotate (man ⇄ woman)
+// by a stable topic hash for variety, instead of always the same man.
+function personaFor(text) {
+  const t = String(text || "");
+  if (isEgyptianText(t)) return { woman: false, egyptian: true };
+  if (isWomanText(t)) return { woman: true, egyptian: false };
+  if (/\bman\b|رجل|شاب|أبو|صاحب/i.test(t)) return { woman: false, egyptian: false };
+  return { woman: hashInt(t) % 3 === 0, egyptian: false }; // generic → ~1/3 woman for variety
+}
 // GARMENTS ONLY from the wardrobe: take just the clothing from the reference image,
 // never its face/person. Owner uploads a garment and its type; we use that type.
 function clothingRefsFor(text) {
   const list = store.getClothing(); if (!list.length) return { refs: [], note: "" };
   const t = String(text || "");
   if (isEgyptianText(t) || !isPersonText(t)) return { refs: [], note: "" };
-  const isWoman = isWomanText(t);
+  const { woman: isWoman } = personaFor(t);
   const want = isWoman ? ["abaya", "hijab"] : ["massar", "kummah", "dishdasha", "furakha"];
   let picks = list.filter((c) => want.includes(c.type));
   if (!picks.length) picks = list;
+  // rotate which garment(s) are used (by topic hash) so outfits vary between designs
+  if (picks.length > 2) { const off = hashInt(t) % picks.length; picks = [...picks.slice(off), ...picks.slice(0, off)]; }
   picks = picks.slice(0, 2);
   const refs = [];
   for (const c of picks) { try { refs.push({ data: fs.readFileSync(path.join(designsDir(), c.file)).toString("base64"), mime: "image/png" }); } catch (e) {} }
@@ -669,11 +682,13 @@ function clothingRefsFor(text) {
 function characterFaceRef(text) {
   const t = String(text || "");
   if (isEgyptianText(t) || !isPersonText(t)) return { refs: [], note: "" };
-  const woman = isWomanText(t);
+  const { woman } = personaFor(t);
   const chars = allCharacters();
   const isWomanChar = (c) => /امرأة|سيدة|تاجرة|woman|عباية|abaya|حجاب|hijab/i.test(`${c.label} ${c.dress || ""}`);
   const matched = chars.filter((c) => woman ? isWomanChar(c) : !isWomanChar(c) && !/مصري|egyptian/i.test(`${c.label} ${c.dress || ""}`));
-  const pick = matched[0] || chars[0];
+  const pool = matched.length ? matched : chars;
+  // rotate the face by a stable topic hash so people VARY between designs
+  const pick = pool[hashInt(t) % pool.length];
   if (!pick) return { refs: [], note: "" };
   const p = charPathAny(pick.id);
   if (!p) return { refs: [], note: "" };
@@ -983,7 +998,7 @@ function editorialScene(text, light) {
   const grade = light
     ? "bright airy, clean white and warm-orange tones (brand colors #F5821F and #2D081E, NOT purple, NOT violet), subtle flowing orange glassmorphism accents"
     : "deep AUBERGINE-PLUM and warm-ORANGE cinematic color grade (brand colors #2D081E and #F5821F, NOT purple, NOT violet), subtle flowing orange glassmorphism accents";
-  const rm = " Photorealistic editorial photograph, realistic detail, NOT 3D render, NOT AI illustration. No text, no words, no logos.";
+  const rm = " Shot on a real camera, candid documentary editorial photograph — natural authentic HUMAN features, real skin texture with pores and subtle imperfections, natural asymmetry, realistic catchlights in the eyes. NOT 3D render, NOT AI illustration, NOT a plastic/waxy/over-smoothed/airbrushed face, NOT a beauty filter. No text, no words, no logos.";
   const side = "on the FAR RIGHT third, large clean negative space on the LEFT for a headline.";
   const has = (arr) => arr.some((w) => t.includes(w));
   if (has(["كاشير", "نقطة بيع", "نقطة البيع"])) return { layout: "side", prompt: `A sleek modern POS cashier terminal with a glowing touchscreen showing a sale, ${light ? "soft studio spotlight and gentle reflection" : "dramatic cinematic spotlight and rim light"}, ${grade}, the device ${side}${rm}` };
@@ -999,8 +1014,7 @@ function editorialScene(text, light) {
   // product/device is the hero (varied, and always tied to the message).
   const person = has(["تاجر", "تاجرة", "سيدة", "بائع", "بائعة", "ابدئي", "موظف", "شخص", "رجل", "صاحب", "عميل", "دعم"]);
   if (person) {
-    const woman = has(["ابدئي", "سيدة", "تاجرة", "بائعة", "امرأة"]);
-    const egyptian = has(["مصري", "موظف", "دعم", "فريق العمل"]);
+    const { woman, egyptian } = personaFor(t);   // shared decision → matches face + garment; rotates for variety
     // Clothing is defined by the reference images (character portrait / wardrobe
     // garment) — the prompt gives only identity, no specific dress, so it never
     // competes with or overrides the chosen garment.
@@ -1034,7 +1048,7 @@ async function makeEditorialReel({ id, light = false, headline, pop, cta, valueL
   const eng = await import("./data/designEngine.js");
   const { renderReelFromFrames } = await import("./data/reelEngine.js");
   const grade = light ? "bright airy, clean white and warm-orange tones (brand colors #F5821F and #2D081E, NOT purple)" : "deep AUBERGINE-PLUM and warm-ORANGE cinematic color grade (brand colors #2D081E and #F5821F, NOT purple)";
-  const rm = " Photorealistic cinematic vertical composition, realistic, NOT 3D render, NOT AI illustration. No text, no words, no logos.";
+  const rm = " Shot on a real camera, cinematic vertical composition — natural authentic HUMAN features, real skin texture with pores and subtle imperfections, natural asymmetry, realistic eye catchlights. NOT 3D render, NOT AI illustration, NOT a plastic/waxy/over-smoothed/airbrushed face, NOT a beauty filter. No text, no words, no logos.";
   const scenePrompts = [
     `Cinematic VERTICAL 9:16 portrait of an authentic Omani man merchant in his elegant modern shop, dramatic warm rim lighting, ${grade}. Frame him from the chest up with his FACE at the VERTICAL CENTRE of the frame — leave a large clean EMPTY area in the TOP THIRD for a headline and empty space at the BOTTOM; do NOT place the head or face in the top third.${rm}`,
     `Cinematic VERTICAL 9:16 close-up of a modern smartphone and a glowing POS cashier screen showing an online store and a sale, dramatic focused lighting, ${grade}, the device in the lower-centre with a large clean EMPTY area in the TOP THIRD for a headline.${rm}`,

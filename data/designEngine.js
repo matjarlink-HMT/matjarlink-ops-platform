@@ -154,6 +154,16 @@ function wrapLines(ctx, text, maxW) {
   if (cur) lines.push(cur);
   return lines;
 }
+// Sentence-aware wrap: split on Arabic/Latin sentence punctuation (. ؟ ! …) so
+// each sentence/clause STARTS ON ITS OWN LINE (stacked, not run together), then
+// word-wrap each to fit. Keeps multi-sentence copy tidy and readable on phones.
+function wrapSmart(ctx, text, maxW) {
+  const raw = (text || "").trim();
+  const parts = raw.split(/(?<=[.!؟…])\s+/).map((s) => s.trim()).filter(Boolean);
+  const out = [];
+  for (const s of (parts.length ? parts : [raw])) for (const ln of wrapLines(ctx, s, maxW)) out.push(ln);
+  return out;
+}
 
 // Cover-fit an image inside a rounded-rect window (the MJ-003/MJ-011 photo
 // style) with brand treatment: unified vibrance, a subtle plum wash, a top
@@ -510,9 +520,9 @@ export async function renderEditorial({ bg = null, kicker = "", headline = "", p
     ctx.textAlign = "center"; let y = H >= 1600 ? 300 : 280;   // below the logo, in the top zone
     if (kicker) { ctx.font = "36px TajawalB"; ctx.fillStyle = ORANGEB; ctx.fillText(kicker, W / 2, y); y += 22; }
     let size = H >= 1600 ? 82 : 92; ctx.font = size + "px TajawalXB";
-    let lines = wrapLines(ctx, headline, W - 200);
-    while (lines.length > 3 && size > 54) { size -= 6; ctx.font = size + "px TajawalXB"; lines = wrapLines(ctx, headline, W - 200); }
-    lines = lines.slice(0, 3); const lh = size * 1.2; y += size; ctx.fillStyle = HEAD;
+    let lines = wrapSmart(ctx, headline, W - 200);
+    while (lines.length > 4 && size > 50) { size -= 6; ctx.font = size + "px TajawalXB"; lines = wrapSmart(ctx, headline, W - 200); }
+    lines = lines.slice(0, 4); const lh = size * 1.25; y += size; ctx.fillStyle = HEAD;
     for (const ln of lines) { ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.45)"; ctx.shadowBlur = 16; ctx.fillText(ln, W / 2, y); ctx.restore(); y += lh; }
     if (pop) { drawPop(0, y, Math.round(size * 0.9), true); }
     if (cta) drawCta(0, H - 196, true);
@@ -522,9 +532,9 @@ export async function renderEditorial({ bg = null, kicker = "", headline = "", p
     ctx.textAlign = "right"; let y = Math.round(H * 0.42);
     if (kicker) { ctx.font = "36px TajawalB"; ctx.fillStyle = ORANGEB; ctx.fillText(kicker, RX, y); y += 22; }
     let size = 96; ctx.font = size + "px TajawalXB";
-    let lines = wrapLines(ctx, headline, maxW);
-    while (lines.length > 3 && size > 60) { size -= 6; ctx.font = size + "px TajawalXB"; lines = wrapLines(ctx, headline, maxW); }
-    lines = lines.slice(0, 3); const lh = size * 1.2; y += size; ctx.fillStyle = HEAD;
+    let lines = wrapSmart(ctx, headline, maxW);
+    while (lines.length > 4 && size > 54) { size -= 6; ctx.font = size + "px TajawalXB"; lines = wrapSmart(ctx, headline, maxW); }
+    lines = lines.slice(0, 4); const lh = size * 1.25; y += size; ctx.fillStyle = HEAD;
     for (const ln of lines) { ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.4)"; ctx.shadowBlur = 16; ctx.fillText(ln, RX, y); ctx.restore(); y += lh; }
     if (pop) { drawPop(RX, y, Math.round(size * 0.9), false); y += lh * 0.95; }
     if (cta) { y += 24; drawCta(RX, y, false); }
