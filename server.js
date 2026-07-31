@@ -899,27 +899,24 @@ app.post("/api/proposals/regenerate", async (req, res) => {
       // Regenerate in the SAME format as the proposal (reel stays a reel, etc.).
       const light = p.template === "editorial-white";
       const fmt = p.format || (p.images && p.images.length > 1 ? "كاروسيل" : /\.mp4/.test(p.previewUrl || "") ? "ريل" : "منشور");
-      const headline = p.t, cta = p.cta || "قريبًا في عُمان";
-      const hint = sceneGuidance(p.desc) + (note ? ` Owner note (visual direction only, NOT text): ${note}.` : "");
+      const cta = p.cta || "قريبًا في عُمان";
+      // A note re-writes the on-design COPY: a stronger, realistic HOOK (cover /
+      // headline) + coherent carousel slides — tied to the topic, honoring the
+      // note (e.g. "make the hook stronger" or "add a closing solution slide").
+      let headline = p.t, slides = p.points || [];
+      try {
+        const copy = await generator.strongCopy({ title: p.t, ty: p.ty, desc: p.desc, cap: p.cap, format: fmt, note });
+        if (copy) { if (copy.hook) headline = copy.hook; if (copy.slides && copy.slides.length) slides = copy.slides; }
+      } catch (e) { console.error("[strongCopy]", e.message); }
+      const hint = sceneGuidance(p.desc);
       let ed, images = [];
       if (fmt.includes("ريل")) { ed = await makeEditorialReel({ id: p.id, light, headline, pop: p.t2 || "", cta, valueLine: "متجر · كاشير · محاسبة", sceneHint: hint }); }
       else if (fmt.includes("كاروسيل")) {
-        // A note on a carousel RE-PLANS the slides (add/remove/reshape a slide —
-        // e.g. "add a closing slide showing متجرلينك as the solution"), not just
-        // a visual tweak. Ask the planner for fresh slides, keep the closing one last.
-        let points = p.points || [];
-        if (note) {
-          try {
-            const out = await generator.regeneratePost({ t: p.t, ty: p.ty, cap: p.cap, brief: p.desc }, [{ role: "user", text: note }], "ar", store.hookPrefLine());
-            const slides = (out && out.slides) || [];
-            if (slides.length) points = slides.map((s, i) => (i === slides.length - 1 ? (s.t2 || s.t) : s.t)).filter(Boolean);
-          } catch (e) { /* keep existing points on planner failure */ }
-        }
-        if (points.length > 4) points = [...points.slice(0, 3), points[points.length - 1]]; // ≤4 content slides; always keep the closing/solution slide
-        const c = await makeEditorialCarousel({ id: p.id, light, headline, cta, points, sceneHint: sceneGuidance(p.desc) }); ed = { url: c.url }; images = c.images;
+        if (slides.length > 4) slides = [...slides.slice(0, 3), slides[slides.length - 1]]; // ≤4 content slides; keep the closing/solution last
+        const c = await makeEditorialCarousel({ id: p.id, light, headline, cta, points: slides, sceneHint: hint }); ed = { url: c.url }; images = c.images;
       }
-      else { const sc = editorialScene([p.t, note].join(" "), light); ed = await makeEditorial({ light, layout: sc.layout, kicker: "متجرلينك", headline, pop: p.t2 || "", cta, prompt: sc.prompt + hint, id: p.id }); }
-      store.saveProposal({ ...p, previewUrl: ed.url, images });
+      else { const sc = editorialScene(headline, light); ed = await makeEditorial({ light, layout: sc.layout, kicker: "متجرلينك", headline, pop: p.t2 || "", cta, prompt: sc.prompt + hint, id: p.id }); }
+      store.saveProposal({ ...p, t: headline, points: slides, previewUrl: ed.url, images });
     } else if (p.kind === "character") {
       const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
       const { refs, note: cnote } = clothingRefsFor(p.prompt);
@@ -1126,12 +1123,17 @@ async function designPlanItem(plan, it) {
   const template = chosen || (idx % 2 === 0 ? "editorial-white" : "editorial-dark");
   const light = template === "editorial-white";
   const dateStr = `${plan.year}-${String(plan.month).padStart(2, "0")}-${String(it.day).padStart(2, "0")} · ${it.time || "20:00"}`;
-  const headline = it.t || "متجرلينك";
   const cta = (it.cta && it.cta.trim()) || CTA_FOR(it.ty);
   const pid = "post-" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
   const planMonth = `${plan.year}-${String(plan.month).padStart(2, "0")}`;
   const fmt = it.format || "منشور";
   const hint = sceneGuidance(it.desc);   // background follows the idea; text is coherent with the visuals
+  // A senior copywriter writes the on-design HOOK (never the bare topic title)
+  // + coherent carousel slides. Falls back to the title/points if Claude is down.
+  let copy = null;
+  try { copy = await generator.strongCopy({ title: it.t, ty: it.ty, desc: it.desc, cap: it.cap, format: fmt }); } catch (e) { console.error("[strongCopy]", e.message); }
+  const headline = (copy && copy.hook) || it.t || "متجرلينك";
+  const slides = (copy && copy.slides && copy.slides.length) ? copy.slides : (it.points || []);
   let previewUrl, images = [], qty;
   if (fmt.includes("ريل")) {
     // valueLine is the reel's short on-screen middle line — a product value prop,
@@ -1139,14 +1141,14 @@ async function designPlanItem(plan, it) {
     const ed = await makeEditorialReel({ id: pid, light, headline, pop: "", cta, valueLine: "متجر · كاشير · محاسبة", sceneHint: hint });
     previewUrl = ed.url; qty = "ريل نوعي";
   } else if (fmt.includes("كاروسيل")) {
-    const ed = await makeEditorialCarousel({ id: pid, light, headline, cta, points: it.points, sceneHint: hint });
+    const ed = await makeEditorialCarousel({ id: pid, light, headline, cta, points: slides, sceneHint: hint });
     previewUrl = ed.url; images = ed.images; qty = "كاروسيل توعوي";
   } else {
     const sc = editorialScene(headline, light);
     const ed = await makeEditorial({ light, layout: sc.layout, kicker: "متجرلينك", headline, pop: "", cta, prompt: sc.prompt + hint, id: pid });
     previewUrl = ed.url; qty = "منشور علامة";
   }
-  store.saveProposal({ id: pid, kind: "post", template, t: headline, t2: "", cta, cap: it.cap || "", ty: it.ty, format: fmt, desc: it.desc || "", points: it.points || [], qty, images, name: `${headline} · ${dateStr.split(" · ")[0]}`, date: dateStr, previewUrl, planMonth, planItemKey: it.key });
+  store.saveProposal({ id: pid, kind: "post", template, t: headline, t2: "", cta, cap: it.cap || "", ty: it.ty, format: fmt, desc: it.desc || "", points: slides, qty, images, name: `${headline} · ${dateStr.split(" · ")[0]}`, date: dateStr, previewUrl, planMonth, planItemKey: it.key });
   it.designed = true; it.proposalId = pid;
   return pid;
 }

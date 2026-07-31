@@ -143,3 +143,25 @@ export async function reviewReel(reel = {}) {
   if (!out || typeof out.score === "undefined") return null;
   return out;
 }
+
+// ── Strong copy for a design (hook + coherent slides) ─────────────────────────
+// The COVER of every design must open with a **stop-the-scroll hook** that is
+// concrete, realistic and directly tied to the topic — never the bare topic
+// title and never vague slogans. For carousels it also writes the content
+// slides so they read clearly and build toward MatjarLink as the solution.
+// Honors an owner note (e.g. "make the hook stronger"). Returns { hook, slides }
+// or null (caller falls back to the plain title + existing points).
+export async function strongCopy({ title = "", ty = "", desc = "", cap = "", format = "منشور", note = "" } = {}) {
+  if (!claudeReady()) return null;
+  const isCar = String(format).includes("كاروسيل");
+  const system = `${BRAND}
+أنت كبير كتّاب الإعلانات (Senior Copywriter) في متجرلينك. تكتب نصّ التصميم الظاهر على الصورة — لا الكابشن. القاعدة: **احترافي، واقعي، ملموس، مفهوم فوراً، ويوقف التمرير**. ممنوع: العموميات، الشعارات المبهمة، الكلام الإنشائي، المصطلحات الغامضة، أي جملة تحسّها «غير واقعية».
+الموضوع: «${title}» — النوع: ${ty}.${desc ? ` الفكرة: ${String(desc).slice(0, 300)}.` : ""}${cap ? ` الكابشن: ${String(cap).slice(0, 200)}.` : ""}${note ? `\nملاحظة المالك (طبّقها بدقّة وحرفياً — هي الأولوية): ${note}` : ""}
+اكتب:
+- **hook**: هوك الغلاف (العنوان الرئيسي) — **قوي جداً يوقف التمرير**، ملموس وواقعي ويلامس الموضوع مباشرة، ≤٧ كلمات، بلهجة عُمانية طبيعية. مثال على القوة (لموضوع الكاشير): «تبيع طول اليوم… وما تدري كم ربحت؟».
+${isCar ? "- **slides**: ٣-٤ شرائح محتوى، كل شريحة **جملة واحدة قصيرة واضحة واقعية مفهومة** تبني على الهوك خطوة بخطوة، والشريحة الأخيرة تُظهر «متجرلينك» كحلٍّ ملموس للمشكلة. لا شعارات مبهمة ولا حشو." : "- **slides**: اتركها [] (هذا ليس كاروسيل)."}
+أعد **JSON فقط** بلا أي نص خارج الأقواس: {"hook":"<الهوك>","slides":[${isCar ? '"<شريحة>","<شريحة>","<شريحة>"' : ""}]}`;
+  const out = parseJSON(await chat([{ role: "user", text: "اكتب النص الآن. JSON فقط." }], system, { maxTokens: 1200 }));
+  if (!out || !out.hook) return null;
+  return { hook: String(out.hook).trim(), slides: Array.isArray(out.slides) ? out.slides.map((s) => String(s || "").trim()).filter(Boolean).slice(0, 4) : [] };
+}
