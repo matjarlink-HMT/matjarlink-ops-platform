@@ -1022,6 +1022,7 @@ async function renderWardrobe(host) {
         <input class="pinput" id="cllabel" placeholder="${T("cloth_label")}" style="max-width:14rem" autocomplete="off">
         <input type="file" id="clfile" accept="image/*" style="max-width:16rem">
         <button class="btn sm" id="clup">⬆ ${T("cloth_upload")}</button>
+        <button class="btn sm" id="clgen" title="توليد قطعة ملابس جديدة بالذكاء الاصطناعي حسب النوع المحدد">🎨 ولّد قطعة</button>
         <span class="ok-s" id="clmsg"></span></div>
       <div class="mut" style="margin-top:.5rem;font-size:.8rem">🔒 ${T("cloth_face_note")}</div></div>
     <div class="grid g3 tplgrid" id="clgrid">${clothCards(cloth.clothing || [])}</div>`;
@@ -1046,6 +1047,13 @@ function bindClothing(host) {
       const r = await fetch("/api/clothing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: host.querySelector("#cltype").value, label: host.querySelector("#cllabel").value.trim(), dataUrl }) }).then(x => x.json());
       if (r.ok) renderWardrobe(host); else { msg.textContent = "✗ " + (r.error || ""); up.disabled = false; up.textContent = "⬆ " + T("cloth_upload"); }
     } catch (e) { msg.textContent = "✗"; up.disabled = false; up.textContent = "⬆ " + T("cloth_upload"); }
+  };
+  const gen = host.querySelector("#clgen");
+  if (gen) gen.onclick = async () => {
+    const msg = host.querySelector("#clmsg");
+    gen.disabled = true; gen.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`; if (msg) msg.textContent = "🎨 توليد قطعة…";
+    const r = await fetch("/api/clothing/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: host.querySelector("#cltype").value, label: host.querySelector("#cllabel").value.trim() }) }).then(x => x.json()).catch(() => null);
+    if (r && r.ok) renderWardrobe(host); else { gen.disabled = false; gen.innerHTML = "🎨 ولّد قطعة"; if (msg) msg.textContent = "✗ " + friendlyErr((r && r.error) || ""); }
   };
   host.querySelectorAll(".cldel").forEach(b => b.onclick = async () => { await fetch("/api/clothing/" + b.dataset.clid, { method: "DELETE" }); renderWardrobe(host); });
 }

@@ -628,6 +628,31 @@ app.post("/api/clothing", (req, res) => {
   const item = store.addClothing({ id, type: CLOTHING_TYPES.includes(type) ? type : "", label, file });
   res.json({ ok: true, item: { id: item.id, type: item.type, label: item.label, thumb: `/media/clothing/${item.id}` } });
 });
+// Generate a NEW garment (product shot, no person/face) into the wardrobe so the
+// owner has fresh, varied clothing to dress designs with — without hunting for a
+// photo to upload. Each garment is an on-brand Omani/neutral piece.
+const GARMENT_PROMPTS = {
+  dishdasha: "A single pristine white Omani men's dishdasha (thobe) with the traditional furakha tassel at the collar, neatly displayed flat, professional catalog product photography, sharp realistic fabric detail and texture, plain soft neutral studio background. NO person, NO face, NO mannequin, no text, no logo.",
+  kummah: "A single finely embroidered Omani men's kummah cap (traditional Omani embroidered cap — NOT a Gulf ghutra/egal), professional catalog product photography, sharp realistic embroidery detail, plain soft neutral studio background. NO person, NO face, no text.",
+  massar: "A single Omani massar (finely wrapped Kashmiri-paisley wool turban — NOT a Gulf ghutra/egal), presented neatly, professional catalog product photography, realistic fabric detail, plain soft neutral studio background. NO person, NO face, no text.",
+  furakha: "A white Omani dishdasha collar showing the furakha tassel detail clearly, professional catalog product photography, realistic thread and fabric detail, plain soft neutral studio background. NO person, NO face, no text.",
+  abaya: "A single elegant plain BLACK women's abaya (solid black, no colourful patterns), elegantly displayed, professional fashion catalog product photography, sharp realistic fabric detail, plain soft neutral studio background. NO person, NO face, NO mannequin head, no text.",
+  hijab: "A single plain BLACK women's hijab head-scarf (solid black, no patterns), neatly displayed folded, professional catalog product photography, realistic fabric detail, plain soft neutral studio background. NO person, NO face, no text.",
+};
+app.post("/api/clothing/generate", async (req, res) => {
+  if (!gemini.geminiReady()) return res.status(400).json({ ok: false, error: "يحتاج ربط Gemini أولاً" });
+  const { type, label } = req.body || {};
+  const ty = CLOTHING_TYPES.includes(type) ? type : "dishdasha";
+  try {
+    const { buffer } = await gemini.generateImage(GARMENT_PROMPTS[ty] || GARMENT_PROMPTS.dishdasha);
+    const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
+    const id = "cl-" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+    const file = `_cloth-${id}.png`;
+    const fd = fs.openSync(path.join(dir, file), "w"); try { fs.writeSync(fd, buffer); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    const item = store.addClothing({ id, type: ty, label: (label && label.trim()) || "", file, gen: true });
+    res.json({ ok: true, item: { id: item.id, type: item.type, label: item.label, thumb: `/media/clothing/${item.id}?v=${Date.now()}` } });
+  } catch (e) { console.error("[clothing/gen]", e.message); res.status(500).json({ ok: false, error: e.message }); }
+});
 app.delete("/api/clothing/:id", (req, res) => {
   const c = store.getClothing().find((x) => x.id === req.params.id);
   if (c) { try { fs.unlinkSync(path.join(designsDir(), c.file)); } catch (e) {} store.removeClothing(c.id); }
