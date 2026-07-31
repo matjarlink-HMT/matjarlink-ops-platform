@@ -103,11 +103,12 @@ export async function expandIdea(text = "") {
 }
 
 // Generate next month's plan: goal + pillars + 12 dated concepts (no full captions yet).
-export async function generatePlan(monthLabel = "", year = 2026, month = 1, lang = "ar", perf = "") {
+export async function generatePlan(monthLabel = "", year = 2026, month = 1, lang = "ar", perf = "", avoid = []) {
   if (!claudeReady()) return null;
+  const avoidLine = (avoid && avoid.length) ? `\n**ممنوع تكرار أفكار سبق نشرها أو جدولتها** — قدّم أفكاراً جديدة مختلفة تماماً (زاوية وعنوان مختلفَين، لا تعيد صياغة نفس الفكرة). تجنّب هذه العناوين المستخدمة سابقاً: ${avoid.slice(0, 40).map((t) => `«${t}»`).join("، ")}.` : "";
   const system = `${BRAND}
 
-أنت وكيل التخطيط في متجرلينك (منصة عُمانية للتجار — متجر إلكتروني + كاشير + محاسبة في مكان واحد، قبل الإطلاق). ضع خطة محتوى إنستغرام محكمة لشهر «${monthLabel}» — ١٤ عنصراً موزّعة كل ~يومين بفترات مسائية.${perf ? `\n${perf}` : ""}
+أنت وكيل التخطيط في متجرلينك (منصة عُمانية للتجار — متجر إلكتروني + كاشير + محاسبة في مكان واحد، قبل الإطلاق). ضع خطة محتوى إنستغرام محكمة لشهر «${monthLabel}» — ١٤ عنصراً موزّعة كل ~يومين بفترات مسائية.${perf ? `\n${perf}` : ""}${avoidLine}
 هذه خطة إطلاق — **قصة متصاعدة على مرحلتين، مترابطة وواقعية**:
 **المرحلة الأولى (أول ~٦٠٪ من الشهر) — الوعي والتعليم:**
 - العنصر ١: **ريل تشويقي قوي (teaser)** — «شي كبير جاي لتجار عُمان… قريبًا».
@@ -164,4 +165,20 @@ ${isCar ? "- **slides**: ٣-٤ شرائح محتوى، كل شريحة **جمل�
   const out = parseJSON(await chat([{ role: "user", text: "اكتب النص الآن. JSON فقط." }], system, { maxTokens: 1200 }));
   if (!out || !out.hook) return null;
   return { hook: String(out.hook).trim(), slides: Array.isArray(out.slides) ? out.slides.map((s) => String(s || "").trim()).filter(Boolean).slice(0, 4) : [] };
+}
+
+// ── Regenerate ONE plan idea (reject + fresh idea for that single slot) ────────
+// Produces a brand-new concept for the same slot, avoiding already-used ideas
+// (published/scheduled + the rest of the plan) so it never duplicates. Keeps the
+// slot's type/format unless the owner note asks otherwise. Returns null on fail.
+export async function regeneratePlanIdea({ monthLabel = "", ty = "", format = "", avoid = [], note = "" } = {}) {
+  if (!claudeReady()) return null;
+  const system = `${BRAND}
+أنت وكيل التخطيط في متجرلينك. استبدل فكرة منشور واحدة في خطة «${monthLabel}» بفكرة **جديدة قوية مختلفة تماماً**${ty ? ` من نوع «${ty}»` : ""}${format ? ` وصيغة «${format}»` : ""}.${note ? ` ملاحظة المالك (طبّقها بدقّة، لها الأولوية): ${note}.` : ""}
+${(avoid && avoid.length) ? `**ممنوع تكرار أو مشابهة** هذه الأفكار المستخدمة سابقاً (منشورة/مجدولة/في الخطة): ${avoid.slice(0, 40).map((t) => `«${t}»`).join("، ")}.` : ""}
+الفكرة تحمل **هوكاً قوياً (Stop-the-Scroll)**، واقعية واحترافية بلهجة عُمانية، وتناسب مرحلة ما قبل الإطلاق.
+أعد **JSON فقط**: {"t":"<عنوان قصير صادم>","ty":"<تشويق|توعية|معلومة|إحصائيات>","format":"<ريل|كاروسيل|منشور>","hook":"<هوك قصير>","desc":"<وصف فكرة البوست البصرية — جملتان>","cta":"<عبارة حث ≤4 كلمات>","points":[<للكاروسيل ٣-٤ عناوين شرائح؛ وإلا []>],"cap":"<كابشن باللهجة العُمانية>"}`;
+  const out = parseJSON(await chat([{ role: "user", text: "اقترح الفكرة البديلة الآن. JSON فقط." }], system, { maxTokens: 1500 }));
+  if (!out || !out.t) return null;
+  return out;
 }

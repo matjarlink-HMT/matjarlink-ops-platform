@@ -499,7 +499,7 @@ async function renderPlan(C) {
       <td><select class="psel pfmt" ${dis}>${PLAN_FORMATS.map(f => `<option value="${f[0]}" ${f[0] === (it.format || "منشور") ? "selected" : ""}>${f[1]}</option>`).join("")}</select></td>
       <td><select class="psel ptpl" ${dis}>${PLAN_TPLS().map(t => `<option value="${t[0]}" ${t[0] === (it.template || "") ? "selected" : ""}>${t[1]}</option>`).join("")}</select></td>
       <td class="pstat">${it.status === "applied" ? `<span class="pill p-ok">✓ ${T("s_approved")}</span>` : it.designed ? `<span class="pill p-ok">🎨 ${T("plan_designed")}</span>` : `<span class="pill p-idle">${T("plan_draft")}</span>`}</td>
-      <td class="planrowacts" style="white-space:nowrap">${hookBtn}<button class="btn ghost sm capbtn" data-key="${escapeHtml(it.key)}" title="${T("plan_caption")}">📝</button>${it.designed ? `<button class="btn ghost sm designone" data-key="${escapeHtml(it.key)}" title="${T("plan_redesign")}">↻</button>` : `<button class="btn sm designone" data-key="${escapeHtml(it.key)}">🎨 ${T("plan_design")}</button>`}</td>
+      <td class="planrowacts" style="white-space:nowrap">${hookBtn}<button class="btn ghost sm capbtn" data-key="${escapeHtml(it.key)}" title="${T("plan_caption")}">📝</button>${it.status === "applied" ? "" : `<button class="btn ghost sm pregen" data-key="${escapeHtml(it.key)}" title="فكرة بديلة (رفض + إعادة توليد لهذه الفكرة فقط)">🔄</button>`}${it.designed ? `<button class="btn ghost sm designone" data-key="${escapeHtml(it.key)}" title="${T("plan_redesign")}">↻</button>` : `<button class="btn sm designone" data-key="${escapeHtml(it.key)}">🎨 ${T("plan_design")}</button>`}</td>
     </tr>
     <tr class="caprow" data-caprow="${escapeHtml(it.key)}" style="display:none"><td colspan="7"><div style="padding:.3rem 0 .6rem">
       <label class="mut" style="display:block;margin-bottom:.2rem">📝 ${T("plan_caption")} — ${T("plan_caption_note")}</label><textarea class="pinput pcapedit" data-key="${escapeHtml(it.key)}" rows="3" style="width:100%;resize:vertical" placeholder="${T("plan_caption_ph")}" ${dis}>${escapeHtml(it.cap || "")}</textarea></div></td></tr>`;
@@ -558,6 +558,18 @@ async function renderPlan(C) {
     return r.ok;
   };
   $("#plansave").onclick = save;
+  // 🔄 reject + regenerate ONE idea → replaces just this slot with a fresh idea
+  // (avoids published/scheduled ideas + siblings, so no duplicates).
+  C.querySelectorAll(".pregen").forEach(b => b.onclick = async () => {
+    if (!confirm("استبدال هذه الفكرة بفكرة جديدة؟ (الفكرة الحالية تُرفض وتُستبدل)")) return;
+    const key = b.dataset.key, label = b.innerHTML, msg = $("#planmsg");
+    b.disabled = true; b.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
+    if (msg) msg.textContent = "🔄 توليد فكرة بديلة…";
+    await save(); // persist any edits first
+    const r = await fetch("/api/plan/regenerate-item", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ month: active.key, key }) }).then(x => x.json()).catch(() => null);
+    if (r && r.ok) { try { S = await fetch("/api/state").then(x => x.json()); } catch (e) {} renderPlan(C); const m2 = $("#planmsg"); if (m2) m2.textContent = `✓ فكرة جديدة: «${r.item.t}»`; }
+    else { b.disabled = false; b.innerHTML = label; if (msg) msg.innerHTML = "⚠ " + friendlyErr((r && r.error) || ""); }
+  });
   // 🎨 design ONE plan item on demand → saves the plan first (so the edited
   // title/caption are used), then generates the design into «الاعتماد».
   C.querySelectorAll(".designone").forEach(b => b.onclick = async () => {

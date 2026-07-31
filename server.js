@@ -260,6 +260,14 @@ function currentMonthSchedule(req) {
 app.get("/api/plan", (req, res) => res.json({ ok: true, plans: store.getPlans(), current: currentMonthSchedule(req) }));
 
 // Generate a fresh draft plan for the next month (or a given year/month).
+// Titles already used (published or scheduled in the queue, plus every other
+// month's plan) so the planner never re-proposes an idea that's already out.
+function collectUsedTitles(excludeMonth) {
+  const titles = new Set();
+  try { for (const q of (baseState().queue || [])) if (q.t) titles.add(String(q.t).trim()); } catch (e) {}
+  try { for (const [mk, pl] of Object.entries(store.getPlans() || {})) { if (mk === excludeMonth) continue; for (const it of (pl.items || [])) if (it.t) titles.add(String(it.t).trim()); } } catch (e) {}
+  return [...titles].filter(Boolean);
+}
 app.post("/api/plan/generate", async (req, res) => {
   if (!generator.claudeReady()) return res.status(400).json({ ok: false, error: "add ANTHROPIC_API_KEY to enable generation" });
   const now = new Date();
@@ -270,7 +278,8 @@ app.post("/api/plan/generate", async (req, res) => {
   let perf = "";
   try { const pub = await enrichPublished(await cached("published", 120, () => meta.getPublished())); perf = live.perfSummary(pub || []); } catch (e) {}
   let out;
-  try { out = await generator.generatePlan(label, year, month, "ar", perf); }
+  const avoid = collectUsedTitles(`${year}-${String(month).padStart(2, "0")}`); // don't repeat published/scheduled ideas
+  try { out = await generator.generatePlan(label, year, month, "ar", perf, avoid); }
   catch (e) { console.error("[plan]", e.message); return res.status(500).json({ ok: false, error: e.message }); }
   if (!out) return res.status(502).json({ ok: false, error: "plan generation failed" });
   // Re-sequence dates so they always start from the UPCOMING days (never the
@@ -1168,6 +1177,33 @@ app.post("/api/plan/design-item", async (req, res) => {
   try { const pid = await designPlanItem(plan, it); store.setPlan(plan); res.json({ ok: true, proposalId: pid }); }
   catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   finally { designBusy = false; }
+});
+// Reject + regenerate ONE plan idea (owner clicks 🔄 on the row) — replaces just
+// that slot with a fresh idea, avoiding published/scheduled ideas and its plan
+// siblings so it never duplicates. Keeps the slot's key/day/time; resets design.
+app.post("/api/plan/regenerate-item", async (req, res) => {
+  if (!generator.claudeReady()) return res.status(400).json({ ok: false, error: "add ANTHROPIC_API_KEY to enable generation" });
+  const { month, key, note } = req.body || {};
+  const plans = store.getPlans();
+  const plan = (month && plans[month]) || Object.values(plans).find((p) => (p.items || []).some((i) => i.key === key));
+  const it = plan && (plan.items || []).find((i) => i.key === key);
+  if (!it) return res.status(404).json({ ok: false, error: "عنصر غير موجود" });
+  if (it.status === "applied") return res.status(400).json({ ok: false, error: "لا يمكن استبدال فكرة معتمدة/منشورة" });
+  const mk = `${plan.year}-${String(plan.month).padStart(2, "0")}`;
+  const siblings = (plan.items || []).filter((i) => i.key !== key && i.t).map((i) => i.t.trim());
+  const avoid = [...new Set([...collectUsedTitles(mk), ...siblings, it.t].filter(Boolean))];
+  let c;
+  try { c = await generator.regeneratePlanIdea({ monthLabel: plan.label || mk, ty: it.ty, format: it.format, avoid, note: (note || "").trim() }); }
+  catch (e) { console.error("[regen-item]", e.message); return res.status(500).json({ ok: false, error: e.message }); }
+  if (!c) return res.status(502).json({ ok: false, error: "تعذّر توليد فكرة بديلة" });
+  const normFmt = (f) => { const s = String(f || ""); return s.includes("ريل") ? "ريل" : s.includes("كاروسيل") ? "كاروسيل" : s.includes("منشور") || s.includes("بوست") ? "منشور" : it.format; };
+  // Replace the idea in place; keep scheduling (key/day/time); reset design state.
+  it.t = String(c.t || it.t); it.ty = String(c.ty || it.ty); it.pillar = it.ty;
+  it.format = normFmt(c.format); it.hook = String(c.hook || ""); it.desc = String(c.desc || "");
+  it.cta = String(c.cta || ""); it.points = Array.isArray(c.points) ? c.points.map(String).slice(0, 5) : [];
+  it.cap = String(c.cap || ""); it.designed = false; it.status = "draft"; delete it.proposalId;
+  store.setPlan(plan);
+  res.json({ ok: true, item: it });
 });
 // Approve the whole plan → design ALL not-yet-designed FUTURE items at once,
 // each → «الاعتماد» carrying its plan date+time for individual approval.
