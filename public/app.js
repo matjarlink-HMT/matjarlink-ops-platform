@@ -755,7 +755,7 @@ function dzStyle() {
 // Approve → routes to its home (design→publish queue, template→التصميم, character→
 // الشخصيات). Edit → note + regenerate. Reject → discard.
 const APPR_ICON = { post: "🖼", template: "🌙", character: "🧑🏻" };
-let apprSort = "new"; // new = newest generated first · old = oldest first · date = by publish date
+let apprSort = "date"; // default: order by PUBLISH DATE (unified across lists) · new/old = by generation time
 const APPR_SORTERS = {
   new: (a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""),
   old: (a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""),
@@ -1307,7 +1307,8 @@ function renderPipeline(C) {
   const types = [["all", T("f_all")], ["post", T("t_post")], ["reel", T("t_reel")], ["carousel", T("t_carousel")], ["poll", T("t_poll")]];
   const stats = [["all", T("f_all")], ["pending", T("s_pending")], ["approved", T("s_approved")], ["published", T("s_published")], ["generated", T("s_generated")]];
   const chip = (active, val, label, key) => `<button class="fchip ${active ? "on" : ""}" data-f="${key}" data-v="${val}">${label}</button>`;
-  const filtered = q.filter(x => (pf.plat === "all" || x.ch === pf.plat) && (pf.type === "all" || postType(x) === pf.type) && (pf.status === "all" || postStatus(x) === pf.status));
+  const filtered = q.filter(x => (pf.plat === "all" || x.ch === pf.plat) && (pf.type === "all" || postType(x) === pf.type) && (pf.status === "all" || postStatus(x) === pf.status))
+    .sort((a, b) => String(a.date || "~").localeCompare(String(b.date || "~"))); // unified: order by PUBLISH DATE (earliest first)
   const bar = `<div class="filterbar">
     <div class="frow"><span class="flabel">${T("f_platform")}</span>${chip(pf.plat === "all", "all", T("f_all"), "plat")}${plats.map(p => chip(pf.plat === p, p, `${chan(p)} ${p}`, "plat")).join("")}</div>
     <div class="frow"><span class="flabel">${T("f_type")}</span>${types.map(([v, l]) => chip(pf.type === v, v, l, "type")).join("")}</div>
