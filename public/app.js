@@ -56,6 +56,15 @@ const nf = (n) => (n == null ? "—" : Number(n).toLocaleString("en-US"));
 // classify a queue item for filtering / status display
 function postType(q) { const t = q.ty || ""; if (t.includes("ريل")) return "reel"; if (t.includes("كاروسيل")) return "carousel"; if (t.includes("استطلاع") || t.includes("تفاعلي")) return "poll"; if (t.includes("ستوري")) return "story"; return "post"; }
 function postStatus(q) { const nt = (S.notes && S.notes[q.id]) || {}; if (S.publishedLog && S.publishedLog[q.id]) return "published"; if (nt.status === "معتمد") return "approved"; if (q.gen) return "generated"; return "pending"; }
+// Sort key (ms): published posts use their ACTUAL publish time (log `at`), so
+// publishing before the scheduled date moves the post to its real slot; others
+// use the scheduled date. Unparseable dates sink to the end.
+function publishSortKey(q) {
+  const p = (S.publishedLog || {})[q.id];
+  if (p && p.at) { const t = Date.parse(p.at); if (!isNaN(t)) return t; }
+  const t = Date.parse(String(q.date || "").replace(" · ", "T"));
+  return isNaN(t) ? Number.MAX_SAFE_INTEGER : t;
+}
 
 // ── boot ──────────────────────────────────────────────────────────
 async function boot() {
@@ -1307,8 +1316,10 @@ function renderPipeline(C) {
   const types = [["all", T("f_all")], ["post", T("t_post")], ["reel", T("t_reel")], ["carousel", T("t_carousel")], ["poll", T("t_poll")]];
   const stats = [["all", T("f_all")], ["pending", T("s_pending")], ["approved", T("s_approved")], ["published", T("s_published")], ["generated", T("s_generated")]];
   const chip = (active, val, label, key) => `<button class="fchip ${active ? "on" : ""}" data-f="${key}" data-v="${val}">${label}</button>`;
+  // Order by publish time — a post PUBLISHED early sorts by its ACTUAL publish
+  // time (from the log), everything else by its scheduled date. Earliest first.
   const filtered = q.filter(x => (pf.plat === "all" || x.ch === pf.plat) && (pf.type === "all" || postType(x) === pf.type) && (pf.status === "all" || postStatus(x) === pf.status))
-    .sort((a, b) => String(a.date || "~").localeCompare(String(b.date || "~"))); // unified: order by PUBLISH DATE (earliest first)
+    .sort((a, b) => publishSortKey(a) - publishSortKey(b));
   const bar = `<div class="filterbar">
     <div class="frow"><span class="flabel">${T("f_platform")}</span>${chip(pf.plat === "all", "all", T("f_all"), "plat")}${plats.map(p => chip(pf.plat === p, p, `${chan(p)} ${p}`, "plat")).join("")}</div>
     <div class="frow"><span class="flabel">${T("f_type")}</span>${types.map(([v, l]) => chip(pf.type === v, v, l, "type")).join("")}</div>
@@ -1350,9 +1361,12 @@ function carouselCard(q, i) {
   else if (q.drive && !isReel) inner = `<img class="cmedia" loading="lazy" src="/media/drive/${q.drive}" alt="" onerror="this.remove()">`;
   else if (q.drive && isReel) inner = `<span class="cplay">▶</span>`;
   else inner = `<span class="cph">✎</span>`;
+  const pub = S.publishedLog && S.publishedLog[q.id];
+  const pubBadge = pub ? `<span style="position:absolute;top:.4rem;left:.4rem;background:#0E8C6A;color:#fff;font-size:.68rem;font-weight:800;padding:.14rem .45rem;border-radius:.4rem;z-index:3;box-shadow:0 1px 4px rgba(0,0,0,.3)">✅ تم النشر</span>` : "";
+  const meta = pub ? `✅ نُشر · ${(pub.at || "").slice(0, 10)}` : `${q.date}`;
   return `<div class="ccard ${i === pf.focus ? "focus" : ""}" data-idx="${i}" style="background:${grad}">
-    ${inner}<span class="ctag">${q.id}${q.gen ? " ✨" : ""}</span>${slides.length > 1 ? `<span class="cslides">▦ ${slides.length}</span>` : ""}
-    <div class="cclabel"><div class="cct">${escapeHtml(q.t.slice(0, 34))}</div><div class="ccm">${chan(q.ch)} ${q.ty} · ${q.date}</div></div></div>`;
+    ${inner}${pubBadge}<span class="ctag">${q.id}${q.gen ? " ✨" : ""}</span>${slides.length > 1 ? `<span class="cslides">▦ ${slides.length}</span>` : ""}
+    <div class="cclabel"><div class="cct">${escapeHtml(q.t.slice(0, 34))}</div><div class="ccm">${chan(q.ch)} ${q.ty} · ${meta}</div></div></div>`;
 }
 const carouselDetail = (q) => q ? pdetailMain(q) : "";
 function pdetailMain(q) {
@@ -1401,7 +1415,9 @@ function pipeCalendar(list) {
   const first = new Date(y, m - 1, 1).getDay();
   const days = new Date(y, m, 0).getDate();
   const ev = {};
-  list.forEach(q => { if ((q.date || "").startsWith(pf.cal)) { const d = +q.date.slice(8, 10); (ev[d] = ev[d] || []).push(q); } });
+  // place a post on its ACTUAL publish day if published early, else scheduled day
+  const effDate = (q) => { const p = (S.publishedLog || {})[q.id]; return (p && p.at) ? p.at.slice(0, 10) : String(q.date || "").slice(0, 10); };
+  list.forEach(q => { const ed = effDate(q); if (ed.startsWith(pf.cal)) { const d = +ed.slice(8, 10); (ev[d] = ev[d] || []).push(q); } });
   const wd = lang === "en" ? ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"] : ["أحد", "إثن", "ثلا", "أرب", "خمي", "جمع", "سبت"];
   const monthName = new Intl.DateTimeFormat(lang === "en" ? "en-US" : lang === "fa" ? "fa-IR" : "ar", { month: "long", year: "numeric" }).format(new Date(y, m - 1, 1));
   let cells = "";
