@@ -999,6 +999,16 @@ async function renderCharacters(host, activeTpl) {
   host.innerHTML = `
     <h3 style="margin:.2rem 0 .5rem">🧑🏻 ${T("char_title")}</h3>
     <div class="note-info">${T("char_faces_hint")}</div>
+    <div class="pcard nofloat" style="margin:.6rem 0">
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+        <select class="psel" id="chgkind" style="max-width:16rem">
+          <option value="omani-woman">🧕 امرأة عُمانية</option>
+          <option value="arab-man">🧔🏻 شخص عربي (مصري)</option>
+          <option value="omani-man">👳🏻 رجل عُماني</option>
+        </select>
+        <button class="btn sm" id="chgen" title="توليد وجه شخصية واقعية جديدة وإضافتها للقائمة">🎨 ولّد شخصية</button>
+        <span class="ok-s" id="chgmsg"></span></div>
+      <div class="mut" style="margin-top:.4rem;font-size:.8rem">تُضاف للقائمة وتُستخدم تلقائياً في التصاميم حسب موضوع كل تصميم (رجل/امرأة/عربي).</div></div>
     ${dzBulkBar()}
     <div class="grid g3 tplgrid">${cards}
       <div class="tplcard ${noneOn ? "on" : ""}">
@@ -1014,6 +1024,13 @@ async function renderCharacters(host, activeTpl) {
     if (r && r.ok) { renderCharacters(host, activeTpl); const m = $("#charmsg"); if (m) m.textContent = "✓ " + T("char_saved"); }
     else { b.disabled = false; b.textContent = T("char_use"); }
   });
+  const chg = $("#chgen");
+  if (chg) chg.onclick = async () => {
+    const msg = $("#chgmsg");
+    chg.disabled = true; chg.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`; if (msg) msg.textContent = "🎨 توليد شخصية…";
+    const r = await fetch("/api/characters/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: ($("#chgkind") || {}).value }) }).then(x => x.json()).catch(() => null);
+    if (r && r.ok) renderCharacters(host, activeTpl); else { chg.disabled = false; chg.innerHTML = "🎨 ولّد شخصية"; if (msg) msg.textContent = "✗ " + friendlyErr((r && r.error) || ""); }
+  };
   bindBulkDelete(host, () => renderCharacters(host, activeTpl));
 }
 // «خزانة الملابس» — its OWN tab now, separate from the characters. Only the GARMENT

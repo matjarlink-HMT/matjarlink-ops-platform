@@ -603,6 +603,28 @@ app.post("/api/characters/set", (req, res) => {
   store.cfgSet({ BRAND_CHARACTER: id }); // "" clears → spotlight falls back to stock photo
   res.json({ ok: true, active: id });
 });
+// Generate a NEW brand character (realistic face portrait) and add it to the
+// roster — so designs vary between an Omani man, an Omani woman, and an Arab
+// person instead of repeating one face. Realistic, non-artificial features.
+const CHARACTER_PROMPTS = {
+  "omani-woman": { label: "تاجرة عُمانية", dress: "سيدة عُمانية بعباية وحجاب أسود (تاجرة/بائعة)", prompt: "Photorealistic vertical portrait of an authentic Omani WOMAN shop owner in a modern boutique, wearing a plain elegant black abaya and a black hijab head covering (solid black, no patterns, face fully visible, NOT niqab). Warm natural editorial light, real skin texture with pores and natural human features — shot on a real camera, NOT AI, NOT plastic or airbrushed. Chest-up, clean empty space top and bottom. Muscat, Oman. No text, no logo." },
+  "arab-man": { label: "موظف عربي (مصري)", dress: "شاب عربي (مصري) بقميص كاجوال أنيق (ليس زياً خليجياً)", prompt: "Photorealistic vertical portrait of a friendly young ARAB (Egyptian) man employee in a modern office, wearing a smart casual buttoned shirt (NOT Gulf dishdasha/ghutra). Warm editorial light, real skin texture with pores and natural human features — shot on a real camera, NOT AI, NOT plastic or airbrushed. Chest-up, clean empty space top and bottom. No text, no logo." },
+  "omani-man": { label: "تاجر عُماني", dress: "تاجر عُماني بالكمة/المصر ودشداشة بيضاء", prompt: "Photorealistic vertical portrait of an authentic Omani MAN merchant in a modern shop, wearing a white Omani dishdasha and an embroidered Omani kummah cap (NOT a Gulf ghutra/egal). Warm editorial light, real skin texture with pores and natural human features — shot on a real camera, NOT AI, NOT plastic or airbrushed. Chest-up, clean empty space top and bottom. Muscat, Oman. No text, no logo." },
+};
+app.post("/api/characters/generate", async (req, res) => {
+  if (!gemini.geminiReady()) return res.status(400).json({ ok: false, error: "يحتاج ربط Gemini أولاً" });
+  const { kind, label } = req.body || {};
+  const spec = CHARACTER_PROMPTS[kind] || CHARACTER_PROMPTS["omani-woman"];
+  try {
+    const { buffer } = await gemini.generateImage(spec.prompt);
+    const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
+    const id = "char-" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+    const file = `_char-${id}.png`;
+    const fd = fs.openSync(path.join(dir, file), "w"); try { fs.writeSync(fd, buffer); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    const item = store.addCustomCharacter({ id, label: (label && label.trim()) || spec.label, dress: spec.dress, file, gen: true });
+    res.json({ ok: true, item: { id, label: (label && label.trim()) || spec.label, thumb: `/media/character/${id}?v=${Date.now()}` } });
+  } catch (e) { console.error("[char/gen]", e.message); res.status(500).json({ ok: false, error: e.message }); }
+});
 // Public thumbnail of a character asset (auth-exempt like other /media routes).
 app.get("/media/character/:id", (req, res) => {
   const p = charPathAny(req.params.id);
@@ -706,12 +728,17 @@ function clothingRefsFor(text) {
 // gender and use its portrait so the generated person looks like a chosen character.
 function characterFaceRef(text) {
   const t = String(text || "");
-  if (isEgyptianText(t) || !isPersonText(t)) return { refs: [], note: "" };
-  const { woman } = personaFor(t);
+  if (!isPersonText(t)) return { refs: [], note: "" };
+  const { woman, egyptian } = personaFor(t);
   const chars = allCharacters();
   const isWomanChar = (c) => /امرأة|سيدة|تاجرة|woman|عباية|abaya|حجاب|hijab/i.test(`${c.label} ${c.dress || ""}`);
-  const matched = chars.filter((c) => woman ? isWomanChar(c) : !isWomanChar(c) && !/مصري|egyptian/i.test(`${c.label} ${c.dress || ""}`));
-  const pool = matched.length ? matched : chars;
+  const isArabChar = (c) => /مصري|عربي|arab|egyptian/i.test(`${c.label} ${c.dress || ""}`);
+  // Match the face pool to the chosen persona (Arab / woman / Omani man). No
+  // matching face → return empty so the person is generated fresh from the prompt.
+  const pool = egyptian ? chars.filter(isArabChar)
+    : woman ? chars.filter((c) => isWomanChar(c) && !isArabChar(c))
+      : chars.filter((c) => !isWomanChar(c) && !isArabChar(c));
+  if (!pool.length) return { refs: [], note: "" };
   // rotate the face by a stable topic hash so people VARY between designs
   const pick = pool[hashInt(t) % pool.length];
   if (!pick) return { refs: [], note: "" };
@@ -723,7 +750,7 @@ function characterFaceRef(text) {
 // Combined hero references for a design: character FACE (from the characters list)
 // + wardrobe GARMENT (from the clothing list). Empty for non-person scenes.
 function heroRefs(text) {
-  if (!isPersonText(text) || isEgyptianText(text)) return { refs: [], note: "" };
+  if (!isPersonText(text)) return { refs: [], note: "" };
   const face = characterFaceRef(text), garment = clothingRefsFor(text);
   const refs = [...(face.refs || []), ...(garment.refs || [])];
   const hasFace = (face.refs || []).length, hasGarment = (garment.refs || []).length;
@@ -1074,8 +1101,15 @@ async function makeEditorialReel({ id, light = false, headline, pop, cta, valueL
   const { renderReelFromFrames } = await import("./data/reelEngine.js");
   const grade = light ? "bright airy, clean white and warm-orange tones (brand colors #F5821F and #2D081E, NOT purple)" : "deep AUBERGINE-PLUM and warm-ORANGE cinematic color grade (brand colors #2D081E and #F5821F, NOT purple)";
   const rm = " Shot on a real camera, cinematic vertical composition — natural authentic HUMAN features, real skin texture with pores and subtle imperfections, natural asymmetry, realistic eye catchlights. NOT 3D render, NOT AI illustration, NOT a plastic/waxy/over-smoothed/airbrushed face, NOT a beauty filter. No text, no words, no logos.";
+  // Vary the opening person (man / Omani woman / Arab) by the reel topic — no
+  // longer hardcoded to the same Omani man. Identity only; clothing comes from
+  // the face/garment references (never invented).
+  const rp = personaFor(headline || "");
+  const rWho = rp.woman ? "an authentic Omani woman shop owner (modest, face fully visible, NOT niqab)"
+    : rp.egyptian ? "an Arab (Egyptian) man shop employee in a smart casual buttoned shirt and trousers (NOT Gulf dress)"
+      : "an authentic Omani man merchant";
   const scenePrompts = [
-    `Cinematic VERTICAL 9:16 portrait of an authentic Omani man merchant in his elegant modern shop, dramatic warm rim lighting, ${grade}. Frame him from the chest up with his FACE at the VERTICAL CENTRE of the frame — leave a large clean EMPTY area in the TOP THIRD for a headline and empty space at the BOTTOM; do NOT place the head or face in the top third.${rm}`,
+    `Cinematic VERTICAL 9:16 portrait of ${rWho} in an elegant modern shop, dramatic warm rim lighting, ${grade}. Frame from the chest up with the FACE at the VERTICAL CENTRE of the frame — leave a large clean EMPTY area in the TOP THIRD for a headline and empty space at the BOTTOM; do NOT place the head or face in the top third.${rm}`,
     `Cinematic VERTICAL 9:16 close-up of a modern smartphone and a glowing POS cashier screen showing an online store and a sale, dramatic focused lighting, ${grade}, the device in the lower-centre with a large clean EMPTY area in the TOP THIRD for a headline.${rm}`,
     `Cinematic VERTICAL 9:16 wide shot of a premium modern Omani shop or marketplace with warm inviting light, atmospheric depth, ${grade}, clean empty space in the CENTER for a call to action.${rm}`,
   ];
