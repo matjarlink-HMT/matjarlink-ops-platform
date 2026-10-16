@@ -1668,6 +1668,38 @@ app.get("/api/debug", (req, res) => {
     store: store.debug()
   });
 });
+// READ-ONLY storage diagnostic: disk usage + what fills the designs folder, by
+// category (render temp leftovers vs finished designs vs reel backups …) and the
+// largest files. Deletes nothing — used to decide a safe cleanup with the owner.
+const STORAGE_CATS = [
+  ["temp", (f) => /^_(sbbg|sbfr|rlbg|rlfr|cbg|edbg|hybbg)-/.test(f) || /^\.(seg|sbr|efr|live)-/.test(f) || /\.pro\.mp4$/.test(f)],
+  ["origBackup", (f) => /\.orig\.mp4$/.test(f)],
+  ["clothing", (f) => /^_cloth-/.test(f)],
+  ["characters", (f) => /^_(char|propchar)-/.test(f)],
+  ["reels", (f) => /\.mp4$/.test(f)],
+  ["designs", () => true],
+];
+app.get("/api/debug/storage", (req, res) => {
+  const vol = process.env.RAILWAY_VOLUME_MOUNT_PATH || (fs.existsSync("/data") ? "/data" : "");
+  let disk = null;
+  try { const s = fs.statfsSync(vol || "/"); disk = { totalMB: Math.round(s.blocks * s.bsize / 1048576), freeMB: Math.round(s.bavail * s.bsize / 1048576) }; disk.usedMB = disk.totalMB - disk.freeMB; disk.usedPct = disk.totalMB ? Math.round(disk.usedMB / disk.totalMB * 100) : null; } catch (e) { disk = { error: e.message }; }
+  const cats = {}; const all = [];
+  const walk = (dir, depth) => {
+    let ents = []; try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
+    for (const en of ents) {
+      const fp = path.join(dir, en.name);
+      if (en.isDirectory()) { if (depth < 3) walk(fp, depth + 1); continue; }
+      let sz = 0; try { sz = fs.statSync(fp).size; } catch (e) {}
+      const cat = (STORAGE_CATS.find(([, t]) => t(en.name)) || ["other"])[0];
+      cats[cat] = cats[cat] || { files: 0, MB: 0 }; cats[cat].files++; cats[cat].MB += sz / 1048576;
+      all.push({ f: path.relative(designsDir(), fp), MB: +(sz / 1048576).toFixed(2), cat });
+    }
+  };
+  walk(designsDir(), 0);
+  for (const k in cats) cats[k].MB = +cats[k].MB.toFixed(1);
+  let storeMB = 0; try { const sd = path.join(vol || __dirname, "store"); for (const f of fs.readdirSync(sd)) { try { storeMB += fs.statSync(path.join(sd, f)).size; } catch (e) {} } } catch (e) {}
+  res.json({ ok: true, volume: vol || null, disk, designsDir: designsDir(), totalFiles: all.length, byCategory: cats, storeMB: +(storeMB / 1048576).toFixed(2), largest: all.sort((a, b) => b.MB - a.MB).slice(0, 15) });
+});
 
 // ── Publish audit (public, read-only) ── verify each post published once ──
 app.get("/api/pubcheck", async (req, res) => {
