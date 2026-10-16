@@ -466,6 +466,27 @@ function resolveMedia(q, base) {
 
 // ── Live design engine ── render + serve on-brand post images (Volume-backed) ──
 function designsDir() { const v = process.env.RAILWAY_VOLUME_MOUNT_PATH || (fs.existsSync("/data") ? "/data" : ""); return v ? path.join(v, "designs") : path.join(__dirname, "data", "designs"); }
+// Render intermediates ONLY (Gemini backgrounds, frames, ffmpeg segments, pro-pass
+// temp). Never matches finished designs/reels, characters, wardrobe or backups.
+const TEMP_RE = /^(_(sbbg|sbfr|rlbg|rlfr|cbg|edbg|hybbg)-|\.(seg|sbr|efr|live)-)|\.pro\.mp4$/;
+// Remove ORPHANED temp files (older than maxAgeMin, so an in-progress render's
+// files are never touched). Renders killed mid-way (OOM / redeploy) skip their
+// own finally{} cleanup — this sweeps what they left behind.
+function sweepTempFiles(maxAgeMin = 30) {
+  const dir = designsDir(); let n = 0, bytes = 0, ents = [];
+  try { ents = fs.readdirSync(dir); } catch (e) { return { n: 0, MB: 0 }; }
+  const cutoff = Date.now() - maxAgeMin * 60000;
+  for (const f of ents) {
+    if (!TEMP_RE.test(f)) continue;
+    const fp = path.join(dir, f);
+    try { const st = fs.statSync(fp); if (!st.isFile() || st.mtimeMs > cutoff) continue; fs.unlinkSync(fp); n++; bytes += st.size; } catch (e) {}
+  }
+  if (n) console.log(`[sweep] removed ${n} orphaned render temp files (${(bytes / 1048576).toFixed(1)} MB)`);
+  return { n, MB: +(bytes / 1048576).toFixed(1) };
+}
+function freeDiskMB() { try { const s = fs.statfsSync(designsDir()); return Math.round(s.bavail * s.bsize / 1048576); } catch (e) { return null; } }
+setTimeout(() => sweepTempFiles(10), 8000);              // on boot: nothing is rendering yet
+setInterval(() => sweepTempFiles(30), 60 * 60 * 1000);  // hourly
 const arDigits = (n) => String(n).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[d]);
 const DESIGN_TEMPLATES = ["classic", "luxe", "spotlight"];
 // Brand-kit accent palette used to vary nightly template proposals (stays on-brand).
@@ -1101,6 +1122,11 @@ app.post("/api/video/produce", async (req, res) => {
   if (!p) return res.status(404).json({ ok: false, error: "project not found" });
   if (!p.storyboard) return res.status(400).json({ ok: false, error: "لا يوجد Storyboard" });
   if (videoBusy) return res.status(429).json({ ok: false, error: "جارٍ إنتاج ريل آخر — انتظر قليلاً" });
+  // Pre-flight: free orphaned temp files, then fail FAST (clear message) if the
+  // volume is still too full — instead of dying mid-render with ENOSPC.
+  sweepTempFiles(30);
+  const fm = freeDiskMB();
+  if (fm != null && fm < 60) return res.status(507).json({ ok: false, error: `مساحة التخزين شبه ممتلئة (${fm}MB متبقية) — الإنتاج يحتاج ~60MB. كبّر الـVolume في Railway أو نظّف ملفات قديمة.` });
   videoBusy = true;
   store.setVideoProjectStatus(p.id, "producing", { error: "" });
   res.json({ ok: true, status: "producing" }); // respond now; produce in background
@@ -1161,11 +1187,13 @@ async function makeEditorial({ light, layout, kicker, headline, pop, cta, prompt
   const { buffer } = await gemini.generateImage(prompt + note, refs);
   const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
   const bgFile = path.join(dir, `_edbg-${id}.png`);
-  const fd0 = fs.openSync(bgFile, "w"); try { fs.writeSync(fd0, buffer); fs.fsyncSync(fd0); } finally { fs.closeSync(fd0); }
-  const eng = await import("./data/designEngine.js");
-  const png = await eng.renderEditorial({ bg: bgFile, kicker: kicker || "متجرلينك", headline: headline || "", pop: pop || "", cta: cta || "", light: !!light, layout: layout === "center" ? "center" : "side", biz: store.getBrandData() });
-  const fd = fs.openSync(path.join(dir, id + ".png"), "w"); try { fs.writeSync(fd, png); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
-  return { url: `/media/design/${id}?v=${Date.now()}` };
+  try {
+    const fd0 = fs.openSync(bgFile, "w"); try { fs.writeSync(fd0, buffer); fs.fsyncSync(fd0); } finally { fs.closeSync(fd0); }
+    const eng = await import("./data/designEngine.js");
+    const png = await eng.renderEditorial({ bg: bgFile, kicker: kicker || "متجرلينك", headline: headline || "", pop: pop || "", cta: cta || "", light: !!light, layout: layout === "center" ? "center" : "side", biz: store.getBrandData() });
+    const fd = fs.openSync(path.join(dir, id + ".png"), "w"); try { fs.writeSync(fd, png); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    return { url: `/media/design/${id}?v=${Date.now()}` };
+  } finally { try { fs.unlinkSync(bgFile); } catch (e) {} } // was leaked on every design
 }
 // Editorial REEL: 3 vertical (9:16) Gemini cinematic scenes + our text, animated
 // (Ken Burns per scene, lossless concat). Returns { url } (.mp4).
