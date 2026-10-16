@@ -18,6 +18,7 @@ import { fetchDrive } from "./integrations/driveMedia.js";
 import { managerSystem, demoReply, errReply, managerNoteSystem, demoNoteReply, agentImproveSystem, fallbackImprovement } from "./data/manager.js";
 import * as live from "./data/live.js";
 import * as charMod from "./data/characters.js";
+import * as videoStudio from "./data/videoStudio.js";
 import * as gemini from "./integrations/gemini.js";
 import * as apify from "./integrations/apify.js";
 
@@ -1039,6 +1040,80 @@ app.post("/api/reel/review", async (req, res) => {
   } catch (e) { console.error("[montير]", e.message); res.status(500).json({ ok: false, error: e.message }); }
   finally { editorBusy = false; }
 });
+
+// ── Video Studio ── the Reels production pipeline (provider-agnostic). Nothing
+// here publishes; the storyboard is reviewed/edited and the owner approves the
+// final reel through the existing الاعتماد flow.
+app.get("/api/video/projects", (req, res) => {
+  const list = Object.values(store.getVideoProjects()).sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+  res.json({ ok: true, projects: list, modes: videoStudio.PRODUCTION_MODES });
+});
+app.get("/api/video/project/:id", (req, res) => {
+  const p = store.getVideoProject(req.params.id);
+  if (!p) return res.status(404).json({ ok: false, error: "project not found" });
+  res.json({ ok: true, project: p });
+});
+// Create a project from a free idea OR a content-plan item (Reel format).
+app.post("/api/video/project", (req, res) => {
+  const b = req.body || {};
+  const mode = videoStudio.MODE_KEYS.includes(b.mode) ? b.mode : "explainer";
+  const id = "vid-" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+  const p = store.saveVideoProject({
+    id, title: String(b.title || b.idea || "ريل جديد").slice(0, 60), idea: String(b.idea || ""),
+    mode, status: "draft", planMonth: b.planMonth || "", planItemKey: b.planKey || "",
+    cap: String(b.cap || ""), ty: String(b.ty || ""), template: b.template === "editorial-white" ? "editorial-white" : "editorial-dark",
+  });
+  res.json({ ok: true, project: p });
+});
+app.post("/api/video/brief", async (req, res) => {
+  const p = store.getVideoProject((req.body || {}).id);
+  if (!p) return res.status(404).json({ ok: false, error: "project not found" });
+  try {
+    const brief = await videoStudio.generateBrief({ idea: p.idea || p.title, mode: p.mode, cap: p.cap, ty: p.ty });
+    if (!brief) return res.status(502).json({ ok: false, error: "تعذّر توليد الـBrief — تحقق من ربط Claude" });
+    const up = store.saveVideoProject({ id: p.id, brief, status: "brief" });
+    res.json({ ok: true, project: up });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.post("/api/video/storyboard", async (req, res) => {
+  const b = req.body || {}; const p = store.getVideoProject(b.id);
+  if (!p) return res.status(404).json({ ok: false, error: "project not found" });
+  if (!p.brief) return res.status(400).json({ ok: false, error: "أنشئ الـBrief أولاً" });
+  try {
+    const sb = await videoStudio.generateStoryboard({ brief: p.brief, mode: p.mode, note: (b.note || "").trim() });
+    if (!sb) return res.status(502).json({ ok: false, error: "تعذّر توليد الـStoryboard — تحقق من ربط Claude" });
+    const up = store.saveVideoProject({ id: p.id, storyboard: sb, status: "storyboard" });
+    res.json({ ok: true, project: up });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// Save owner edits to the storyboard (scenes/text/timing/transitions).
+app.put("/api/video/storyboard", (req, res) => {
+  const b = req.body || {}; const p = store.getVideoProject(b.id);
+  if (!p) return res.status(404).json({ ok: false, error: "project not found" });
+  if (!b.storyboard || !Array.isArray(b.storyboard.scenes)) return res.status(400).json({ ok: false, error: "storyboard.scenes required" });
+  const up = store.saveVideoProject({ id: p.id, storyboard: b.storyboard, status: "storyboard" });
+  res.json({ ok: true, project: up });
+});
+let videoBusy = false;
+// Produce the reel from the approved storyboard (heavy → one at a time, async).
+app.post("/api/video/produce", async (req, res) => {
+  const p = store.getVideoProject((req.body || {}).id);
+  if (!p) return res.status(404).json({ ok: false, error: "project not found" });
+  if (!p.storyboard) return res.status(400).json({ ok: false, error: "لا يوجد Storyboard" });
+  if (videoBusy) return res.status(429).json({ ok: false, error: "جارٍ إنتاج ريل آخر — انتظر قليلاً" });
+  videoBusy = true;
+  store.setVideoProjectStatus(p.id, "producing", { error: "" });
+  res.json({ ok: true, status: "producing" }); // respond now; produce in background
+  (async () => {
+    try {
+      const url = await makeStoryboardReel(p);
+      const versions = [...(p.versions || []), { url, at: new Date().toISOString(), scenes: p.storyboard.scenes.length }].slice(-8);
+      store.saveVideoProject({ id: p.id, previewUrl: url, versions, status: "needsReview" });
+    } catch (e) { console.error("[video/produce]", e.message); store.setVideoProjectStatus(p.id, "failed", { error: e.message }); }
+    finally { videoBusy = false; }
+  })();
+});
+app.delete("/api/video/project/:id", (req, res) => { store.deleteVideoProject(req.params.id); res.json({ ok: true }); });
 // ── Editorial style (adopted templates 6 = dark, 7 = white) ──────────────────
 // Gemini generates a content-matched premium SCENE (person/device/card/place),
 // our engine overlays crisp Arabic text. Dynamic layout (side/center) + a hero
@@ -1133,6 +1208,43 @@ async function makeEditorialReel({ id, light = false, headline, pop, cta, valueL
     const out = path.join(dir, `${id}.mp4`);
     await renderReelFromFrames(frames, out);
     return { url: `/media/design/${id}.mp4?v=${Date.now()}` };
+  } finally { for (const f of junk) { try { fs.unlinkSync(f); } catch (e) {} } }
+}
+// ── STORYBOARD → REEL ── produce a reel from an approved storyboard: per scene a
+// Gemini scene (from its visual, no text) + our Arabic on-screen text, then the
+// storyboard montage (per-scene duration, directed camera motion, transitions,
+// brand grade, end-screen). Provider-agnostic: scenes are animated images today;
+// a real video-gen provider can replace this per-scene step later.
+async function makeStoryboardReel(project) {
+  const sb = project && project.storyboard;
+  if (!sb || !Array.isArray(sb.scenes) || !sb.scenes.length) throw new Error("لا يوجد Storyboard معتمد");
+  if (!gemini.geminiReady()) throw new Error("توليد المشاهد يحتاج ربط Gemini");
+  const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
+  const eng = await import("./data/designEngine.js");
+  const { renderStoryboardReel } = await import("./data/reelEngine.js");
+  const light = project.template === "editorial-white";
+  const id = project.id, biz = store.getBrandData();
+  const grade = light ? "bright airy clean white and warm-orange tones" : "deep cinematic warm grade";
+  const rm = " Shot on a real camera — natural authentic human features, real skin texture. NOT 3D render, NOT AI illustration, NOT plastic/airbrushed. No text, no words, no logos.";
+  const frames = [], junk = [], specs = [];
+  try {
+    for (let i = 0; i < sb.scenes.length; i++) {
+      const sc = sb.scenes[i];
+      const scenePrompt = `Cinematic VERTICAL 9:16. ${sc.visual}. ${grade} (brand accents magenta #9D1F60 + orange #F9A43C, NOT purple), leave a clean empty area in the TOP THIRD for a headline.${rm}`;
+      const { refs, note } = heroRefs(scenePrompt);
+      const { buffer } = await gemini.generateImage(scenePrompt + note, refs);
+      const bg = path.join(dir, `_sbbg-${id}-${i}.png`); junk.push(bg);
+      let fd0 = fs.openSync(bg, "w"); try { fs.writeSync(fd0, buffer); fs.fsyncSync(fd0); } finally { fs.closeSync(fd0); }
+      const png = await eng.renderEditorial({ bg, h: 1920, layout: "center", light, kicker: "", headline: sc.onScreenText || "", pop: "", cta: i === sb.scenes.length - 1 ? (sb.cta || "قريبًا") : "", biz });
+      const fr = path.join(dir, `_sbfr-${id}-${i}.png`); junk.push(fr);
+      let fd = fs.openSync(fr, "w"); try { fs.writeSync(fd, png); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+      frames.push(fr);
+      specs.push({ seconds: sc.seconds, cameraMotion: sc.cameraMotion, transition: sc.transition });
+      if (global.gc) { try { global.gc(); } catch (e) {} }
+    }
+    const out = path.join(dir, `${id}.mp4`);
+    await renderStoryboardReel(frames, specs, out, { light, grade: true });
+    return `/media/design/${id}.mp4?v=${Date.now()}`;
   } finally { for (const f of junk) { try { fs.unlinkSync(f); } catch (e) {} } }
 }
 // Editorial CAROUSEL: a cover + content slides, each its own editorial scene.

@@ -44,6 +44,20 @@ function zoomExpr(i, frames) {
   if (i % 3 === 1) return { z: `1.06-0.06*on/${d}`, x: "iw/2-(iw/zoom/2)", y: "ih/2-(ih/zoom/2)" };
   return { z: "1.05", x: "iw/2-(iw/zoom/2)", y: `(ih-ih/zoom)*on/${d}` };
 }
+// Storyboard camera motion → zoompan expression (directed per scene, not by index).
+function motionExpr(motion, frames) {
+  const d = Math.max(1, frames - 1);
+  const cx = "iw/2-(iw/zoom/2)", cy = "ih/2-(ih/zoom/2)";
+  switch (String(motion || "push-in")) {
+    case "pull-out": return { z: `1.12-0.12*on/${d}`, x: cx, y: cy };
+    case "pan-left": return { z: "1.08", x: `(iw-iw/zoom)*(1-on/${d})`, y: cy };
+    case "pan-right": return { z: "1.08", x: `(iw-iw/zoom)*on/${d}`, y: cy };
+    case "tilt-up": return { z: "1.08", x: cx, y: `(ih-ih/zoom)*(1-on/${d})` };
+    case "static": return { z: "1.001", x: cx, y: cy };
+    case "handheld": return { z: `1.05+0.02*sin(on/4)`, x: cx, y: cy };
+    case "push-in": default: return { z: `1+0.10*on/${d}`, x: cx, y: cy };
+  }
+}
 
 function segArgs(framePng, i, n, sec, outSeg) {
   const frames = Math.round(sec * FPS);
@@ -164,6 +178,56 @@ export async function renderProReel(inMp4, outPath, opts = {}) {
     const fd = fs.openSync(outPath, "r+"); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
     return outPath;
   } finally { busy = false; }
+}
+
+// ── STORYBOARD montage ── build a reel from pre-rendered 1080x1920 scene frames
+// using a storyboard: each scene has its own DURATION, directed CAMERA MOTION and
+// TRANSITION. Per-segment encode + lossless concat keeps peak memory low (one
+// scene at a time). A subtle brand grade unifies the look without flattening
+// scenes to one colour. Optional looped music bed; else a silent track.
+// specs[i] = { seconds, cameraMotion, transition }  (transition: cut|flash|dissolve|whip|slide)
+export async function renderStoryboardReel(frames, specs = [], outPath, opts = {}) {
+  if (!Array.isArray(frames) || frames.length < 1) throw new Error("need at least 1 scene frame");
+  if (busy) throw new Error("reel engine busy — try again in a minute");
+  const { light = false, grade = true, music = null } = opts;
+  busy = true;
+  const dir = path.dirname(outPath); fs.mkdirSync(dir, { recursive: true });
+  const base = path.join(dir, `.sbr-${path.basename(outPath, ".mp4")}`);
+  const tmp = [];
+  const gradeChain = !grade ? "" : (light
+    ? ",eq=contrast=1.05:saturation=1.10:gamma=1.01,colorbalance=rh=0.03:bh=-0.03"
+    : ",eq=contrast=1.06:saturation=1.12,colorbalance=rs=0.02:bs=-0.02:rh=0.03:bh=-0.04");
+  const fColor = (tr) => (tr === "dissolve" || tr === "slide") ? "black" : "white";
+  const fDur = (tr) => tr === "cut" ? 0 : (tr === "whip" || tr === "slide") ? 0.18 : 0.25;
+  try {
+    const bin = await ffmpegPath();
+    const n = frames.length, segs = []; let total = 0;
+    for (let i = 0; i < n; i++) {
+      const spec = specs[i] || {};
+      const sec = Math.min(8, Math.max(1.5, +spec.seconds || 3)); total += sec;
+      const fr = Math.round(sec * FPS);
+      const { z, x, y } = motionExpr(spec.cameraMotion, fr);
+      let vf = `scale=2160:3840,zoompan=z='${z}':x='${x}':y='${y}':d=${fr}:s=1080x1920:fps=${FPS}`;
+      if (i > 0) { const pt = (specs[i - 1] || {}).transition || "flash"; const fd = fDur(pt); if (fd) vf += `,fade=t=in:st=0:d=${fd}:c=${fColor(pt)}`; }
+      else vf += `,fade=t=in:st=0:d=0.4`;
+      const ct = spec.transition || (i < n - 1 ? "flash" : "dissolve");
+      if (i < n - 1) { const fd = fDur(ct); if (fd) vf += `,fade=t=out:st=${(sec - fd).toFixed(2)}:d=${fd}:c=${fColor(ct)}`; }
+      else vf += `,fade=t=out:st=${(sec - 0.5).toFixed(2)}:d=0.5:c=black`;
+      vf += gradeChain + ",format=yuv420p";
+      const seg = `${base}-${i}.mp4`; tmp.push(seg);
+      await run(bin, ["-y", "-i", frames[i], "-vf", vf, "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22", "-threads", "1", "-x264-params", "ref=1:bframes=0:rc-lookahead=0:keyint=50", "-an", seg]);
+      segs.push(seg);
+      if (global.gc) { try { global.gc(); } catch (e) {} }
+    }
+    const listFile = `${base}.txt`; tmp.push(listFile);
+    fs.writeFileSync(listFile, segs.map((s) => `file '${s}'`).join("\n"));
+    const audio = (music && fs.existsSync(music))
+      ? ["-stream_loop", "-1", "-i", music, "-c:a", "aac", "-b:a", "128k"]
+      : ["-f", "lavfi", "-t", total.toFixed(2), "-i", "anullsrc=channel_layout=stereo:sample_rate=44100", "-c:a", "aac", "-b:a", "96k"];
+    await run(bin, ["-y", "-f", "concat", "-safe", "0", "-i", listFile, ...audio, "-c:v", "copy", "-shortest", "-movflags", "+faststart", outPath]);
+    const fd = fs.openSync(outPath, "r+"); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    return outPath;
+  } finally { busy = false; for (const f of tmp) { try { fs.unlinkSync(f); } catch (e) {} } }
 }
 
 // scenes: [{kind, headline, body, kicker}, ...] (2-4). Writes outPath (.mp4).

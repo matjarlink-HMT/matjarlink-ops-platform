@@ -315,3 +315,29 @@ export function debug() {
   catch (e) { files = ["<readdir failed: " + e.message + ">"]; }
   return { storeDir: STORE_DIR, files, counts: { notes: Object.keys(mem).length, overrides: Object.keys(ov).length, published: Object.keys(pub).length, removed: rm.length } };
 }
+
+// ── Video projects (Video Studio) ── full production state for a reel: brief,
+// storyboard, per-scene assets, rendered versions, and a resumable status.
+// Status: draft → brief → storyboard → producing → needsReview → completed,
+// or failed (with an error). Nothing here publishes; approval stays manual.
+const VPROJ_FILE = sp("videoprojects.json");
+let vprojects = {};
+try { vprojects = JSON.parse(fs.readFileSync(VPROJ_FILE, "utf8")); } catch (e) { vprojects = {}; }
+function persistVProj() { try { writeDurable(VPROJ_FILE, JSON.stringify(vprojects)); } catch (e) {} }
+export function getVideoProjects() { return vprojects; }
+export function getVideoProject(id) { return id ? vprojects[id] : null; }
+export function saveVideoProject(p) {
+  if (!p || !p.id) return p;
+  const prev = vprojects[p.id] || {};
+  vprojects[p.id] = { status: "draft", createdAt: new Date().toISOString(), versions: [], ...prev, ...p, updatedAt: new Date().toISOString() };
+  // bound the store to the last 40 projects
+  const ids = Object.keys(vprojects);
+  if (ids.length > 40) { ids.sort((a, b) => (vprojects[a].createdAt || "").localeCompare(vprojects[b].createdAt || "")); for (const id of ids.slice(0, ids.length - 40)) delete vprojects[id]; }
+  persistVProj(); return vprojects[p.id];
+}
+export function setVideoProjectStatus(id, status, extra = {}) {
+  if (!vprojects[id]) return null;
+  vprojects[id] = { ...vprojects[id], status, ...extra, updatedAt: new Date().toISOString() };
+  persistVProj(); return vprojects[id];
+}
+export function deleteVideoProject(id) { if (vprojects[id]) { delete vprojects[id]; persistVProj(); } return true; }
