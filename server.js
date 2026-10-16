@@ -1149,9 +1149,9 @@ const isEditorial = (t) => EDITORIAL_TEMPLATES.includes(t);
 function editorialScene(text, light) {
   const t = String(text || "");
   const grade = light
-    ? "bright airy, clean white and warm-orange tones (brand colors #F5821F and #2D081E, NOT purple, NOT violet), subtle flowing orange glassmorphism accents"
-    : "deep AUBERGINE-PLUM and warm-ORANGE cinematic color grade (brand colors #2D081E and #F5821F, NOT purple, NOT violet), subtle flowing orange glassmorphism accents";
-  const rm = " Shot on a real camera, candid documentary editorial photograph — natural authentic HUMAN features, real skin texture with pores and subtle imperfections, natural asymmetry, realistic catchlights in the eyes. NOT 3D render, NOT AI illustration, NOT a plastic/waxy/over-smoothed/airbrushed face, NOT a beauty filter. No text, no words, no logos.";
+    ? "bright airy, clean white and warm-orange tones (MatjarLink brand palette: deep plum with warm orange accents, NOT purple, NOT violet), subtle flowing orange glassmorphism accents"
+    : "deep AUBERGINE-PLUM and warm-ORANGE cinematic color grade (MatjarLink brand palette: deep plum with warm orange accents, NOT purple, NOT violet), subtle flowing orange glassmorphism accents";
+  const rm = " Shot on a real camera, candid documentary editorial photograph — natural authentic HUMAN features, real skin texture with pores and subtle imperfections, natural asymmetry, realistic catchlights in the eyes. NOT 3D render, NOT AI illustration, NOT a plastic/waxy/over-smoothed/airbrushed face, NOT a beauty filter. No text, no words, no logos. Any phone, tablet, laptop or POS screen shows ONLY abstract UI blocks, icons and simple charts — NO readable text, NO numbers, NO prices, NO currency symbols, NO colour codes.";
   const side = "on the FAR RIGHT third, large clean negative space on the LEFT for a headline.";
   const has = (arr) => arr.some((w) => t.includes(w));
   if (has(["كاشير", "نقطة بيع", "نقطة البيع"])) return { layout: "side", prompt: `A sleek modern POS cashier terminal with a glowing touchscreen showing a sale, ${light ? "soft studio spotlight and gentle reflection" : "dramatic cinematic spotlight and rim light"}, ${grade}, the device ${side}${rm}` };
@@ -1202,8 +1202,8 @@ async function makeEditorialReel({ id, light = false, headline, pop, cta, valueL
   const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
   const eng = await import("./data/designEngine.js");
   const { renderReelFromFrames } = await import("./data/reelEngine.js");
-  const grade = light ? "bright airy, clean white and warm-orange tones (brand colors #F5821F and #2D081E, NOT purple)" : "deep AUBERGINE-PLUM and warm-ORANGE cinematic color grade (brand colors #2D081E and #F5821F, NOT purple)";
-  const rm = " Shot on a real camera, cinematic vertical composition — natural authentic HUMAN features, real skin texture with pores and subtle imperfections, natural asymmetry, realistic eye catchlights. NOT 3D render, NOT AI illustration, NOT a plastic/waxy/over-smoothed/airbrushed face, NOT a beauty filter. No text, no words, no logos.";
+  const grade = light ? "bright airy, clean white and warm-orange tones (brand palette: deep plum with warm orange accents, NOT purple)" : "deep AUBERGINE-PLUM and warm-ORANGE cinematic color grade (brand palette: deep plum with warm orange accents, NOT purple)";
+  const rm = " Shot on a real camera, cinematic vertical composition — natural authentic HUMAN features, real skin texture with pores and subtle imperfections, natural asymmetry, realistic eye catchlights. NOT 3D render, NOT AI illustration, NOT a plastic/waxy/over-smoothed/airbrushed face, NOT a beauty filter. No text, no words, no logos. Any phone, tablet, laptop or POS screen shows ONLY abstract UI blocks, icons and simple charts — NO readable text, NO numbers, NO prices, NO currency symbols, NO colour codes.";
   // Vary the opening person (man / Omani woman / Arab) by the reel topic — no
   // longer hardcoded to the same Omani man. Identity only; clothing comes from
   // the face/garment references (never invented).
@@ -1253,12 +1253,12 @@ async function makeStoryboardReel(project) {
   const light = project.template === "editorial-white";
   const id = project.id, biz = store.getBrandData();
   const grade = light ? "bright airy clean white and warm-orange tones" : "deep cinematic warm grade";
-  const rm = " Shot on a real camera — natural authentic human features, real skin texture. NOT 3D render, NOT AI illustration, NOT plastic/airbrushed. No text, no words, no logos.";
+  const rm = " Shot on a real camera — natural authentic human features, real skin texture. NOT 3D render, NOT AI illustration, NOT plastic/airbrushed. No text, no words, no logos. Any phone, tablet, laptop or POS screen shows ONLY abstract UI blocks, icons and simple charts — NO readable text, NO numbers, NO prices, NO currency symbols, NO colour codes.";
   const frames = [], junk = [], specs = [];
   try {
     for (let i = 0; i < sb.scenes.length; i++) {
       const sc = sb.scenes[i];
-      const scenePrompt = `Cinematic VERTICAL 9:16. ${sc.visual}. ${grade} (brand accents magenta #9D1F60 + orange #F9A43C, NOT purple), leave a clean empty area in the TOP THIRD for a headline.${rm}`;
+      const scenePrompt = `Cinematic VERTICAL 9:16. ${sc.visual}. ${grade} (brand accent colours: deep magenta-rose and warm golden orange, NOT purple), leave a clean empty area in the TOP THIRD for a headline.${rm}`;
       const { refs, note } = heroRefs(scenePrompt);
       const { buffer } = await gemini.generateImage(scenePrompt + note, refs);
       const bg = path.join(dir, `_sbbg-${id}-${i}.png`); junk.push(bg);
