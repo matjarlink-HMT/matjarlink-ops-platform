@@ -24,7 +24,7 @@ const pill = (a) => a ? `<span class="pill ${a[1]}">${a[0]}</span>` : "";
 const STMAP = { online: "p-ok", working: "p-info", scheduled: "p-info", idle: "p-idle", action: "p-bad", new: "p-new" };
 const GROUPS = [
   { label: "g_home", items: ["overview", "analytics", "needs"] },
-  { label: "g_workflow", items: ["plan", "approvals", "pipeline", "templates"] },
+  { label: "g_workflow", items: ["plan", "approvals", "videostudio", "pipeline", "templates"] },
   { label: "g_engage", items: ["comments", "messages", "leads"] },
   { label: "g_team", items: ["agents", "camp"] },
   { label: "g_settings", items: ["settings"] }
@@ -134,6 +134,7 @@ function render(p) {
   else if (p === "agents") renderTeam(C);
   else if (p === "needs") renderNeeds(C);
   else if (p === "studio") renderStudio(C);
+  else if (p === "videostudio") renderVideoStudio(C);
   else if (p === "pipeline") renderPipeline(C);
   else if (p === "plan") renderPlan(C);
   else if (p === "templates") renderTemplates(C);
@@ -1327,6 +1328,97 @@ async function renderNeeds(C) {
 }
 
 // ── unified Pipeline (merges queue + prep + media + published) ─────
+// ── 🎬 Video Studio ── Reels production: idea → brief → storyboard (review/edit)
+// → produce (owner-triggered) → preview + versions. Nothing publishes here.
+const VS_ST = { draft: ["مسودة", "p-idle"], brief: ["Brief جاهز", "p-info"], storyboard: ["سيناريو جاهز", "p-info"], producing: ["جارٍ الإنتاج…", "p-warn"], needsReview: ["بانتظار المراجعة", "p-ok"], completed: ["مكتمل", "p-ok"], failed: ["فشل", "p-warn"] };
+async function renderVideoStudio(C) {
+  C.innerHTML = `<div class="loading">…</div>`;
+  let d = null; try { d = await fetch("/api/video/projects").then(r => r.json()); } catch (e) {}
+  if (!d || !d.ok) { C.innerHTML = `<div class="note-info">${T("vs_hint")}</div><div class="mut">تعذّر التحميل.</div>`; return; }
+  const modes = d.modes || {};
+  const modeOpts = Object.entries(modes).map(([k, v]) => `<option value="${k}">${escapeHtml(v.label)}</option>`).join("");
+  const cards = (d.projects || []).map(p => `<div class="pcard nofloat" style="cursor:pointer" data-vopen="${p.id}">
+    <div class="tplhd"><span class="tplname">🎬 ${escapeHtml(p.title || p.idea || "ريل")}</span><span class="pill ${(VS_ST[p.status] || [, "p-idle"])[1]}">${(VS_ST[p.status] || [p.status])[0]}</span></div>
+    <div class="mut" style="font-size:.84rem">${escapeHtml((modes[p.mode] || {}).label || p.mode || "")}${p.storyboard ? ` · ${p.storyboard.scenes.length} مشاهد · ${p.storyboard.totalSeconds || ""}ث` : ""}</div>
+    ${p.previewUrl ? `<video src="${p.previewUrl}" muted playsinline style="width:100%;max-height:12rem;object-fit:cover;border-radius:.5rem;margin-top:.4rem"></video>` : ""}</div>`).join("");
+  C.innerHTML = `<div class="note-info">🎬 ${T("vs_hint")}</div>
+    <div class="pcard nofloat" style="margin:.6rem 0">
+      <div style="font-weight:800;margin-bottom:.4rem">➕ مشروع ريل جديد</div>
+      <textarea class="sinput" id="vsidea" rows="2" placeholder="فكرة الريل... (ما هي المشكلة/الرسالة؟)"></textarea>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-top:.4rem">
+        <select class="psel" id="vsmode" style="max-width:18rem">${modeOpts}</select>
+        <button class="btn sm" id="vscreate">➕ أنشئ وابدأ الـBrief</button>
+        <span class="ok-s" id="vsmsg"></span></div></div>
+    <div class="grid g3 tplgrid">${cards || `<div class="mut" style="padding:1rem">لا مشاريع بعد — أنشئ أول ريل.</div>`}</div>`;
+  const cr = $("#vscreate");
+  if (cr) cr.onclick = async () => {
+    const idea = ($("#vsidea").value || "").trim(); const msg = $("#vsmsg");
+    if (!idea) { msg.textContent = "اكتب فكرة أولاً"; return; }
+    cr.disabled = true; cr.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
+    const p = await fetch("/api/video/project", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idea, mode: $("#vsmode").value }) }).then(r => r.json()).catch(() => null);
+    if (p && p.ok) { if (msg) msg.textContent = "توليد الـBrief…"; await fetch("/api/video/brief", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: p.project.id }) }).catch(() => {}); openVideoProject(p.project.id, C); }
+    else { cr.disabled = false; cr.innerHTML = "➕ أنشئ وابدأ الـBrief"; if (msg) msg.textContent = "✗ " + friendlyErr((p && p.error) || ""); }
+  };
+  C.querySelectorAll("[data-vopen]").forEach(el => el.onclick = () => openVideoProject(el.dataset.vopen, C));
+}
+const VS_MOTIONS = ["push-in", "pull-out", "pan-left", "pan-right", "tilt-up", "static", "handheld"];
+const VS_TRANS = ["cut", "flash", "dissolve", "whip", "slide"];
+async function openVideoProject(id, C) {
+  C.innerHTML = `<div class="loading">…</div>`;
+  const d = await fetch("/api/video/project/" + id).then(r => r.json()).catch(() => null);
+  if (!d || !d.ok) { C.innerHTML = `<div class="mut">تعذّر فتح المشروع.</div>`; return; }
+  const p = d.project, sb = p.storyboard, br = p.brief;
+  const sceneRows = ((sb && sb.scenes) || []).map((s, i) => `<div class="pcard nofloat vscene" data-i="${i}" style="margin:.4rem 0">
+    <div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap"><b>مشهد ${s.n}</b>
+      <input class="pinput vs-sec" type="number" step="0.5" min="1.5" max="8" value="${s.seconds}" style="width:4.5rem" title="ثوانٍ">
+      <select class="psel vs-cam" style="width:auto">${VS_MOTIONS.map(m => `<option ${m === s.cameraMotion ? "selected" : ""}>${m}</option>`).join("")}</select>
+      <select class="psel vs-tr" style="width:auto">${VS_TRANS.map(t => `<option ${t === s.transition ? "selected" : ""}>${t}</option>`).join("")}</select></div>
+    <input class="pinput vs-text" value="${escapeHtml(s.onScreenText)}" placeholder="النص على الشاشة" style="margin-top:.35rem">
+    <input class="pinput vs-vo" value="${escapeHtml(s.vo || "")}" placeholder="التعليق الصوتي (سيناريو/مرجع)" style="margin-top:.3rem">
+    <div class="mut" style="font-size:.76rem;margin-top:.25rem">🎥 ${escapeHtml(s.visual)}</div></div>`).join("");
+  C.innerHTML = `<button class="btn ghost sm" id="vsback">‹ رجوع للمشاريع</button>
+    <h3 style="margin:.4rem 0">🎬 ${escapeHtml(p.title || "ريل")} <span class="pill ${(VS_ST[p.status] || [, "p-idle"])[1]}">${(VS_ST[p.status] || [p.status])[0]}</span></h3>
+    ${br ? `<div class="pcard nofloat"><b>📋 الـBrief</b><div style="margin-top:.3rem">🎯 ${escapeHtml(br.goal || "")}</div>
+      <div class="mut">الرسالة: ${escapeHtml(br.message || "")} · المشكلة: ${escapeHtml(br.problem || "")} · ~${br.duration || ""}ث · CTA: ${escapeHtml(br.cta || "")}</div></div>`
+      : `<button class="btn sm" id="vsbrief" style="margin:.4rem 0">📋 توليد الـBrief</button>`}
+    ${sb ? `<div style="display:flex;justify-content:space-between;align-items:center;margin:.6rem 0 .2rem"><b>🎬 السيناريو / Storyboard</b><span class="mut">${sb.scenes.length} مشاهد · ${sb.totalSeconds}ث</span></div>
+      <div class="pcard nofloat"><b>🎣 الهوك:</b> ${escapeHtml(sb.hook || "")}</div>${sceneRows}
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem;align-items:center">
+        <button class="btn sm" id="vssave">💾 حفظ التعديلات</button>
+        <input class="pinput" id="vsnote" placeholder="ملاحظة لإعادة التوليد" style="max-width:16rem">
+        <button class="btn ghost sm" id="vsregen">↻ أعد السيناريو</button>
+        <button class="btn ok sm" id="vsproduce">🎬 أنتج الريل</button>
+        <span class="ok-s" id="vdmsg"></span></div>`
+      : br ? `<button class="btn sm" id="vsstory" style="margin-top:.5rem">🎬 توليد السيناريو/Storyboard</button>` : ""}
+    ${p.previewUrl ? `<div style="margin-top:.8rem"><b>▶ المعاينة</b><video src="${p.previewUrl}" controls playsinline style="width:100%;max-width:22rem;border-radius:.6rem;display:block;margin-top:.4rem"></video></div>` : ""}
+    <div class="mut" id="vdstatus" style="margin-top:.4rem">${p.status === "failed" && p.error ? "✗ " + escapeHtml(p.error) : (p.versions && p.versions.length ? "النسخ: " + p.versions.length : "")}</div>`;
+  $("#vsback").onclick = () => renderVideoStudio(C);
+  const re = (btn) => { const b = $(btn); return b; };
+  const bb = re("#vsbrief"); if (bb) bb.onclick = async () => { bb.disabled = true; bb.innerHTML = "…"; await fetch("/api/video/brief", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).catch(() => {}); openVideoProject(id, C); };
+  const bs = re("#vsstory"); if (bs) bs.onclick = async () => { bs.disabled = true; bs.innerHTML = "…"; await fetch("/api/video/storyboard", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).catch(() => {}); openVideoProject(id, C); };
+  const collectSB = () => ({ ...sb, scenes: [...C.querySelectorAll(".vscene")].map((el, i) => ({ ...sb.scenes[i], n: i + 1, seconds: +el.querySelector(".vs-sec").value || 3, cameraMotion: el.querySelector(".vs-cam").value, transition: el.querySelector(".vs-tr").value, onScreenText: el.querySelector(".vs-text").value, vo: el.querySelector(".vs-vo").value })) });
+  const bsave = re("#vssave"); if (bsave) bsave.onclick = async () => { const m = $("#vdmsg"); if (m) m.textContent = "…"; const r = await fetch("/api/video/storyboard", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, storyboard: collectSB() }) }).then(x => x.json()).catch(() => null); if (m) m.textContent = r && r.ok ? "✓ حُفظ" : "✗"; };
+  const brg = re("#vsregen"); if (brg) brg.onclick = async () => { brg.disabled = true; brg.innerHTML = "…"; await fetch("/api/video/storyboard", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, note: ($("#vsnote").value || "").trim() }) }).catch(() => {}); openVideoProject(id, C); };
+  const bp = re("#vsproduce"); if (bp) bp.onclick = async () => {
+    if (!confirm("إنتاج الريل الآن؟ يولّد المشاهد (Gemini) وقد يأخذ دقيقة أو أكثر.")) return;
+    await fetch("/api/video/storyboard", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, storyboard: collectSB() }) }).catch(() => {});
+    bp.disabled = true; bp.innerHTML = `<span class="dots"><i></i><i></i><i></i></span> جارٍ الإنتاج`;
+    const r = await fetch("/api/video/produce", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).then(x => x.json()).catch(() => null);
+    if (r && r.ok) pollVideoProduce(id, C); else { bp.disabled = false; bp.innerHTML = "🎬 أنتج الريل"; const m = $("#vdmsg"); if (m) m.textContent = "✗ " + friendlyErr((r && r.error) || ""); }
+  };
+}
+function pollVideoProduce(id, C) {
+  const st = $("#vdstatus"); let n = 0;
+  const t = setInterval(async () => {
+    n++; const d = await fetch("/api/video/project/" + id).then(r => r.json()).catch(() => null);
+    if (!d || !d.ok) return;
+    const p = d.project;
+    if (st) st.textContent = `الحالة: ${(VS_ST[p.status] || [p.status])[0]} (${n * 4}s)`;
+    if (p.status === "needsReview" || p.status === "completed") { clearInterval(t); openVideoProject(id, C); }
+    else if (p.status === "failed") { clearInterval(t); if (st) st.textContent = "✗ فشل الإنتاج: " + (p.error || ""); }
+    else if (n > 60) clearInterval(t);
+  }, 4000);
+}
 function renderPipeline(C) {
   const q = S.queue || [];
   const plats = [...new Set(q.map(x => x.ch))];
