@@ -1198,6 +1198,19 @@ app.post("/api/audio/tts-preview", async (req, res) => {
 });
 // Delete ONE old version file (owner action, from the versions list). The live
 // version can never be deleted; the entry stays listed as gone for the history.
+// Diagnostics: each cached clip of a project + its detected letterbox crop.
+app.get("/api/debug/clips/:id", async (req, res) => {
+  const motion = await import("./data/motionEngine.js");
+  const adir = path.join(designsDir(), "assets", req.params.id); const out = [];
+  const bin = (await import("ffmpeg-static")).default;
+  for (const f of (fs.existsSync(adir) ? fs.readdirSync(adir) : []).filter((x) => /^clip-/.test(x))) {
+    motion.detectCrop.debug = true; motion.detectCrop.raw = "";
+    const crop = await motion.detectCrop(bin, path.join(adir, f));
+    const raw = motion.detectCrop.raw || ""; motion.detectCrop.debug = false;
+    out.push({ f, MB: +(fs.statSync(path.join(adir, f)).size / 1048576).toFixed(1), crop, stream: (raw.match(/Stream.*Video.*/) || [""])[0].slice(0, 160), samples: (raw.match(/crop=\S+/g) || []).slice(0, 4) });
+  }
+  res.json({ ok: true, clips: out });
+});
 app.post("/api/video/version/delete", (req, res) => {
   const b = req.body || {}; const p = store.getVideoProject(b.id);
   if (!p) return res.status(404).json({ ok: false, error: "project not found" });

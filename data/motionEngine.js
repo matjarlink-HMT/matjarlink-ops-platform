@@ -312,7 +312,7 @@ const CW = 720, CH = 1280;
 // Veo letterboxes the first frame with black when the photo is not exactly 9:16
 // (bars that a push-in later fills). Detect the TIGHTEST picture area over the
 // whole clip and crop to it, so no black ever shows inside a card or full-bleed.
-function detectCrop(bin, file) {
+export function detectCrop(bin, file) {
   return new Promise((res) => {
     // Only the first second (where Veo letterboxes) and only PURE black counts: Veo
     // pads with video-range black (Y 16-21); a black abaya measures Y 40+ with texture — never a "bar".
@@ -327,6 +327,7 @@ function detectCrop(bin, file) {
         if (modest && (top > 8 || lft > 8 || bot > 8 || rgt > 8) && (!best || w * h < best[0] * best[1])) best = [w, h, x, y];
       } });
     p.on("close", () => res(best)); p.on("error", () => res(null));
+    if (detectCrop.debug) p.stderr.on("data", (d) => { detectCrop.raw = (detectCrop.raw || "") + d; });
   });
 }
 function openClip(bin, file, fps, crop) {
