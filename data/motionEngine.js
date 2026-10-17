@@ -48,7 +48,7 @@ function coverDraw(ctx, img, x, y, w, h, zoom = 1, r = 0) {
   if (!img) { ctx.fillStyle = BRAND.magentaSoft; ctx.fillRect(x, y, w, h); ctx.restore(); return; }
   const ir = img.width / img.height, cr = w / h;
   let dw, dh; if (ir > cr) { dh = h * zoom; dw = dh * ir; } else { dw = w * zoom; dh = dw / ir; }
-  ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+  ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) * (img.focusY ?? 0.5), dw, dh);
   ctx.restore();
 }
 function circle(ctx, cx, cy, r, fill, alpha = 1) { ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(cx, cy, Math.max(0, r), 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
@@ -314,10 +314,18 @@ const CW = 720, CH = 1280;
 // whole clip and crop to it, so no black ever shows inside a card or full-bleed.
 function detectCrop(bin, file) {
   return new Promise((res) => {
-    const p = spawn(bin, ["-v", "info", "-i", file, "-an", "-vf", "cropdetect=limit=24:round=2:reset=1", "-f", "null", "-"], { stdio: ["ignore", "ignore", "pipe"] });
-    let best = null, buf = "";
+    // Only the first second (where Veo letterboxes) and only SYMMETRIC bars count —
+    // a black abaya filling the bottom of the frame must never be cropped as a "bar".
+    const p = spawn(bin, ["-v", "info", "-i", file, "-t", "1", "-an", "-vf", "cropdetect=limit=20:round=2:reset=1", "-f", "null", "-"], { stdio: ["ignore", "ignore", "pipe"] });
+    let best = null, buf = "", fw = 0, fh = 0;
     p.stderr.on("data", (d) => { buf += d; const lines = buf.split("\n"); buf = lines.pop();
-      for (const l of lines) { const m = l.match(/crop=(\d+):(\d+):(\d+):(\d+)/); if (m) { const c = m.slice(1).map(Number); if (c[0] > 64 && c[1] > 64 && (!best || c[0] * c[1] < best[0] * best[1])) best = c; } } });
+      for (const l of lines) {
+        const sz = l.match(/Stream.*Video.* (\d{3,4})x(\d{3,4})/); if (sz && !fw) { fw = +sz[1]; fh = +sz[2]; }
+        const m = l.match(/crop=(\d+):(\d+):(\d+):(\d+)/); if (!m || !fw) continue;
+        const [w, h, x, y] = m.slice(1).map(Number), top = y, bot = fh - h - y, lft = x, rgt = fw - w - x;
+        const sym = Math.abs(top - bot) <= 24 && Math.abs(lft - rgt) <= 24, modest = w >= fw * 0.7 && h >= fh * 0.7;
+        if (sym && modest && (top > 8 || lft > 8) && (!best || w * h < best[0] * best[1])) best = [w, h, x, y];
+      } });
     p.on("close", () => res(best)); p.on("error", () => res(null));
   });
 }
@@ -344,6 +352,7 @@ function openClip(bin, file, fps, crop) {
     return true;
   };
   let has = false;
+  cv.focusY = 0.3; // video frames: keep faces (upper third) inside cards when the camera moves
   return {
     canvas: cv,
     async next() { if (await readExact()) { cx.putImageData(img, 0, 0); has = true; } return has ? cv : null; },
