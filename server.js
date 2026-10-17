@@ -1353,7 +1353,7 @@ async function makeStoryboardReel(project, onProgress, ver = null) {
       const men = allCharacters().filter((c) => !/امرأة|سيدة|بائعة|woman|عباية|حجاب|hijab|مصري|عربي|arab|egyptian|عميلة/i.test(`${c.label} ${c.dress || ""}`));
       const pick = (sb.lead && charPathAny(sb.lead)) ? sb.lead : (men[parseInt(fp(id), 16) % Math.max(1, men.length)] || {}).id;
       const lp = pick && charPathAny(pick), r = lp && imageRef(lp);
-      if (r) leadRef = { refs: [r], note: ` LEAD CHARACTER REFERENCE: the main man of this story (the shop owner / trader) is the SAME person as the attached reference image in EVERY scene — exact same face, age, beard and build, and EXACTLY the same clothing as in the reference (his authentic Omani dishdasha with the furakha tassel and the same Omani headwear) — do not change or invent any clothing. Other people in the scene must look clearly different from him. Use the reference only for this man's identity and dress, not its pose, background or framing.` };
+      if (r) leadRef = { refs: [r], note: ` LEAD CHARACTER REFERENCE: the main character of this story (the shop owner) is the SAME person as the attached reference image in EVERY scene — exact same face, age and build, and EXACTLY the same authentic Omani clothing as in the reference (dishdasha with furakha and Omani headwear for a man; the same abaya and hijab for a woman) — do not change or invent any clothing. Other people in the scene must look clearly different from the lead. Use the reference only for this man's identity and dress, not its pose, background or framing.` };
     }
     // 1) scene photos (only layouts that place a photo in a shape)
     const scenes = [];
@@ -1375,7 +1375,7 @@ async function makeStoryboardReel(project, onProgress, ver = null) {
         const cast = castFor(sb.cast, sc.visual);
         const continuity = `${cast ? ` CAST (identical in every scene of this story): ${cast}. ONLY these people appear in this shot — nobody else from the story.` : ""}${sb.setting ? ` LOCATION (same place in every scene): ${sb.setting}.` : ""}`;
         const prompt = `Photorealistic candid photograph: ${sc.visual}.${continuity} Natural well-composed shot, ${frameHint}, warm natural light, subtle brand-coloured accents in the environment (deep magenta-rose and warm golden orange, NOT purple). Big expressions stay REAL — a candid photo of real people reacting, never a caricature or cartoon. NO readable words in any language anywhere — including calculators, displays, signs and packaging.${rm}`;
-        const { refs, note } = leadRef && /owner|trader|shopkeeper|merchant|\bman\b|dishdasha|kummah|massar/i.test(sc.visual) ? leadRef : heroRefs(prompt);
+        const { refs, note } = leadRef && /owner|trader|shopkeeper|merchant|seller|\bman\b|woman|\bshe\b|\bher\b|dishdasha|kummah|massar|abaya|hijab/i.test(sc.visual) ? leadRef : heroRefs(prompt);
         photoPath = path.join(adir, `photo-${fp(prompt + note)}.jpg`); used.add(path.basename(photoPath));
         if (fs.existsSync(photoPath)) stats.photosReused++;
         else {
