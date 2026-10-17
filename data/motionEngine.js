@@ -309,8 +309,21 @@ async function ffmpegBin() {
 // so text, wipes and brand shapes stay identical; the last frame holds if the
 // clip is shorter than the scene. Streams one frame at a time (no frame files).
 const CW = 720, CH = 1280;
-function openClip(bin, file, fps) {
-  const p = spawn(bin, ["-v", "error", "-i", file, "-an", "-vf", `fps=${fps},scale=${CW}:${CH}:force_original_aspect_ratio=increase,crop=${CW}:${CH}`, "-f", "rawvideo", "-pix_fmt", "rgba", "-"], { stdio: ["ignore", "pipe", "ignore"] });
+// Veo letterboxes the first frame with black when the photo is not exactly 9:16
+// (bars that a push-in later fills). Detect the TIGHTEST picture area over the
+// whole clip and crop to it, so no black ever shows inside a card or full-bleed.
+function detectCrop(bin, file) {
+  return new Promise((res) => {
+    const p = spawn(bin, ["-v", "info", "-i", file, "-an", "-vf", "cropdetect=limit=24:round=2:reset=1", "-f", "null", "-"], { stdio: ["ignore", "ignore", "pipe"] });
+    let best = null, buf = "";
+    p.stderr.on("data", (d) => { buf += d; const lines = buf.split("\n"); buf = lines.pop();
+      for (const l of lines) { const m = l.match(/crop=(\d+):(\d+):(\d+):(\d+)/); if (m) { const c = m.slice(1).map(Number); if (c[0] > 64 && c[1] > 64 && (!best || c[0] * c[1] < best[0] * best[1])) best = c; } } });
+    p.on("close", () => res(best)); p.on("error", () => res(null));
+  });
+}
+function openClip(bin, file, fps, crop) {
+  const pre = crop ? `crop=${crop.join(":")},` : "";
+  const p = spawn(bin, ["-v", "error", "-i", file, "-an", "-vf", `${pre}fps=${fps},scale=${CW}:${CH}:force_original_aspect_ratio=increase,crop=${CW}:${CH}`, "-f", "rawvideo", "-pix_fmt", "rgba", "-"], { stdio: ["ignore", "pipe", "ignore"] });
   const out = p.stdout, size = CW * CH * 4;
   const cv = createCanvas(CW, CH), cx = cv.getContext("2d"), img = cx.createImageData(CW, CH);
   // flowing reads into a small queue (paused above ~3 frames = backpressure)
@@ -365,7 +378,7 @@ export async function renderMotionReel(scenes, outPath, { biz = {}, cta = "", fp
     for (let i = 0; i < n; i++) {
       const sc = scenes[i], layout = layoutFor(sc, i, n, { mode }), assets = await loadAssets(sc.photoPath);
       const d = durs[i], N = Math.round(d * fps);
-      const clip = sc.clipPath && fs.existsSync(sc.clipPath) ? openClip(bin, sc.clipPath, fps) : null;
+      const clip = sc.clipPath && fs.existsSync(sc.clipPath) ? openClip(bin, sc.clipPath, fps, await detectCrop(bin, sc.clipPath)) : null;
       const wipeOut = i > 0 && String(scenes[i - 1].transition || "") !== "cut";
       const wipeIn = i < n - 1 && String(sc.transition || "") !== "cut";
       for (let f = 0; f < N; f++) {

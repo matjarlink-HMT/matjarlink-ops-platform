@@ -1428,7 +1428,13 @@ async function makeStoryboardReel(project, onProgress, ver = null) {
         if (fs.existsSync(j.file)) { vstats.clipsReused++; scenes[j.i].clipPath = j.file; continue; }
         report({ stage: `video ${j.i + 1}/${n}`, progress: 0.4 + 0.15 * (j.i / n) });
         try {
-          const gen = (prompt) => veo.generateClip({ model: project.videoModel, prompt, image: fs.readFileSync(j.sc.photoPath), mime: "image/jpeg", seconds: j.secs });
+          // send Veo an exact 9:16 first frame (centre crop) so it never pads with black
+          const { createCanvas, loadImage } = await import("@napi-rs/canvas");
+          const im = await loadImage(fs.readFileSync(j.sc.photoPath));
+          const tw = Math.min(im.width, Math.round(im.height * 9 / 16)), th = Math.min(im.height, Math.round(tw * 16 / 9));
+          const fc = createCanvas(tw, th); fc.getContext("2d").drawImage(im, (im.width - tw) / 2, (im.height - th) / 2, tw, th, 0, 0, tw, th);
+          const first = fc.toBuffer("image/jpeg", 90);
+          const gen = (prompt) => veo.generateClip({ model: project.videoModel, prompt, image: first, mime: "image/jpeg", seconds: j.secs });
           let buf;
           // Veo also generates sound; an "audio issue" refusal is not billed and
           // usually clears when the sound direction is softer — retry once that way.
