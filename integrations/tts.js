@@ -68,6 +68,7 @@ async function callTTS(model, text, voice, sys) {
   const pcm = Buffer.from(inl.data, "base64");
   return { wav: pcmToWav(pcm, rate), seconds: pcm.length / (rate * 2), model, rate };
 }
+const sysIsRead = new Set();
 export async function speak(text, { voice = "Charon", style = "" } = {}) {
   if (!KEY()) throw new Error("GEMINI_API_KEY not set");
   const line = String(text || "").trim(); if (!line) throw new Error("empty voiceover line");
@@ -77,7 +78,7 @@ export async function speak(text, { voice = "Charon", style = "" } = {}) {
   const model = await pickModel();
   let legacy = null; try { const list = await ttsModels(); legacy = list.find((n) => /2\.5-flash.*tts/.test(n)) || null; } catch (e) {}
   const attempts = [
-    { model, text: line, sys: direction },                      // direction kept out of the spoken text
+    ...(sysIsRead.has(model) ? [] : [{ model, text: line, sys: direction }]), // direction kept out of the spoken text (skipped once a model is known to read it)
     { model, text: line, sys: null },                           // plain line only
     ...(legacy && legacy !== model ? [{ model: legacy, text: `${direction}: ${line}`, sys: null }] : []), // older model honours inline direction
   ];
@@ -86,6 +87,7 @@ export async function speak(text, { voice = "Charon", style = "" } = {}) {
     try {
       const out = await callTTS(a.model, a.text, voice, a.sys);
       if (out.seconds <= maxSec) return { ...out, attempts: attempts.indexOf(a) + 1 };
+      if (a.sys && a.model === model) sysIsRead.add(model); // this model reads the system direction aloud too — skip that attempt next time
       if (!best || out.seconds < best.seconds) best = out;
     } catch (e) { lastErr = e; }
   }
