@@ -1414,10 +1414,11 @@ async function makeStoryboardReel(project, onProgress, ver = null) {
         // The prompt knows the frame it will live in: a phone mockup must not hold a
         // photo OF a phone (phone-in-phone), a circle wants a tight subject, a card
         // wants breathing room.
-        const frameHint = layout === "phone"
+        const frameFor = sc.frameAs || layout;
+        const frameHint = frameFor === "phone"
           ? "VERTICAL portrait framing of the scene's subject (a person or a product) — show NO phone, tablet, laptop or screen anywhere in the image, because it is displayed INSIDE a phone mockup"
-          : layout === "photoHook" ? "VERTICAL 9:16 full-frame shot that makes the action instantly readable, all key subjects and their expressions in the UPPER two-thirds of the frame (the bottom third is covered by the headline)"
-          : layout === "stat" ? "subject centred tightly with a simple background (it is cropped into a circle)"
+          : frameFor === "photoHook" ? "VERTICAL 9:16 full-frame shot that makes the action instantly readable, all key subjects and their expressions in the UPPER two-thirds of the frame (the bottom third is covered by the headline)"
+          : frameFor === "stat" ? "subject centred tightly with a simple background (it is cropped into a circle)"
             : "main subject CENTERED with breathing room (it is cropped into a rounded card)";
         // ONE STORY = ONE CAST: every scene carries the same cast + location sheet,
         // and person scenes use the project's single LEAD portrait (its face AND its
@@ -1471,7 +1472,7 @@ async function makeStoryboardReel(project, onProgress, ver = null) {
     const vstats = { engine: "motion", model: "", clipsNew: 0, clipsReused: 0, seconds: 0, usd: 0, errors: [] };
     if (project.engine === "veo" && project.videoModel) {
       vstats.engine = "veo"; vstats.model = project.videoModel;
-      const jobs = scenes.map((sc, i) => sc.photoPath ? { i, sc, secs: veo.clipSeconds(sc.seconds), motion: motionPrompt(sc) } : null).filter(Boolean)
+      const jobs = scenes.map((sc, i) => sc.photoPath && !sc.still ? { i, sc, secs: veo.clipSeconds(sc.seconds), motion: motionPrompt(sc) } : null).filter(Boolean)
         .map((j) => ({ ...j, file: path.join(adir, `clip-${fp(project.videoModel + "|" + path.basename(j.sc.photoPath) + "|" + j.motion + "|" + j.secs)}.mp4`) }));
       const todo = jobs.filter((j) => !fs.existsSync(j.file));
       const est = todo.reduce((a, j) => a + j.secs, 0) * veo.priceFor(project.videoModel);
