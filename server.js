@@ -19,6 +19,7 @@ import { managerSystem, demoReply, errReply, managerNoteSystem, demoNoteReply, a
 import * as live from "./data/live.js";
 import * as charMod from "./data/characters.js";
 import * as videoStudio from "./data/videoStudio.js";
+import * as tts from "./integrations/tts.js";
 import * as gemini from "./integrations/gemini.js";
 import * as apify from "./integrations/apify.js";
 
@@ -1138,6 +1139,19 @@ app.post("/api/video/produce", async (req, res) => {
     } catch (e) { console.error("[video/produce]", e.message); store.setVideoProjectStatus(p.id, "failed", { error: e.message }); }
     finally { videoBusy = false; }
   })();
+});
+// ── Voiceover (Gemini TTS) ── voices, discovered models, and a line preview.
+app.get("/api/audio/voices", async (req, res) => {
+  let models = []; try { models = await tts.ttsModels(); } catch (e) { models = ["error: " + e.message]; }
+  res.json({ ok: true, ready: tts.ttsReady(), voices: tts.VOICES, models });
+});
+app.post("/api/audio/tts-preview", async (req, res) => {
+  const b = req.body || {};
+  try {
+    const out = await tts.speak(String(b.text || "").slice(0, 400), { voice: b.voice || "Charon" });
+    res.setHeader("Content-Type", "audio/wav"); res.setHeader("X-Seconds", out.seconds.toFixed(2)); res.setHeader("X-Model", out.model);
+    res.end(out.wav);
+  } catch (e) { res.status(502).json({ ok: false, error: e.message }); }
 });
 app.delete("/api/video/project/:id", (req, res) => { store.deleteVideoProject(req.params.id); res.json({ ok: true }); });
 // ── Editorial style (adopted templates 6 = dark, 7 = white) ──────────────────
