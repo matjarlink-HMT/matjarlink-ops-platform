@@ -1358,7 +1358,7 @@ async function makeStoryboardReel(project, onProgress, ver = null) {
       const sc = scenes[i]; let voSec = 0;
       if (wantVO && (sc.vo || "").trim()) {
         const voice = project.voice || "Charon";
-        const vp = path.join(adir, `vo-${fp(sc.vo.trim() + "|" + voice)}.wav`); used.add(path.basename(vp));
+        const vp = path.join(adir, `vo-${fp(sc.vo.trim() + "|" + voice + "|clean2")}.wav`); used.add(path.basename(vp));
         if (fs.existsSync(vp)) { voSec = wavSeconds(vp); stats.voReused++; }
         else {
           report({ stage: `voice ${i + 1}/${n}`, progress: 0.4 + 0.15 * (i / n) });

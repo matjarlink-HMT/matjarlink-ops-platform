@@ -30,7 +30,7 @@ export async function mixAudio({ total, voClips = [], musicPath = null, out, mus
   if (hasMusic) f.push(`[${musIdx}:a]aresample=44100,aformat=channel_layouts=stereo,highpass=f=40,lowpass=f=9500,volume=${musicVolume},atrim=0:${T},afade=t=out:st=${Math.max(0, total - 1.4).toFixed(2)}:d=1.4[mus]`);
   voIdx.forEach((ix, k) => {
     const ms = Math.max(0, Math.round(vos[k].at * 1000));
-    f.push(`[${ix}:a]aresample=44100,pan=stereo|c0=c0|c1=c0,highpass=f=70,loudnorm=I=-15:TP=-2:LRA=7,afade=t=in:st=0:d=0.015,areverse,afade=t=in:st=0:d=0.03,areverse,adelay=${ms}|${ms}[v${k}]`);
+    f.push(`[${ix}:a]aresample=44100,pan=stereo|c0=c0|c1=c0,highpass=f=70,afade=t=in:st=0:d=0.015,areverse,afade=t=in:st=0:d=0.03,areverse,adelay=${ms}|${ms}[v${k}]`);
   });
   if (vos.length) f.push(`${vos.map((_, k) => `[v${k}]`).join("")}amix=inputs=${vos.length}:normalize=0:duration=longest,apad=whole_dur=${T}[vo]`);
   if (vos.length && hasMusic) {
