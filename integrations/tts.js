@@ -30,8 +30,11 @@ async function pickModel() {
   const forced = store.cfgGet("GEMINI_TTS_MODEL"); if (forced) return forced;
   if (modelCache) return modelCache;
   const list = await ttsModels();
-  // prefer a "flash" TTS (fast/cheap), else any TTS model the key can use
-  modelCache = list.find((n) => /flash/.test(n)) || list[0] || "gemini-2.5-flash-preview-tts";
+  // Prefer the NEWEST stable flash TTS (most natural, still fast): skip "lite",
+  // rank by version number, then GA over preview.
+  const ver = (n) => +((n.match(/gemini-(\d+(?:\.\d+)?)/) || [])[1] || 0);
+  const ranked = list.filter((n) => !/lite/.test(n)).sort((a, b) => (ver(b) - ver(a)) || (/preview/.test(a) - /preview/.test(b)) || (/flash/.test(b) - /flash/.test(a)));
+  modelCache = ranked[0] || list[0] || "gemini-2.5-flash-preview-tts";
   return modelCache;
 }
 function pcmToWav(pcm, rate = 24000, ch = 1, bits = 16) {

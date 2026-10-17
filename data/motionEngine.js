@@ -277,7 +277,7 @@ async function ffmpegBin() {
   if (!p || !fs.existsSync(p)) throw new Error("ffmpeg binary not found"); return p;
 }
 // scenes: [{ onScreenText, seconds, transition, layout?, photoPath? }]
-export async function renderMotionReel(scenes, outPath, { biz = {}, cta = "", fps = 25, onProgress } = {}) {
+export async function renderMotionReel(scenes, outPath, { biz = {}, cta = "", fps = 25, onProgress, audioPath = null } = {}) {
   if (!Array.isArray(scenes) || !scenes.length) throw new Error("no scenes");
   ensureFonts();
   const n = scenes.length;
@@ -287,11 +287,11 @@ export async function renderMotionReel(scenes, outPath, { biz = {}, cta = "", fp
   const bin = await ffmpegBin();
   const proc = spawn(bin, [
     "-y", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", `${W}x${H}`, "-r", String(fps), "-i", "-",
-    "-f", "lavfi", "-t", total.toFixed(2), "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+    ...(audioPath && fs.existsSync(audioPath) ? ["-i", audioPath] : ["-f", "lavfi", "-t", total.toFixed(2), "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]),
     "-map", "0:v", "-map", "1:a",
     "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p", "-threads", "1",
     "-x264-params", "ref=1:bframes=0:rc-lookahead=0:keyint=50",
-    "-c:a", "aac", "-b:a", "96k", "-shortest", "-movflags", "+faststart", outPath,
+    "-c:a", "aac", "-b:a", audioPath ? "160k" : "96k", "-shortest", "-movflags", "+faststart", outPath,
   ], { stdio: ["pipe", "ignore", "pipe"] });
   let err = ""; proc.stderr.on("data", (d) => { err += d; if (err.length > 6000) err = err.slice(-6000); });
   const done = new Promise((res, rej) => { proc.on("error", rej); proc.on("close", (c) => c === 0 ? res() : rej(new Error(`ffmpeg exited ${c}: ${err.slice(-400)}`))); });

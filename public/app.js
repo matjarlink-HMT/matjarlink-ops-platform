@@ -1382,7 +1382,16 @@ async function openVideoProject(id, C) {
       <div class="mut">الرسالة: ${escapeHtml(br.message || "")} · المشكلة: ${escapeHtml(br.problem || "")} · ~${br.duration || ""}ث · CTA: ${escapeHtml(br.cta || "")}</div></div>`
       : `<button class="btn sm" id="vsbrief" style="margin:.4rem 0">📋 توليد الـBrief</button>`}
     ${sb ? `<div style="display:flex;justify-content:space-between;align-items:center;margin:.6rem 0 .2rem"><b>🎬 السيناريو / Storyboard</b><span class="mut">${sb.scenes.length} مشاهد · ${sb.totalSeconds}ث</span></div>
-      <div class="pcard nofloat"><b>🎣 الهوك:</b> ${escapeHtml(sb.hook || "")}</div>${sceneRows}
+      <div class="pcard nofloat"><b>🎣 الهوك:</b> ${escapeHtml(sb.hook || "")}${sb.concept ? `<div class="mut" style="margin-top:.25rem">💡 الفكرة: ${escapeHtml(sb.concept)}</div>` : ""}</div>${sceneRows}
+      <div class="pcard nofloat" style="margin-top:.5rem"><b>🔊 الصوت</b>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-top:.35rem">
+          <label class="mut" style="display:flex;align-items:center;gap:.25rem"><input type="checkbox" id="vsvo" ${p.voiceover === false ? "" : "checked"}> تعليق صوتي</label>
+          <select class="psel" id="vsvoice" style="width:auto"><option value="${escapeHtml(p.voice || "Charon")}">${escapeHtml(p.voice || "Charon")}</option></select>
+          <button class="btn ghost sm" id="vsvoprev">▶ جرّب الصوت</button>
+          <select class="psel" id="vsmusic" style="width:auto">${[["auto", "🎵 موسيقى حسب مزاج السيناريو"], ["energetic", "🎵 حيوية"], ["playful", "🎵 مرحة"], ["calm", "🎵 هادئة"], ["cinematic", "🎵 سينمائية"], ["none", "🔇 بدون موسيقى"]].map(([v, l]) => `<option value="${v}" ${(p.music || "auto") === v ? "selected" : ""}>${l}</option>`).join("")}</select>
+        </div>
+        <audio id="vsaudio" controls style="display:none;width:100%;margin-top:.4rem"></audio>
+        <div class="mut" style="font-size:.78rem;margin-top:.3rem">الموسيقى أصلية مؤلَّفة برمجياً — بلا أي ترخيص خارجي، آمنة للاستخدام التجاري.</div></div>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem;align-items:center">
         <button class="btn sm" id="vssave">💾 حفظ التعديلات</button>
         <input class="pinput" id="vsnote" placeholder="ملاحظة لإعادة التوليد" style="max-width:16rem">
@@ -1390,7 +1399,7 @@ async function openVideoProject(id, C) {
         <button class="btn ok sm" id="vsproduce">🎬 أنتج الريل</button>
         <span class="ok-s" id="vdmsg"></span></div>`
       : br ? `<button class="btn sm" id="vsstory" style="margin-top:.5rem">🎬 توليد السيناريو/Storyboard</button>` : ""}
-    ${p.previewUrl ? `<div style="margin-top:.8rem"><b>▶ المعاينة</b><video src="${p.previewUrl}" controls playsinline style="width:100%;max-width:22rem;border-radius:.6rem;display:block;margin-top:.4rem"></video></div>` : ""}
+    ${p.previewUrl ? `<div style="margin-top:.8rem"><b>▶ المعاينة</b><video src="${p.previewUrl}" controls playsinline style="width:100%;max-width:22rem;border-radius:.6rem;display:block;margin-top:.4rem"></video>${p.soundtrack ? `<div class="mut" style="margin-top:.3rem">🔊 تعليق صوتي: ${p.soundtrack.voiceover ? p.soundtrack.voiceover + " مقاطع · صوت " + escapeHtml(p.soundtrack.voice || "") : "بدون"} · 🎵 ${escapeHtml(p.soundtrack.music || "")} · ${p.soundtrack.seconds || ""}ث</div>` : ""}</div>` : ""}
     <div class="mut" id="vdstatus" style="margin-top:.4rem">${p.status === "failed" && p.error ? "✗ " + escapeHtml(p.error) : (p.versions && p.versions.length ? "النسخ: " + p.versions.length : "")}</div>`;
   $("#vsback").onclick = () => renderVideoStudio(C);
   const re = (btn) => { const b = $(btn); return b; };
@@ -1399,11 +1408,23 @@ async function openVideoProject(id, C) {
   const collectSB = () => ({ ...sb, scenes: [...C.querySelectorAll(".vscene")].map((el, i) => ({ ...sb.scenes[i], n: i + 1, seconds: +el.querySelector(".vs-sec").value || 3, cameraMotion: el.querySelector(".vs-cam").value, transition: el.querySelector(".vs-tr").value, onScreenText: el.querySelector(".vs-text").value, vo: el.querySelector(".vs-vo").value })) });
   const bsave = re("#vssave"); if (bsave) bsave.onclick = async () => { const m = $("#vdmsg"); if (m) m.textContent = "…"; const r = await fetch("/api/video/storyboard", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, storyboard: collectSB() }) }).then(x => x.json()).catch(() => null); if (m) m.textContent = r && r.ok ? "✓ حُفظ" : "✗"; };
   const brg = re("#vsregen"); if (brg) brg.onclick = async () => { brg.disabled = true; brg.innerHTML = "…"; await fetch("/api/video/storyboard", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, note: ($("#vsnote").value || "").trim() }) }).catch(() => {}); openVideoProject(id, C); };
+  const vsel = $("#vsvoice");
+  if (vsel) fetch("/api/audio/voices").then(r => r.json()).then(d => { if (!d || !d.voices) return; const cur = p.voice || "Charon"; vsel.innerHTML = d.voices.map(v => `<option value="${v.id}" ${v.id === cur ? "selected" : ""}>🎙 ${escapeHtml(v.label)}</option>`).join(""); }).catch(() => {});
+  const bvp = $("#vsvoprev"); if (bvp) bvp.onclick = async () => {
+    const line = ([...C.querySelectorAll(".vs-vo")].map(el => el.value.trim()).find(Boolean)) || (sb && sb.hook) || "";
+    if (!line) return; const lbl = bvp.innerHTML; bvp.disabled = true; bvp.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
+    try {
+      const r = await fetch("/api/audio/tts-preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: line, voice: vsel.value }) });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+      const a = $("#vsaudio"); a.src = URL.createObjectURL(await r.blob()); a.style.display = "block"; a.play().catch(() => {});
+    } catch (e) { const m = $("#vdmsg"); if (m) m.textContent = "✗ " + friendlyErr(String(e.message || e)); }
+    bvp.disabled = false; bvp.innerHTML = lbl;
+  };
   const bp = re("#vsproduce"); if (bp) bp.onclick = async () => {
     if (!confirm("إنتاج الريل الآن؟ يولّد المشاهد (Gemini) وقد يأخذ دقيقة أو أكثر.")) return;
     await fetch("/api/video/storyboard", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, storyboard: collectSB() }) }).catch(() => {});
     bp.disabled = true; bp.innerHTML = `<span class="dots"><i></i><i></i><i></i></span> جارٍ الإنتاج`;
-    const r = await fetch("/api/video/produce", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).then(x => x.json()).catch(() => null);
+    const r = await fetch("/api/video/produce", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, voice: ($("#vsvoice") || {}).value, music: ($("#vsmusic") || {}).value, voiceover: !!($("#vsvo") || {}).checked }) }).then(x => x.json()).catch(() => null);
     if (r && r.ok) pollVideoProduce(id, C); else { bp.disabled = false; bp.innerHTML = "🎬 أنتج الريل"; const m = $("#vdmsg"); if (m) m.textContent = "✗ " + friendlyErr((r && r.error) || ""); }
   };
 }
@@ -1414,7 +1435,7 @@ function pollVideoProduce(id, C) {
     if (!d || !d.ok) return;
     const p = d.project;
     const pct = p.status === "producing" && p.progress != null ? ` · ${Math.round(p.progress * 100)}%` : "";
-    const stage = p.stage && p.stage.startsWith("scene") ? ` · توليد ${p.stage.replace("scene", "المشهد")}` : p.stage === "render" ? " · تحريك ومونتاج" : "";
+    const stage = !p.stage ? "" : p.stage.startsWith("scene") ? ` · صورة ${p.stage.replace("scene", "المشهد")}` : p.stage.startsWith("voice") ? ` · تعليق ${p.stage.replace("voice", "المشهد")}` : p.stage === "mix" ? " · مزج الصوت والموسيقى" : p.stage === "render" ? " · تحريك ومونتاج" : "";
     if (st) st.textContent = `الحالة: ${(VS_ST[p.status] || [p.status])[0]}${pct}${stage} (${n * 4}s)`;
     if (p.status === "needsReview" || p.status === "completed") { clearInterval(t); openVideoProject(id, C); }
     else if (p.status === "failed") { clearInterval(t); if (st) st.textContent = "✗ فشل الإنتاج: " + (p.error || ""); }

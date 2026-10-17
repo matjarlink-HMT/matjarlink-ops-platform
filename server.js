@@ -1128,14 +1128,20 @@ app.post("/api/video/produce", async (req, res) => {
   sweepTempFiles(30);
   const fm = freeDiskMB();
   if (fm != null && fm < 30) return res.status(507).json({ ok: false, error: `مساحة التخزين شبه ممتلئة (${fm}MB متبقية) — الإنتاج يحتاج ~30MB. كبّر الـVolume في Railway أو نظّف ملفات قديمة.` });
+  const b = req.body || {}, prefs = {};
+  if (b.voice && tts.VOICES.some((v) => v.id === b.voice)) prefs.voice = b.voice;
+  if (b.music) prefs.music = String(b.music).slice(0, 20);
+  if (typeof b.voiceover === "boolean") prefs.voiceover = b.voiceover;
+  if (Object.keys(prefs).length) store.saveVideoProject({ id: p.id, ...prefs });
   videoBusy = true;
-  store.setVideoProjectStatus(p.id, "producing", { error: "" });
+  store.setVideoProjectStatus(p.id, "producing", { error: "", progress: 0, stage: "" });
   res.json({ ok: true, status: "producing" }); // respond now; produce in background
   (async () => {
     try {
-      const url = await makeStoryboardReel(p, (pr) => store.setVideoProjectStatus(p.id, "producing", { progress: pr.progress, stage: pr.stage }));
-      const versions = [...(p.versions || []), { url, at: new Date().toISOString(), scenes: p.storyboard.scenes.length }].slice(-8);
-      store.saveVideoProject({ id: p.id, previewUrl: url, versions, status: "needsReview", progress: 1, stage: "" });
+      const r = await makeStoryboardReel(store.getVideoProject(p.id), (pr) => store.setVideoProjectStatus(p.id, "producing", { progress: pr.progress, stage: pr.stage }));
+      const url = r.url;
+      const versions = [...(p.versions || []), { url, at: new Date().toISOString(), scenes: p.storyboard.scenes.length, soundtrack: r.soundtrack }].slice(-8);
+      store.saveVideoProject({ id: p.id, previewUrl: url, versions, soundtrack: r.soundtrack, status: "needsReview", progress: 1, stage: "" });
     } catch (e) { console.error("[video/produce]", e.message); store.setVideoProjectStatus(p.id, "failed", { error: e.message }); }
     finally { videoBusy = false; }
   })();
@@ -1264,18 +1270,22 @@ async function makeStoryboardReel(project, onProgress) {
   const n = sb.scenes.length;
   const layouts = sb.scenes.map((sc, i) => motion.layoutFor(sc, i, n));
   if (layouts.some((l) => motion.needsPhoto(l)) && !gemini.geminiReady()) throw new Error("توليد صور المشاهد يحتاج ربط Gemini");
+  const wantVO = project.voiceover !== false && sb.scenes.some((sc) => (sc.vo || "").trim());
+  if (wantVO && !tts.ttsReady()) throw new Error("التعليق الصوتي يحتاج ربط Gemini");
   const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
   const id = project.id, biz = store.getBrandData();
   const rm = " Shot on a real camera — natural authentic human features, real skin texture. NOT 3D render, NOT AI illustration, NOT plastic/airbrushed. No text, no words, no logos. Any phone, tablet, laptop or POS screen shows ONLY abstract UI blocks, icons and simple charts — NO readable text, NO numbers, NO prices, NO currency symbols, NO colour codes.";
   const report = (o) => { try { if (onProgress) onProgress(o); } catch (e) {} };
-  const junk = [], scenes = [];
+  // Working files live in the CONTAINER temp dir, never on the (small) volume.
+  const os = await import("node:os");
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "mlreel-"));
   try {
+    // 1) scene photos (only layouts that place a photo in a shape)
+    const scenes = [];
     for (let i = 0; i < n; i++) {
       const sc = sb.scenes[i], layout = layouts[i];
       let photoPath = null;
       if (motion.needsPhoto(layout)) {
-        // The photo is cropped into a card / circle / phone screen and the copy sits
-        // OUTSIDE it, so ask for a clean subject-centred shot (no headline space).
         // The prompt knows the frame it will live in: a phone mockup must not hold a
         // photo OF a phone (phone-in-phone), a circle wants a tight subject, a card
         // wants breathing room.
@@ -1284,18 +1294,44 @@ async function makeStoryboardReel(project, onProgress) {
           : layout === "stat" ? "subject centred tightly with a simple background (it is cropped into a circle)"
             : "main subject CENTERED with breathing room (it is cropped into a rounded card)";
         const prompt = `Photorealistic ${sc.visual}. Natural well-composed shot, ${frameHint}, warm natural light, subtle brand-coloured accents in the environment (deep magenta-rose and warm golden orange, NOT purple). NO readable words in any language anywhere — including calculators, displays, signs and packaging.${rm}`;
-        report({ stage: `scene ${i + 1}/${n}`, progress: (i / n) * 0.5 });
+        report({ stage: `scene ${i + 1}/${n}`, progress: (i / n) * 0.4 });
         const { refs, note } = heroRefs(prompt);
         const { buffer } = await gemini.generateImage(prompt + note, refs);
-        photoPath = path.join(dir, `_sbbg-${id}-${i}.png`); junk.push(photoPath);
-        const fd = fs.openSync(photoPath, "w"); try { fs.writeSync(fd, buffer); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+        photoPath = path.join(tmp, `photo-${i}.png`); fs.writeFileSync(photoPath, buffer);
       }
       scenes.push({ ...sc, layout, photoPath });
     }
+    // 2) voiceover: one clip per scene; the scene stretches so its line fits
+    //    (starts 0.3s in, ends ≥0.5s before the wipe) — speech and picture stay in sync.
+    const voClips = []; let at = 0;
+    for (let i = 0; i < n; i++) {
+      const sc = scenes[i]; let voSec = 0;
+      if (wantVO && (sc.vo || "").trim()) {
+        report({ stage: `voice ${i + 1}/${n}`, progress: 0.4 + 0.15 * (i / n) });
+        let out; try { out = await tts.speak(sc.vo, { voice: project.voice || "Charon" }); } catch (e) { out = await tts.speak(sc.vo, { voice: project.voice || "Charon" }); }
+        const vp = path.join(tmp, `vo-${i}.wav`); fs.writeFileSync(vp, out.wav);
+        voSec = out.seconds; voClips.push({ path: vp, at: at + 0.3 });
+      }
+      sc.seconds = Math.min(9, Math.max(+sc.seconds || 3, voSec ? voSec + 0.8 : 0));
+      at += sc.seconds;
+    }
+    const total = at;
+    // 3) music: an original composed bed (no licence needed) unless turned off
+    report({ stage: "mix", progress: 0.56 });
+    let musicPath = null;
+    const moodKey = project.music && project.music !== "auto" ? project.music : (sb.music || "energetic");
+    if (moodKey !== "none") {
+      const { compose, MOOD_KEYS } = await import("./data/musicEngine.js");
+      musicPath = path.join(tmp, "music.wav");
+      fs.writeFileSync(musicPath, compose({ seconds: total, mood: MOOD_KEYS.includes(moodKey) ? moodKey : "energetic" }));
+    }
+    const { mixAudio } = await import("./data/audioMix.js");
+    const audioPath = await mixAudio({ total, voClips, musicPath, out: path.join(tmp, "mix.wav") });
+    // 4) picture + soundtrack
     const out = path.join(dir, `${id}.mp4`);
-    await motion.renderMotionReel(scenes, out, { biz, cta: sb.cta || "قريبًا", onProgress: (f) => report({ stage: "render", progress: 0.5 + f * 0.5 }) });
-    return `/media/design/${id}.mp4?v=${Date.now()}`;
-  } finally { for (const f of junk) { try { fs.unlinkSync(f); } catch (e) {} } }
+    await motion.renderMotionReel(scenes, out, { biz, cta: sb.cta || "قريبًا", audioPath, onProgress: (f) => report({ stage: "render", progress: 0.6 + f * 0.4 }) });
+    return { url: `/media/design/${id}.mp4?v=${Date.now()}`, soundtrack: { voiceover: voClips.length, voice: project.voice || "Charon", music: moodKey, seconds: +total.toFixed(2) } };
+  } finally { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {} }
 }
 // Editorial CAROUSEL: a cover + content slides, each its own editorial scene.
 // Returns { url (cover), images: [cover, slide1, …] } for the carousel queue post.
