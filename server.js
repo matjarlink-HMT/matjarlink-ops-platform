@@ -1217,9 +1217,20 @@ app.get("/api/debug/clips/:id", async (req, res) => {
     motion.detectCrop.debug = true; motion.detectCrop.raw = "";
     const crop = await motion.detectCrop(bin, path.join(adir, f));
     const raw = motion.detectCrop.raw || ""; motion.detectCrop.debug = false;
-    out.push({ f, MB: +(fs.statSync(path.join(adir, f)).size / 1048576).toFixed(1), crop, stream: (raw.match(/Stream.*Video.*/) || [""])[0].slice(0, 160), samples: (raw.match(/crop=\S+/g) || []).slice(0, 4) });
+    out.push({ f, MB: +(fs.statSync(path.join(adir, f)).size / 1048576).toFixed(1), at: fs.statSync(path.join(adir, f)).mtime.toISOString(), crop, stream: (raw.match(/Stream.*Video.*/) || [""])[0].slice(0, 160), samples: (raw.match(/crop=\S+/g) || []).slice(0, 4) });
   }
   res.json({ ok: true, clips: out });
+});
+// Delete named cached clips of ONE project (owner-approved cleanup). Only
+// clip-*.mp4 inside that project's asset folder can be touched.
+app.post("/api/video/clips/delete", (req, res) => {
+  const b = req.body || {}; const adir = path.join(designsDir(), "assets", String(b.id || "").replace(/[^\w-]/g, ""));
+  let freed = 0; const done = [];
+  for (const f of (Array.isArray(b.files) ? b.files : [])) {
+    if (!/^clip-[0-9a-f]{16}\.mp4$/.test(f)) continue;
+    const p = path.join(adir, f); try { freed += fs.statSync(p).size; fs.unlinkSync(p); done.push(f); } catch (e) {}
+  }
+  res.json({ ok: true, deleted: done, freedMB: +(freed / 1048576).toFixed(1), freeMB: freeDiskMB() });
 });
 app.post("/api/video/version/delete", (req, res) => {
   const b = req.body || {}; const p = store.getVideoProject(b.id);
