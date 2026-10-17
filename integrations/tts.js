@@ -104,7 +104,7 @@ export async function speak(text, { voice = "Charon", style = "" } = {}) {
   const line = String(text || "").trim(); if (!line) throw new Error("empty voiceover line");
   const words = line.split(/\s+/).filter(Boolean).length;
   const maxSec = 2 + words * 0.8; // natural speech ≈ 0.4s/word — anything far beyond read something extra
-  const direction = style || "You are a voice actor. Speak the user's Arabic line exactly as written and nothing else, in natural, warm, conversational Gulf Arabic with an Omani feel — friendly, confident, human, medium pace. Never read these directions.";
+  const direction = style || "You are a voice actor. Speak the user's Arabic line exactly as written and nothing else, with a natural Omani Arabic accent, like someone from Muscat chatting with a friend — warm, friendly, confident, human, medium pace. Never read these directions.";
   const model = await pickModel();
   let legacy = null; try { const list = await ttsModels(); legacy = list.find((n) => /2\.5-flash.*tts/.test(n)) || null; } catch (e) {}
   const attempts = [

@@ -1089,7 +1089,7 @@ app.get("/api/video/projects", (req, res) => {
 app.get("/api/video/project/:id", (req, res) => {
   const p = store.getVideoProject(req.params.id);
   if (!p) return res.status(404).json({ ok: false, error: "project not found" });
-  res.json({ ok: true, project: p });
+  res.json({ ok: true, project: p, modes: videoStudio.PRODUCTION_MODES });
 });
 // Create a project from a free idea OR a content-plan item (Reel format).
 app.post("/api/video/project", (req, res) => {
@@ -1118,9 +1118,10 @@ app.post("/api/video/storyboard", async (req, res) => {
   if (!p) return res.status(404).json({ ok: false, error: "project not found" });
   if (!p.brief) return res.status(400).json({ ok: false, error: "أنشئ الـBrief أولاً" });
   try {
-    const sb = await videoStudio.generateStoryboard({ brief: p.brief, mode: p.mode, note: (b.note || "").trim() });
+    const mode = videoStudio.MODE_KEYS.includes(b.mode) ? b.mode : p.mode; // owner can switch the style on regenerate
+    const sb = await videoStudio.generateStoryboard({ brief: p.brief, mode, note: (b.note || "").trim() });
     if (!sb) return res.status(502).json({ ok: false, error: "تعذّر توليد الـStoryboard — تحقق من ربط Claude" });
-    const up = store.saveVideoProject({ id: p.id, storyboard: sb, status: "storyboard" });
+    const up = store.saveVideoProject({ id: p.id, mode, storyboard: sb, status: "storyboard" });
     res.json({ ok: true, project: up });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
