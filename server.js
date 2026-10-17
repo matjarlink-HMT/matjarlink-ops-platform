@@ -1428,7 +1428,12 @@ async function makeStoryboardReel(project, onProgress, ver = null) {
         if (fs.existsSync(j.file)) { vstats.clipsReused++; scenes[j.i].clipPath = j.file; continue; }
         report({ stage: `video ${j.i + 1}/${n}`, progress: 0.4 + 0.15 * (j.i / n) });
         try {
-          const buf = await veo.generateClip({ model: project.videoModel, prompt: j.motion, image: fs.readFileSync(j.sc.photoPath), mime: "image/jpeg", seconds: j.secs });
+          const gen = (prompt) => veo.generateClip({ model: project.videoModel, prompt, image: fs.readFileSync(j.sc.photoPath), mime: "image/jpeg", seconds: j.secs });
+          let buf;
+          // Veo also generates sound; an "audio issue" refusal is not billed and
+          // usually clears when the sound direction is softer — retry once that way.
+          try { buf = await gen(j.motion); }
+          catch (e) { if (!/audio/i.test(e.message)) throw e; buf = await gen(j.motion.replace("Nobody speaks: no dialogue, no lip-sync.", "Only soft ambient shop sound; the people do not talk.").replace(" No music.", "")); }
           fs.writeFileSync(j.file, buf); scenes[j.i].clipPath = j.file;
           vstats.clipsNew++; vstats.seconds += j.secs; vstats.usd += j.secs * veo.priceFor(project.videoModel);
         } catch (e) { console.error("[produce] veo scene", j.i + 1, e.message); vstats.errors.push({ scene: j.i + 1, error: String(e.message).slice(0, 200) }); }
