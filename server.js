@@ -1154,10 +1154,19 @@ app.post("/api/video/produce", async (req, res) => {
   res.json({ ok: true, status: "producing" }); // respond now; produce in background
   (async () => {
     try {
-      const r = await makeStoryboardReel(store.getVideoProject(p.id), (pr) => store.setVideoProjectStatus(p.id, "producing", { progress: pr.progress, stage: pr.stage }));
+      const ver = (p.versions || []).length + 1;
+      const r = await makeStoryboardReel(store.getVideoProject(p.id), (pr) => store.setVideoProjectStatus(p.id, "producing", { progress: pr.progress, stage: pr.stage }), ver);
       const url = r.url;
-      const versions = [...(p.versions || []), { url, at: new Date().toISOString(), scenes: p.storyboard.scenes.length, soundtrack: r.soundtrack }].slice(-8);
-      store.saveVideoProject({ id: p.id, previewUrl: url, versions, soundtrack: r.soundtrack, status: "needsReview", progress: 1, stage: "" });
+      let versions = [...(p.versions || []), { url, at: new Date().toISOString(), scenes: p.storyboard.scenes.length, soundtrack: r.soundtrack, assets: r.assets }].map((v, k) => ({ ...v, n: k + 1 }));
+      // Keep the files of the newest 3 versions (the volume is small); older entries
+      // stay listed but marked gone. Older entries that shared one overwritten file
+      // (before versioning) are not real versions — only the newest of them is live.
+      const fileOf = (u) => path.join(designsDir(), String(u || "").split("?")[0].replace(/^\/media\/design\//, ""));
+      const keep = new Set(versions.slice(-3).map((v) => fileOf(v.url))), seen = new Set();
+      versions = versions.slice().reverse().map((v) => { const f = fileOf(v.url); const live = keep.has(f) && !seen.has(f) && fs.existsSync(f); seen.add(f); return { ...v, gone: !live }; }).reverse();
+      for (const v of versions) { const f = fileOf(v.url); if (v.gone && !keep.has(f)) { try { fs.unlinkSync(f); } catch (e) {} } }
+      versions = versions.slice(-8);
+      store.saveVideoProject({ id: p.id, previewUrl: url, versions, soundtrack: r.soundtrack, assets: r.assets, status: "needsReview", progress: 1, stage: "" });
     } catch (e) { console.error("[video/produce]", e.message); store.setVideoProjectStatus(p.id, "failed", { error: e.message }); }
     finally { videoBusy = false; }
   })();
@@ -1175,7 +1184,16 @@ app.post("/api/audio/tts-preview", async (req, res) => {
     res.end(out.wav);
   } catch (e) { res.status(502).json({ ok: false, error: e.message }); }
 });
-app.delete("/api/video/project/:id", (req, res) => { store.deleteVideoProject(req.params.id); res.json({ ok: true }); });
+app.post("/api/video/restore", (req, res) => {
+  const b = req.body || {}; const p = store.getVideoProject(b.id);
+  if (!p) return res.status(404).json({ ok: false, error: "project not found" });
+  const v = (p.versions || []).find((x) => x.n === +b.n);
+  if (!v || v.gone) return res.status(404).json({ ok: false, error: "هذه النسخة لم تعد محفوظة" });
+  const f = path.join(designsDir(), String(v.url).split("?")[0].replace(/^\/media\/design\//, ""));
+  if (!fs.existsSync(f)) return res.status(404).json({ ok: false, error: "ملف النسخة غير موجود" });
+  res.json({ ok: true, project: store.saveVideoProject({ id: p.id, previewUrl: v.url, soundtrack: v.soundtrack || p.soundtrack, status: "needsReview", restoredFrom: v.n }) });
+});
+app.delete("/api/video/project/:id", (req, res) => { const id = String(req.params.id || "").replace(/[^a-z0-9-]/gi, ""); try { fs.rmSync(path.join(designsDir(), "assets", id), { recursive: true, force: true }); } catch (e) {} try { for (const f of fs.readdirSync(designsDir())) if (f === id + ".mp4" || f.startsWith(id + "-v")) fs.unlinkSync(path.join(designsDir(), f)); } catch (e) {} store.deleteVideoProject(id); res.json({ ok: true }); });
 // ── Editorial style (adopted templates 6 = dark, 7 = white) ──────────────────
 // Gemini generates a content-matched premium SCENE (person/device/card/place),
 // our engine overlays crisp Arabic text. Dynamic layout (side/center) + a hero
@@ -1279,7 +1297,7 @@ async function makeEditorialReel({ id, light = false, headline, pop, cta, valueL
 // storyboard montage (per-scene duration, directed camera motion, transitions,
 // brand grade, end-screen). Provider-agnostic: scenes are animated images today;
 // a real video-gen provider can replace this per-scene step later.
-async function makeStoryboardReel(project, onProgress) {
+async function makeStoryboardReel(project, onProgress, ver = null) {
   const sb = project && project.storyboard;
   if (!sb || !Array.isArray(sb.scenes) || !sb.scenes.length) throw new Error("لا يوجد Storyboard معتمد");
   const motion = await import("./data/motionEngine.js");
@@ -1295,6 +1313,14 @@ async function makeStoryboardReel(project, onProgress) {
   // Working files live in the CONTAINER temp dir, never on the (small) volume.
   const os = await import("node:os");
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "mlreel-"));
+  // Persistent per-project ASSET CACHE: each scene photo / voice clip is stored
+  // under a fingerprint of what produced it, so a re-render only regenerates the
+  // scenes whose content changed — editing a line, a transition or the music
+  // costs nothing in image/voice generation.
+  const adir = path.join(dir, "assets", id); fs.mkdirSync(adir, { recursive: true });
+  const used = new Set(), stats = { photosNew: 0, photosReused: 0, voNew: 0, voReused: 0 };
+  const fp = (x) => crypto.createHash("sha1").update(x).digest("hex").slice(0, 16);
+  const wavSeconds = (p) => { try { const b = fs.readFileSync(p); const rate = b.readUInt32LE(24), ch = b.readUInt16LE(22), bits = b.readUInt16LE(34); return (b.length - 44) / (rate * ch * bits / 8); } catch (e) { return 0; } };
   try {
     // 1) scene photos (only layouts that place a photo in a shape)
     const scenes = [];
@@ -1310,12 +1336,18 @@ async function makeStoryboardReel(project, onProgress) {
           : layout === "stat" ? "subject centred tightly with a simple background (it is cropped into a circle)"
             : "main subject CENTERED with breathing room (it is cropped into a rounded card)";
         const prompt = `Photorealistic ${sc.visual}. Natural well-composed shot, ${frameHint}, warm natural light, subtle brand-coloured accents in the environment (deep magenta-rose and warm golden orange, NOT purple). NO readable words in any language anywhere — including calculators, displays, signs and packaging.${rm}`;
-        report({ stage: `scene ${i + 1}/${n}`, progress: (i / n) * 0.4 });
         const { refs, note } = heroRefs(prompt);
-        let buffer;
-        try { ({ buffer } = await gemini.generateImage(prompt + note, refs)); }
-        catch (e) { console.error("[produce] scene", i + 1, "retry without references:", e.message); ({ buffer } = await gemini.generateImage(prompt, [])); }
-        photoPath = path.join(tmp, `photo-${i}.png`); fs.writeFileSync(photoPath, buffer);
+        photoPath = path.join(adir, `photo-${fp(prompt + note)}.jpg`); used.add(path.basename(photoPath));
+        if (fs.existsSync(photoPath)) stats.photosReused++;
+        else {
+          report({ stage: `scene ${i + 1}/${n}`, progress: (i / n) * 0.4 });
+          let buffer;
+          try { ({ buffer } = await gemini.generateImage(prompt + note, refs)); }
+          catch (e) { console.error("[produce] scene", i + 1, "retry without references:", e.message); ({ buffer } = await gemini.generateImage(prompt, [])); }
+          const { createCanvas, loadImage } = await import("@napi-rs/canvas");
+          const img = await loadImage(buffer); const cv = createCanvas(img.width, img.height); cv.getContext("2d").drawImage(img, 0, 0);
+          fs.writeFileSync(photoPath, cv.toBuffer("image/jpeg", 88)); stats.photosNew++;
+        }
       }
       scenes.push({ ...sc, layout, photoPath });
     }
@@ -1325,10 +1357,15 @@ async function makeStoryboardReel(project, onProgress) {
     for (let i = 0; i < n; i++) {
       const sc = scenes[i]; let voSec = 0;
       if (wantVO && (sc.vo || "").trim()) {
-        report({ stage: `voice ${i + 1}/${n}`, progress: 0.4 + 0.15 * (i / n) });
-        let out; try { out = await tts.speak(sc.vo, { voice: project.voice || "Charon" }); } catch (e) { out = await tts.speak(sc.vo, { voice: project.voice || "Charon" }); }
-        const vp = path.join(tmp, `vo-${i}.wav`); fs.writeFileSync(vp, out.wav);
-        voSec = out.seconds; voClips.push({ path: vp, at: at + 0.3 });
+        const voice = project.voice || "Charon";
+        const vp = path.join(adir, `vo-${fp(sc.vo.trim() + "|" + voice)}.wav`); used.add(path.basename(vp));
+        if (fs.existsSync(vp)) { voSec = wavSeconds(vp); stats.voReused++; }
+        else {
+          report({ stage: `voice ${i + 1}/${n}`, progress: 0.4 + 0.15 * (i / n) });
+          let out; try { out = await tts.speak(sc.vo, { voice }); } catch (e) { out = await tts.speak(sc.vo, { voice }); }
+          fs.writeFileSync(vp, out.wav); voSec = out.seconds; stats.voNew++;
+        }
+        voClips.push({ path: vp, at: at + 0.3 });
       }
       sc.seconds = Math.min(9, Math.max(+sc.seconds || 3, voSec ? voSec + 0.8 : 0));
       at += sc.seconds;
@@ -1346,9 +1383,11 @@ async function makeStoryboardReel(project, onProgress) {
     const { mixAudio } = await import("./data/audioMix.js");
     const audioPath = await mixAudio({ total, voClips, musicPath, out: path.join(tmp, "mix.wav") });
     // 4) picture + soundtrack
-    const out = path.join(dir, `${id}.mp4`);
+    const name = ver ? `${id}-v${ver}.mp4` : `${id}.mp4`;
+    const out = path.join(dir, name);
     await motion.renderMotionReel(scenes, out, { biz, cta: sb.cta || "قريبًا", audioPath, onProgress: (f) => report({ stage: "render", progress: 0.6 + f * 0.4 }) });
-    return { url: `/media/design/${id}.mp4?v=${Date.now()}`, soundtrack: { voiceover: voClips.length, voice: project.voice || "Charon", music: moodKey, seconds: +total.toFixed(2) } };
+    for (const f of fs.readdirSync(adir)) { if (!used.has(f)) { try { fs.unlinkSync(path.join(adir, f)); } catch (e) {} } } // keep only what this version uses
+    return { url: `/media/design/${name}?v=${Date.now()}`, soundtrack: { voiceover: voClips.length, voice: project.voice || "Charon", music: moodKey, seconds: +total.toFixed(2) }, assets: stats };
   } finally { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {} }
 }
 // Editorial CAROUSEL: a cover + content slides, each its own editorial scene.

@@ -30,7 +30,7 @@ export async function mixAudio({ total, voClips = [], musicPath = null, out, mus
   if (hasMusic) f.push(`[${musIdx}:a]aresample=44100,aformat=channel_layouts=stereo,highpass=f=40,lowpass=f=9500,volume=${musicVolume},atrim=0:${T},afade=t=out:st=${Math.max(0, total - 1.4).toFixed(2)}:d=1.4[mus]`);
   voIdx.forEach((ix, k) => {
     const ms = Math.max(0, Math.round(vos[k].at * 1000));
-    f.push(`[${ix}:a]aresample=44100,pan=stereo|c0=c0|c1=c0,highpass=f=70,loudnorm=I=-15:TP=-2:LRA=7,adelay=${ms}|${ms}[v${k}]`);
+    f.push(`[${ix}:a]aresample=44100,pan=stereo|c0=c0|c1=c0,highpass=f=70,loudnorm=I=-15:TP=-2:LRA=7,afade=t=in:st=0:d=0.015,areverse,afade=t=in:st=0:d=0.03,areverse,adelay=${ms}|${ms}[v${k}]`);
   });
   if (vos.length) f.push(`${vos.map((_, k) => `[v${k}]`).join("")}amix=inputs=${vos.length}:normalize=0:duration=longest,apad=whole_dur=${T}[vo]`);
   if (vos.length && hasMusic) {
@@ -39,7 +39,7 @@ export async function mixAudio({ total, voClips = [], musicPath = null, out, mus
     f.push(`[duck][vok]amix=inputs=2:normalize=0:duration=first[mix]`);
   }
   const src = vos.length && hasMusic ? "[mix]" : vos.length ? "[vo]" : "[mus]";
-  f.push(`${src}loudnorm=I=-14:TP=-1.5:LRA=11,atrim=0:${T}[out]`);
+  f.push(`${src}loudnorm=I=-14:TP=-2.0:LRA=11,alimiter=limit=0.79:level=false,atrim=0:${T}[out]`);
   args.push("-filter_complex", f.join(";"), "-map", "[out]", "-ar", "44100", "-ac", "2", "-c:a", "pcm_s16le", out);
   await run(await ffmpegBin(), args);
   return out;
