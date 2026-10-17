@@ -18,12 +18,12 @@ export const geminiReady = () => Boolean(KEY());
 export async function generateImage(prompt, refs = [], opts = {}) {
   const key = KEY();
   if (!key) throw new Error("GEMINI_API_KEY not set");
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL()}:generateContent?key=${key}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${opts.model || MODEL()}:generateContent?key=${key}`;
   const parts = [{ text: prompt }];
   for (const rf of refs || []) { if (rf?.data) parts.push({ inlineData: { mimeType: rf.mime || "image/png", data: rf.data } }); }
   const body = {
     contents: [{ parts }],
-    generationConfig: { responseModalities: ["IMAGE"], temperature: 1.0, ...(opts.aspect ? { imageConfig: { aspectRatio: opts.aspect } } : {}) },
+    generationConfig: { responseModalities: ["IMAGE"], temperature: 1.0, ...(opts.aspect || opts.size ? { imageConfig: { ...(opts.aspect ? { aspectRatio: opts.aspect } : {}), ...(opts.size ? { imageSize: opts.size } : {}) } } : {}) },
   };
   let r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!r.ok && opts.aspect && r.status === 400) { // a model without imageConfig: retry without it

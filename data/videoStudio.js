@@ -86,6 +86,7 @@ ${m === PRODUCTION_MODES.comedy ? COMEDY_RULES : ""}${HUMAN_RULES}
 لكل مشهد:
 - visual: وصف بصري دقيق بالإنجليزية للصورة، واقعي، بلا نص. إن ظهرت شاشة فواجهتها رمزية فقط (أيقونات وأشكال) بلا أرقام أو أسعار أو عملة أو كلمات.
 - onScreenText: النص على الشاشة أو "". أي مبلغ بالريال العُماني (ر.ع.) فقط — ممنوع الدولار.
+- shot: لقطة احترافية بالإنجليزية (حجم اللقطة + الزاوية + العدسة) مثل "medium close-up, eye level, 50mm" أو "over-the-shoulder, 85mm" — نوّع بين المشاهد كمخرج إعلانات عالمي.
 - keywords: [] · cameraMotion: من {push-in, pull-out, pan-left, pan-right, tilt-up, static, handheld} · vo · sfx: "" · transition: من {cut, flash, whip, dissolve, slide}.
 قبل أن تعيد الإجابة اقرأ كل سطر في ذهنك: هل يقوله عُماني حقيقي بهذه الطريقة؟ هل هو سليم لغوياً؟ أصلح أي سطر مصطنع.
 أعد **JSON فقط**:
@@ -100,6 +101,7 @@ ${m === PRODUCTION_MODES.comedy ? COMEDY_RULES : ""}${HUMAN_RULES}
     onScreenText: String(sc.onScreenText || ""),
     keywords: Array.isArray(sc.keywords) ? sc.keywords.map(String).slice(0, 5) : [],
     cameraMotion: String(sc.cameraMotion || "push-in"),
+    shot: String(sc.shot || ""),
     vo: String(sc.vo || ""),
     sfx: String(sc.sfx || ""),
     transition: String(sc.transition || "whip"),

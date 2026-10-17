@@ -1152,6 +1152,7 @@ app.post("/api/video/produce", async (req, res) => {
   if (typeof b.voiceover === "boolean") prefs.voiceover = b.voiceover;
   if (b.engine === "motion" || b.engine === "veo") prefs.engine = b.engine;
   if (b.videoModel && /^(veo|gemini-omni)[\w.-]*$/.test(b.videoModel)) prefs.videoModel = b.videoModel;
+  if (typeof b.imageModel === "string" && /^(gemini|imagen)[\w.-]*$|^$/.test(b.imageModel)) prefs.imageModel = b.imageModel;
   if (Object.keys(prefs).length) store.saveVideoProject({ id: p.id, ...prefs });
   videoBusy = true;
   store.setVideoProjectStatus(p.id, "producing", { error: "", progress: 0, stage: "" });
@@ -1352,9 +1353,10 @@ function castFor(cast, visual) {
   const v = String(visual || "").toLowerCase();
   return parts.filter((pt) => { if (/^LEAD\b/.test(pt)) return true; const role = (pt.match(/^THE\s+([A-Z][A-Z ]*?)\s*[:=]/) || [])[1]; return role ? v.includes(role.toLowerCase().trim().split(/\s+/).pop()) : true; }).join(". ").replace(/\.*$/, "");
 }
+const SHOT = { "push-in": "medium close-up, eye level, 50mm lens", "pull-out": "medium wide shot, eye level, 35mm lens", "pan-left": "medium shot, slightly off-axis, 35mm lens", "pan-right": "medium shot, slightly off-axis, 35mm lens", "tilt-up": "medium shot, low angle, 35mm lens", static: "medium close-up, eye level, 50mm lens", handheld: "over-the-shoulder close shot, 50mm lens" };
 const CAM = { "push-in": "slowly pushes in", "pull-out": "slowly pulls back", "pan-left": "pans gently left", "pan-right": "pans gently right", "tilt-up": "tilts up gently", static: "stays locked off", handheld: "is handheld with slight natural shake" };
 function motionPrompt(sc) {
-  return `${sc.visual}. Animate this exact photo as a short live-action shot: the people move naturally and act out the moment described, with big but real reactions; the camera ${CAM[sc.cameraMotion] || "slowly pushes in"}. Keep exactly the same people, faces, Omani clothes and shop as in the image — nobody new enters unless described. Nobody speaks: no dialogue, no lip-sync. No on-screen text, captions or subtitles. No music. Realistic, cinematic.`;
+  return `${sc.visual}. Cinematic live-action footage from a high-end TV commercial, continuing this exact photo: real actors with natural, understated performances — micro-expressions, natural blinking and breathing, physically correct hand and body motion — acting out the moment described; the camera ${CAM[sc.cameraMotion] || "slowly pushes in"} with smooth professional operation, shallow depth of field, natural motion blur, real light. Absolutely photoreal, never animated or CGI-looking. Keep exactly the same people, faces, Omani clothes and shop as in the image — nobody new enters unless described. Nobody speaks: no dialogue, no lip-sync. No on-screen text, captions or subtitles. No music. Realistic, cinematic.`;
 }
 async function makeStoryboardReel(project, onProgress, ver = null) {
   const sb = project && project.storyboard;
@@ -1390,6 +1392,7 @@ async function makeStoryboardReel(project, onProgress, ver = null) {
       const lp = pick && charPathAny(pick), r = lp && imageRef(lp);
       if (r) leadRef = { refs: [r], note: ` LEAD CHARACTER REFERENCE: the main character of this story (the shop owner) is the SAME person as the attached reference image in EVERY scene — exact same face, age and build, and EXACTLY the same authentic Omani clothing as in the reference (dishdasha with furakha and Omani headwear for a man; the same abaya and hijab for a woman) — do not change or invent any clothing. Other people in the scene must look clearly different from the lead. Use the reference only for this man's identity and dress, not its pose, background or framing.` };
     }
+    const reelImageModel = project.imageModel || store.cfgGet("REEL_IMAGE_MODEL") || "";
     // 1) scene photos (only layouts that place a photo in a shape)
     const scenes = [];
     for (let i = 0; i < n; i++) {
@@ -1409,16 +1412,18 @@ async function makeStoryboardReel(project, onProgress, ver = null) {
         // authentic Omani outfit) instead of a face/garment rotated per prompt.
         const cast = castFor(sb.cast, sc.visual);
         const continuity = `${cast ? ` CAST (identical in every scene of this story): ${cast}. ONLY these people appear in this shot — nobody else from the story.` : ""}${sb.setting ? ` LOCATION (same place in every scene): ${sb.setting}.` : ""}`;
-        const prompt = `Photorealistic candid photograph: ${sc.visual}.${continuity} Natural well-composed shot, ${frameHint}, warm natural light, subtle brand-coloured accents in the environment (deep magenta-rose and warm golden orange, NOT purple). Big expressions stay REAL — a candid photo of real people reacting, never a caricature or cartoon. NO readable words in any language anywhere — including calculators, displays, signs and packaging.${rm}`;
+        const shot = sc.shot || SHOT[sc.cameraMotion] || "medium shot, eye level, 35mm lens";
+        const prompt = `Ultra-realistic cinematic film still from a high-end TV commercial: ${sc.visual}.${continuity} Camera: ${shot}, shot on an ARRI Alexa 35 with a cinema prime lens, shallow depth of field, ${frameHint}. Real people with natural, un-retouched skin (visible pores, fine lines, natural shine), real hair texture, real fabric weave and folds; understated, truthful acting. Motivated practical lighting with soft window light, true-to-life colour grade, subtle film grain. Subtle brand-coloured accents in the environment (deep magenta-rose and warm golden orange, NOT purple). Indistinguishable from a real photograph — NOT CGI, NOT 3D, NOT illustration, NOT airbrushed, no AI smoothness, no plastic skin. NO readable words in any language anywhere — including screens, calculators, signs and packaging.${rm}`;
         const { refs, note } = leadRef && /owner|trader|shopkeeper|merchant|seller|\bman\b|woman|\bshe\b|\bher\b|dishdasha|kummah|massar|abaya|hijab/i.test(sc.visual) ? leadRef : heroRefs(prompt);
-        photoPath = path.join(adir, `photo-${fp(prompt + note + "|9:16")}.jpg`); used.add(path.basename(photoPath));
+        photoPath = path.join(adir, `photo-${fp(prompt + note + "|9:16|" + (reelImageModel || ""))}.jpg`); used.add(path.basename(photoPath));
         if (fs.existsSync(photoPath)) stats.photosReused++;
         else {
           report({ stage: `scene ${i + 1}/${n}`, progress: (i / n) * 0.4 });
           let buffer;
           // reel scenes are ALWAYS vertical 9:16 (Veo needs a 9:16 first frame or it letterboxes)
-          try { ({ buffer } = await gemini.generateImage(prompt + note, refs, { aspect: "9:16" })); }
-          catch (e) { console.error("[produce] scene", i + 1, "retry without references:", e.message); ({ buffer } = await gemini.generateImage(prompt, [], { aspect: "9:16" })); }
+          const io = { aspect: "9:16", model: reelImageModel, size: /pro|3\.1/.test(reelImageModel || "") ? "2K" : undefined };
+          try { ({ buffer } = await gemini.generateImage(prompt + note, refs, io)); }
+          catch (e) { console.error("[produce] scene", i + 1, "retry without references:", e.message); ({ buffer } = await gemini.generateImage(prompt, [], io)); }
           const { createCanvas, loadImage } = await import("@napi-rs/canvas");
           const img = await loadImage(buffer); const cv = createCanvas(img.width, img.height); cv.getContext("2d").drawImage(img, 0, 0);
           fs.writeFileSync(photoPath, cv.toBuffer("image/jpeg", 88)); stats.photosNew++;
