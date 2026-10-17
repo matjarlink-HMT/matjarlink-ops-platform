@@ -1155,10 +1155,13 @@ app.post("/api/video/produce", async (req, res) => {
   res.json({ ok: true, status: "producing" }); // respond now; produce in background
   (async () => {
     try {
-      const ver = (p.versions || []).length + 1;
+      // Version number = highest ever produced + 1 (the list is capped at 8, so its
+      // length must never be the counter — that re-used "v9" and overwrote it).
+      const vnum = (v) => +((String(v.url || "").match(/-v(\d+)\.mp4/) || [])[1] || 0) || +v.n || 0;
+      const ver = Math.max(0, ...(p.versions || []).map(vnum)) + 1;
       const r = await makeStoryboardReel(store.getVideoProject(p.id), (pr) => store.setVideoProjectStatus(p.id, "producing", { progress: pr.progress, stage: pr.stage }), ver);
       const url = r.url;
-      let versions = [...(p.versions || []), { url, at: new Date().toISOString(), scenes: p.storyboard.scenes.length, soundtrack: r.soundtrack, assets: r.assets }].map((v, k) => ({ ...v, n: k + 1 }));
+      let versions = [...(p.versions || []), { url, at: new Date().toISOString(), scenes: p.storyboard.scenes.length, soundtrack: r.soundtrack, assets: r.assets, n: ver }].map((v) => ({ ...v, n: vnum(v) }));
       // Keep the files of the newest 3 versions (the volume is small); older entries
       // stay listed but marked gone. Older entries that shared one overwritten file
       // (before versioning) are not real versions — only the newest of them is live.
@@ -1188,7 +1191,7 @@ app.post("/api/audio/tts-preview", async (req, res) => {
 app.post("/api/video/restore", (req, res) => {
   const b = req.body || {}; const p = store.getVideoProject(b.id);
   if (!p) return res.status(404).json({ ok: false, error: "project not found" });
-  const v = (p.versions || []).find((x) => x.n === +b.n);
+  const v = (p.versions || []).find((x) => x.n === +b.n && !x.gone) || (p.versions || []).find((x) => x.n === +b.n);
   if (!v || v.gone) return res.status(404).json({ ok: false, error: "هذه النسخة لم تعد محفوظة" });
   const f = path.join(designsDir(), String(v.url).split("?")[0].replace(/^\/media\/design\//, ""));
   if (!fs.existsSync(f)) return res.status(404).json({ ok: false, error: "ملف النسخة غير موجود" });
