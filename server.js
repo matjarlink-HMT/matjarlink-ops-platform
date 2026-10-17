@@ -1403,13 +1403,14 @@ async function makeStoryboardReel(project, onProgress, ver = null) {
         const continuity = `${cast ? ` CAST (identical in every scene of this story): ${cast}. ONLY these people appear in this shot — nobody else from the story.` : ""}${sb.setting ? ` LOCATION (same place in every scene): ${sb.setting}.` : ""}`;
         const prompt = `Photorealistic candid photograph: ${sc.visual}.${continuity} Natural well-composed shot, ${frameHint}, warm natural light, subtle brand-coloured accents in the environment (deep magenta-rose and warm golden orange, NOT purple). Big expressions stay REAL — a candid photo of real people reacting, never a caricature or cartoon. NO readable words in any language anywhere — including calculators, displays, signs and packaging.${rm}`;
         const { refs, note } = leadRef && /owner|trader|shopkeeper|merchant|seller|\bman\b|woman|\bshe\b|\bher\b|dishdasha|kummah|massar|abaya|hijab/i.test(sc.visual) ? leadRef : heroRefs(prompt);
-        photoPath = path.join(adir, `photo-${fp(prompt + note)}.jpg`); used.add(path.basename(photoPath));
+        photoPath = path.join(adir, `photo-${fp(prompt + note + "|9:16")}.jpg`); used.add(path.basename(photoPath));
         if (fs.existsSync(photoPath)) stats.photosReused++;
         else {
           report({ stage: `scene ${i + 1}/${n}`, progress: (i / n) * 0.4 });
           let buffer;
-          try { ({ buffer } = await gemini.generateImage(prompt + note, refs)); }
-          catch (e) { console.error("[produce] scene", i + 1, "retry without references:", e.message); ({ buffer } = await gemini.generateImage(prompt, [])); }
+          // reel scenes are ALWAYS vertical 9:16 (Veo needs a 9:16 first frame or it letterboxes)
+          try { ({ buffer } = await gemini.generateImage(prompt + note, refs, { aspect: "9:16" })); }
+          catch (e) { console.error("[produce] scene", i + 1, "retry without references:", e.message); ({ buffer } = await gemini.generateImage(prompt, [], { aspect: "9:16" })); }
           const { createCanvas, loadImage } = await import("@napi-rs/canvas");
           const img = await loadImage(buffer); const cv = createCanvas(img.width, img.height); cv.getContext("2d").drawImage(img, 0, 0);
           fs.writeFileSync(photoPath, cv.toBuffer("image/jpeg", 88)); stats.photosNew++;
@@ -1458,6 +1459,7 @@ async function makeStoryboardReel(project, onProgress, ver = null) {
           // send Veo an exact 9:16 first frame (centre crop) so it never pads with black
           const { createCanvas, loadImage } = await import("@napi-rs/canvas");
           const im = await loadImage(fs.readFileSync(j.sc.photoPath));
+          if (im.width / im.height > 0.75) throw new Error("صورة المشهد ليست عمودية (9:16) — لم تُرسل لـVeo حتى لا يُدفع على مقطع بأشرطة سوداء");
           const tw = Math.min(im.width, Math.round(im.height * 9 / 16)), th = Math.min(im.height, Math.round(tw * 16 / 9));
           const fc = createCanvas(tw, th); fc.getContext("2d").drawImage(im, (im.width - tw) / 2, (im.height - th) / 2, tw, th, 0, 0, tw, th);
           const first = fc.toBuffer("image/jpeg", 90);

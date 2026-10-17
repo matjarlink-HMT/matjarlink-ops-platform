@@ -13,7 +13,9 @@ export const geminiReady = () => Boolean(KEY());
 // Generate one image from a text prompt, optionally conditioned on reference
 // images (e.g. uploaded Omani garments the character must wear exactly).
 // refs: [{ data: <base64>, mime: "image/png" }]. Returns { buffer, mime } or throws.
-export async function generateImage(prompt, refs = []) {
+// opts.aspect ("9:16", "1:1" …) fixes the output shape — otherwise Gemini copies
+// the shape of the reference image (a landscape portrait gave landscape scenes).
+export async function generateImage(prompt, refs = [], opts = {}) {
   const key = KEY();
   if (!key) throw new Error("GEMINI_API_KEY not set");
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL()}:generateContent?key=${key}`;
@@ -21,9 +23,13 @@ export async function generateImage(prompt, refs = []) {
   for (const rf of refs || []) { if (rf?.data) parts.push({ inlineData: { mimeType: rf.mime || "image/png", data: rf.data } }); }
   const body = {
     contents: [{ parts }],
-    generationConfig: { responseModalities: ["IMAGE"], temperature: 1.0 },
+    generationConfig: { responseModalities: ["IMAGE"], temperature: 1.0, ...(opts.aspect ? { imageConfig: { aspectRatio: opts.aspect } } : {}) },
   };
-  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  let r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!r.ok && opts.aspect && r.status === 400) { // a model without imageConfig: retry without it
+    const t = await r.text(); if (/imageConfig|aspect/i.test(t)) { delete body.generationConfig.imageConfig; r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); }
+    else r = new Response(t, { status: 400 });
+  }
   if (!r.ok) {
     let msg = `${r.status}`;
     try { const j = await r.json(); msg = j.error?.message || msg; } catch (e) {}
