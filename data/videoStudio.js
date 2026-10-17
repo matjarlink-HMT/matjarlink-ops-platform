@@ -89,7 +89,8 @@ ${m === PRODUCTION_MODES.comedy ? COMEDY_RULES : ""}${HUMAN_RULES}
 - keywords: [] · cameraMotion: من {push-in, pull-out, pan-left, pan-right, tilt-up, static, handheld} · vo · sfx: "" · transition: من {cut, flash, whip, dissolve, slide}.
 قبل أن تعيد الإجابة اقرأ كل سطر في ذهنك: هل يقوله عُماني حقيقي بهذه الطريقة؟ هل هو سليم لغوياً؟ أصلح أي سطر مصطنع.
 أعد **JSON فقط**:
-{"title":"<عنوان>","concept":"<الفكرة الإبداعية بجملة>","hook":"<الهوك>","music":"<energetic|calm|cinematic|playful>","totalSeconds":${dur},"cta":"<CTA قصير طبيعي>","scenes":[{"n":1,"seconds":<ثوانٍ>,"visual":"<English visual, no text>","onScreenText":"<نص>","keywords":[],"cameraMotion":"push-in","vo":"<تعليق>","sfx":"","transition":"whip"}]}`;
+**وحدة القصة:** القصة واحدة بشخصيات ثابتة. التاجر (البطل) نفس الشخص في كل المشاهد. اكتب في cast وصفاً إنجليزياً ثابتاً لكل شخصية متكررة (العمر، الشكل، اللبس)، وفي setting مكاناً واحداً ثابتاً، إلا إذا انتقلت القصة فعلاً. وفي كل visual سمِّ الشخصيات بأدوارها (the shop owner, the worker…) لا بأوصاف جديدة.
+{"title":"<عنوان>","concept":"<الفكرة الإبداعية بجملة>","cast":"<English: LEAD = the shop owner (authentic Omani man, white Omani dishdasha with furakha + Omani kummah or massar); every other recurring character with a fixed look>","setting":"<English: one fixed location>","hook":"<الهوك>","music":"<energetic|calm|cinematic|playful>","totalSeconds":${dur},"cta":"<CTA قصير طبيعي>","scenes":[{"n":1,"seconds":<ثوانٍ>,"visual":"<English visual, no text>","onScreenText":"<نص>","keywords":[],"cameraMotion":"push-in","vo":"<تعليق>","sfx":"","transition":"whip"}]}`;
   const out = parseJSON(await chat([{ role: "user", text: "اكتب السيناريو والـStoryboard الآن. JSON فقط." }], system, { maxTokens: 4000 }));
   if (!out || !Array.isArray(out.scenes) || !out.scenes.length) return null;
   out.scenes = out.scenes.map((sc, i) => ({

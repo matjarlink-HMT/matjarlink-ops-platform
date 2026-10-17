@@ -1326,6 +1326,15 @@ async function makeStoryboardReel(project, onProgress, ver = null) {
   const fp = (x) => crypto.createHash("sha1").update(x).digest("hex").slice(0, 16);
   const wavSeconds = (p) => { try { const b = fs.readFileSync(p); const rate = b.readUInt32LE(24), ch = b.readUInt16LE(22), bits = b.readUInt16LE(34); return (b.length - 44) / (rate * ch * bits / 8); } catch (e) { return 0; } };
   try {
+    // The story's lead: chosen on the storyboard (sb.lead) or, by default, a stable
+    // pick of an Omani man from the character library for this project.
+    let leadRef = null;
+    {
+      const men = allCharacters().filter((c) => !/امرأة|سيدة|بائعة|woman|عباية|حجاب|hijab|مصري|عربي|arab|egyptian|عميلة/i.test(`${c.label} ${c.dress || ""}`));
+      const pick = (sb.lead && charPathAny(sb.lead)) ? sb.lead : (men[parseInt(fp(id), 16) % Math.max(1, men.length)] || {}).id;
+      const lp = pick && charPathAny(pick), r = lp && imageRef(lp);
+      if (r) leadRef = { refs: [r], note: ` LEAD CHARACTER REFERENCE: the main man of this story (the shop owner / trader) is the SAME person as the attached reference image in EVERY scene — exact same face, age, beard and build, and EXACTLY the same clothing as in the reference (his authentic Omani dishdasha with the furakha tassel and the same Omani headwear) — do not change or invent any clothing. Other people in the scene must look clearly different from him. Use the reference only for this man's identity and dress, not its pose, background or framing.` };
+    }
     // 1) scene photos (only layouts that place a photo in a shape)
     const scenes = [];
     for (let i = 0; i < n; i++) {
@@ -1340,8 +1349,12 @@ async function makeStoryboardReel(project, onProgress, ver = null) {
           : layout === "photoHook" ? "VERTICAL 9:16 full-frame shot that makes the action instantly readable, all key subjects and their expressions in the UPPER two-thirds of the frame (the bottom third is covered by the headline)"
           : layout === "stat" ? "subject centred tightly with a simple background (it is cropped into a circle)"
             : "main subject CENTERED with breathing room (it is cropped into a rounded card)";
-        const prompt = `Photorealistic ${sc.visual}. Natural well-composed shot, ${frameHint}, warm natural light, subtle brand-coloured accents in the environment (deep magenta-rose and warm golden orange, NOT purple). NO readable words in any language anywhere — including calculators, displays, signs and packaging.${rm}`;
-        const { refs, note } = heroRefs(prompt);
+        // ONE STORY = ONE CAST: every scene carries the same cast + location sheet,
+        // and person scenes use the project's single LEAD portrait (its face AND its
+        // authentic Omani outfit) instead of a face/garment rotated per prompt.
+        const continuity = `${sb.cast ? ` CAST (identical in every scene of this story): ${sb.cast}.` : ""}${sb.setting ? ` LOCATION (same place in every scene): ${sb.setting}.` : ""}`;
+        const prompt = `Photorealistic candid photograph: ${sc.visual}.${continuity} Natural well-composed shot, ${frameHint}, warm natural light, subtle brand-coloured accents in the environment (deep magenta-rose and warm golden orange, NOT purple). Big expressions stay REAL — a candid photo of real people reacting, never a caricature or cartoon. NO readable words in any language anywhere — including calculators, displays, signs and packaging.${rm}`;
+        const { refs, note } = leadRef && /owner|trader|shopkeeper|merchant|\bman\b|dishdasha|kummah|massar/i.test(sc.visual) ? leadRef : heroRefs(prompt);
         photoPath = path.join(adir, `photo-${fp(prompt + note)}.jpg`); used.add(path.basename(photoPath));
         if (fs.existsSync(photoPath)) stats.photosReused++;
         else {
