@@ -45,24 +45,50 @@ function pcmToWav(pcm, rate = 24000, ch = 1, bits = 16) {
   h.write("data", 36); h.writeUInt32LE(pcm.length, 40);
   return Buffer.concat([h, pcm]);
 }
-// Speak one Arabic line. style steers delivery (the model speaks only the line).
-export async function speak(text, { voice = "Charon", style = "" } = {}) {
-  if (!KEY()) throw new Error("GEMINI_API_KEY not set");
-  const line = String(text || "").trim(); if (!line) throw new Error("empty voiceover line");
-  const model = await pickModel();
-  const direction = style || "Say this in natural, warm, conversational Gulf Arabic with an Omani feel — friendly, confident and human, medium pace, like a real person talking to a shop owner, never robotic";
+// Speak one Arabic line. Some TTS models READ inline style instructions aloud
+// (gemini-3.8-flash-tts spoke a 2-word line as 16s), so the direction goes in
+// the SYSTEM instruction and every clip is checked against its word count: a
+// clip far longer than the words allow is retried as the plain line, then with
+// the older model that honours inline direction. Speech must never contain the
+// instruction.
+async function callTTS(model, text, voice, sys) {
   const body = {
-    contents: [{ parts: [{ text: `${direction}: ${line}` }] }],
+    contents: [{ parts: [{ text }] }],
     generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } },
   };
+  if (sys) body.systemInstruction = { parts: [{ text: sys }] };
   const r = await fetch(`${BASE}/models/${model}:generateContent?key=${KEY()}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!r.ok) { let m = `${r.status}`; try { const j = await r.json(); m = j.error?.message || m; } catch (e) {} throw new Error(`gemini tts (${model}) ${m}`); }
   const j = await r.json();
   const part = (j.candidates?.[0]?.content?.parts || []).find((p) => p.inlineData?.data || p.inline_data?.data);
   const inl = part?.inlineData || part?.inline_data;
-  if (!inl?.data) throw new Error("gemini tts returned no audio");
+  if (!inl?.data) throw new Error(`gemini tts (${model}) returned no audio`);
   const mime = inl.mimeType || inl.mime_type || "";
   const rate = +((mime.match(/rate=(\d+)/) || [])[1] || 24000);
   const pcm = Buffer.from(inl.data, "base64");
   return { wav: pcmToWav(pcm, rate), seconds: pcm.length / (rate * 2), model, rate };
+}
+export async function speak(text, { voice = "Charon", style = "" } = {}) {
+  if (!KEY()) throw new Error("GEMINI_API_KEY not set");
+  const line = String(text || "").trim(); if (!line) throw new Error("empty voiceover line");
+  const words = line.split(/\s+/).filter(Boolean).length;
+  const maxSec = 2 + words * 0.8; // natural speech ≈ 0.4s/word — anything far beyond read something extra
+  const direction = style || "You are a voice actor. Speak the user's Arabic line exactly as written and nothing else, in natural, warm, conversational Gulf Arabic with an Omani feel — friendly, confident, human, medium pace. Never read these directions.";
+  const model = await pickModel();
+  let legacy = null; try { const list = await ttsModels(); legacy = list.find((n) => /2\.5-flash.*tts/.test(n)) || null; } catch (e) {}
+  const attempts = [
+    { model, text: line, sys: direction },                      // direction kept out of the spoken text
+    { model, text: line, sys: null },                           // plain line only
+    ...(legacy && legacy !== model ? [{ model: legacy, text: `${direction}: ${line}`, sys: null }] : []), // older model honours inline direction
+  ];
+  let best = null, lastErr = null;
+  for (const a of attempts) {
+    try {
+      const out = await callTTS(a.model, a.text, voice, a.sys);
+      if (out.seconds <= maxSec) return { ...out, attempts: attempts.indexOf(a) + 1 };
+      if (!best || out.seconds < best.seconds) best = out;
+    } catch (e) { lastErr = e; }
+  }
+  if (best && best.seconds <= maxSec * 1.25) return best;
+  throw lastErr || new Error(`voiceover too long for the line (${best ? best.seconds.toFixed(1) : "?"}s for ${words} words) — the TTS model is reading extra text`);
 }

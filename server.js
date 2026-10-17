@@ -1171,7 +1171,7 @@ app.post("/api/audio/tts-preview", async (req, res) => {
   const b = req.body || {};
   try {
     const out = await tts.speak(String(b.text || "").slice(0, 400), { voice: b.voice || "Charon" });
-    res.setHeader("Content-Type", "audio/wav"); res.setHeader("X-Seconds", out.seconds.toFixed(2)); res.setHeader("X-Model", out.model);
+    res.setHeader("Content-Type", "audio/wav"); res.setHeader("X-Seconds", out.seconds.toFixed(2)); res.setHeader("X-Model", out.model); res.setHeader("X-Attempts", String(out.attempts || ""));
     res.end(out.wav);
   } catch (e) { res.status(502).json({ ok: false, error: e.message }); }
 });
