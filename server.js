@@ -1196,6 +1196,20 @@ app.post("/api/audio/tts-preview", async (req, res) => {
     res.end(out.wav);
   } catch (e) { res.status(502).json({ ok: false, error: e.message }); }
 });
+// Delete ONE old version file (owner action, from the versions list). The live
+// version can never be deleted; the entry stays listed as gone for the history.
+app.post("/api/video/version/delete", (req, res) => {
+  const b = req.body || {}; const p = store.getVideoProject(b.id);
+  if (!p) return res.status(404).json({ ok: false, error: "project not found" });
+  const v = (p.versions || []).find((x) => x.n === +b.n && !x.gone);
+  if (!v) return res.status(404).json({ ok: false, error: "النسخة غير موجودة أو محذوفة" });
+  if (String(p.previewUrl || "").split("?")[0] === String(v.url).split("?")[0]) return res.status(400).json({ ok: false, error: "لا يمكن حذف النسخة الحالية" });
+  const f = path.join(designsDir(), String(v.url).split("?")[0].replace(/^\/media\/design\//, ""));
+  let freed = 0; try { freed = fs.statSync(f).size; fs.unlinkSync(f); } catch (e) {}
+  const versions = p.versions.map((x) => (x === v ? { ...x, gone: true } : x));
+  store.saveVideoProject({ id: p.id, versions });
+  res.json({ ok: true, freedMB: +(freed / 1048576).toFixed(1), freeMB: freeDiskMB() });
+});
 app.post("/api/video/restore", (req, res) => {
   const b = req.body || {}; const p = store.getVideoProject(b.id);
   if (!p) return res.status(404).json({ ok: false, error: "project not found" });
