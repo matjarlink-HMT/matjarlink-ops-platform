@@ -1413,7 +1413,9 @@ function pollVideoProduce(id, C) {
     n++; const d = await fetch("/api/video/project/" + id).then(r => r.json()).catch(() => null);
     if (!d || !d.ok) return;
     const p = d.project;
-    if (st) st.textContent = `الحالة: ${(VS_ST[p.status] || [p.status])[0]} (${n * 4}s)`;
+    const pct = p.status === "producing" && p.progress != null ? ` · ${Math.round(p.progress * 100)}%` : "";
+    const stage = p.stage && p.stage.startsWith("scene") ? ` · توليد ${p.stage.replace("scene", "المشهد")}` : p.stage === "render" ? " · تحريك ومونتاج" : "";
+    if (st) st.textContent = `الحالة: ${(VS_ST[p.status] || [p.status])[0]}${pct}${stage} (${n * 4}s)`;
     if (p.status === "needsReview" || p.status === "completed") { clearInterval(t); openVideoProject(id, C); }
     else if (p.status === "failed") { clearInterval(t); if (st) st.textContent = "✗ فشل الإنتاج: " + (p.error || ""); }
     else if (n > 60) clearInterval(t);

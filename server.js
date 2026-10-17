@@ -1126,15 +1126,15 @@ app.post("/api/video/produce", async (req, res) => {
   // volume is still too full — instead of dying mid-render with ENOSPC.
   sweepTempFiles(30);
   const fm = freeDiskMB();
-  if (fm != null && fm < 60) return res.status(507).json({ ok: false, error: `مساحة التخزين شبه ممتلئة (${fm}MB متبقية) — الإنتاج يحتاج ~60MB. كبّر الـVolume في Railway أو نظّف ملفات قديمة.` });
+  if (fm != null && fm < 30) return res.status(507).json({ ok: false, error: `مساحة التخزين شبه ممتلئة (${fm}MB متبقية) — الإنتاج يحتاج ~30MB. كبّر الـVolume في Railway أو نظّف ملفات قديمة.` });
   videoBusy = true;
   store.setVideoProjectStatus(p.id, "producing", { error: "" });
   res.json({ ok: true, status: "producing" }); // respond now; produce in background
   (async () => {
     try {
-      const url = await makeStoryboardReel(p);
+      const url = await makeStoryboardReel(p, (pr) => store.setVideoProjectStatus(p.id, "producing", { progress: pr.progress, stage: pr.stage }));
       const versions = [...(p.versions || []), { url, at: new Date().toISOString(), scenes: p.storyboard.scenes.length }].slice(-8);
-      store.saveVideoProject({ id: p.id, previewUrl: url, versions, status: "needsReview" });
+      store.saveVideoProject({ id: p.id, previewUrl: url, versions, status: "needsReview", progress: 1, stage: "" });
     } catch (e) { console.error("[video/produce]", e.message); store.setVideoProjectStatus(p.id, "failed", { error: e.message }); }
     finally { videoBusy = false; }
   })();
@@ -1243,35 +1243,36 @@ async function makeEditorialReel({ id, light = false, headline, pop, cta, valueL
 // storyboard montage (per-scene duration, directed camera motion, transitions,
 // brand grade, end-screen). Provider-agnostic: scenes are animated images today;
 // a real video-gen provider can replace this per-scene step later.
-async function makeStoryboardReel(project) {
+async function makeStoryboardReel(project, onProgress) {
   const sb = project && project.storyboard;
   if (!sb || !Array.isArray(sb.scenes) || !sb.scenes.length) throw new Error("لا يوجد Storyboard معتمد");
-  if (!gemini.geminiReady()) throw new Error("توليد المشاهد يحتاج ربط Gemini");
+  const motion = await import("./data/motionEngine.js");
+  const n = sb.scenes.length;
+  const layouts = sb.scenes.map((sc, i) => motion.layoutFor(sc, i, n));
+  if (layouts.some((l) => motion.needsPhoto(l)) && !gemini.geminiReady()) throw new Error("توليد صور المشاهد يحتاج ربط Gemini");
   const dir = designsDir(); fs.mkdirSync(dir, { recursive: true });
-  const eng = await import("./data/designEngine.js");
-  const { renderStoryboardReel } = await import("./data/reelEngine.js");
-  const light = project.template === "editorial-white";
   const id = project.id, biz = store.getBrandData();
-  const grade = light ? "bright airy clean white and warm-orange tones" : "deep cinematic warm grade";
   const rm = " Shot on a real camera — natural authentic human features, real skin texture. NOT 3D render, NOT AI illustration, NOT plastic/airbrushed. No text, no words, no logos. Any phone, tablet, laptop or POS screen shows ONLY abstract UI blocks, icons and simple charts — NO readable text, NO numbers, NO prices, NO currency symbols, NO colour codes.";
-  const frames = [], junk = [], specs = [];
+  const report = (o) => { try { if (onProgress) onProgress(o); } catch (e) {} };
+  const junk = [], scenes = [];
   try {
-    for (let i = 0; i < sb.scenes.length; i++) {
-      const sc = sb.scenes[i];
-      const scenePrompt = `Cinematic VERTICAL 9:16. ${sc.visual}. ${grade} (brand accent colours: deep magenta-rose and warm golden orange, NOT purple), leave a clean empty area in the TOP THIRD for a headline.${rm}`;
-      const { refs, note } = heroRefs(scenePrompt);
-      const { buffer } = await gemini.generateImage(scenePrompt + note, refs);
-      const bg = path.join(dir, `_sbbg-${id}-${i}.png`); junk.push(bg);
-      let fd0 = fs.openSync(bg, "w"); try { fs.writeSync(fd0, buffer); fs.fsyncSync(fd0); } finally { fs.closeSync(fd0); }
-      const png = await eng.renderEditorial({ bg, h: 1920, layout: "center", light, kicker: "", headline: sc.onScreenText || "", pop: "", cta: i === sb.scenes.length - 1 ? (sb.cta || "قريبًا") : "", biz });
-      const fr = path.join(dir, `_sbfr-${id}-${i}.png`); junk.push(fr);
-      let fd = fs.openSync(fr, "w"); try { fs.writeSync(fd, png); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
-      frames.push(fr);
-      specs.push({ seconds: sc.seconds, cameraMotion: sc.cameraMotion, transition: sc.transition });
-      if (global.gc) { try { global.gc(); } catch (e) {} }
+    for (let i = 0; i < n; i++) {
+      const sc = sb.scenes[i], layout = layouts[i];
+      let photoPath = null;
+      if (motion.needsPhoto(layout)) {
+        // The photo is cropped into a card / circle / phone screen and the copy sits
+        // OUTSIDE it, so ask for a clean subject-centred shot (no headline space).
+        const prompt = `Photorealistic ${sc.visual}. Natural well-composed shot, main subject CENTERED with breathing room (it will be cropped into a rounded card, a circle or a phone screen), warm natural light, subtle brand-coloured accents in the environment (deep magenta-rose and warm golden orange, NOT purple).${rm}`;
+        report({ stage: `scene ${i + 1}/${n}`, progress: (i / n) * 0.5 });
+        const { refs, note } = heroRefs(prompt);
+        const { buffer } = await gemini.generateImage(prompt + note, refs);
+        photoPath = path.join(dir, `_sbbg-${id}-${i}.png`); junk.push(photoPath);
+        const fd = fs.openSync(photoPath, "w"); try { fs.writeSync(fd, buffer); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+      }
+      scenes.push({ ...sc, layout, photoPath });
     }
     const out = path.join(dir, `${id}.mp4`);
-    await renderStoryboardReel(frames, specs, out, { light, grade: true });
+    await motion.renderMotionReel(scenes, out, { biz, cta: sb.cta || "قريبًا", onProgress: (f) => report({ stage: "render", progress: 0.5 + f * 0.5 }) });
     return `/media/design/${id}.mp4?v=${Date.now()}`;
   } finally { for (const f of junk) { try { fs.unlinkSync(f); } catch (e) {} } }
 }

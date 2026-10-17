@@ -129,8 +129,8 @@ const LAYOUTS = {
     const { t, p, copy, assets } = a;
     ctx.fillStyle = BRAND.magenta; ctx.fillRect(0, 0, W, H);
     circle(ctx, 160, 1560 - p * 40, 560 * easeOut(t * 1.4), BRAND.magentaSoft, 0.32);
-    circle(ctx, 930, 300, 120 * easeOutBack(clamp(t * 1.6)), BRAND.orange, 0.95);
-    circle(ctx, 820, 1180, 34 * easeOut(t), BRAND.orangeSoft, 0.9);
+    circle(ctx, 190, 420 + p * 18, 110 * easeOutBack(clamp(t * 1.6)), BRAND.orange, 0.95); // left — clear of the logo
+    circle(ctx, 930, 1250, 34 * easeOut(t), BRAND.orangeSoft, 0.9);
     drawLogo(ctx, assets.logoWhite, W - SAFE.right - 190, SAFE.top - 60, 190, t);
     ctx.font = "34px MLB";
     const f = fitCopy(ctx, copy.main, copy.key, W - SAFE.left - SAFE.right, 128, 80);
@@ -232,8 +232,12 @@ export function layoutFor(scene, i, n) {
   if (i === 0) return "hook";
   if (i === n - 1) return "cta";
   if (/[0-9٠-٩٪%]/.test(scene && scene.onScreenText || "")) return "stat";
-  return ["photoCard", "split", "phone"][(i - 1) % 3];
+  return PHOTO_LAYOUTS[(i - 1) % PHOTO_LAYOUTS.length];
 }
+// Layouts that place a scene photo inside a shape (hook / cta are pure graphics
+// — no image generation needed for them, which saves time, cost and disk).
+export const PHOTO_LAYOUTS = ["photoCard", "split", "phone", "stat"];
+export const needsPhoto = (layout) => PHOTO_LAYOUTS.includes(layout);
 
 export async function loadAssets(photoPath) {
   ensureFonts();
@@ -255,4 +259,66 @@ export async function renderStyleFrame({ layout, scene, photoPath, biz, cta }) {
   const cv = createCanvas(W, H); const ctx = cv.getContext("2d");
   drawScene(ctx, { layout, scene, assets, biz, cta, t: 1, p: 0.5 });
   return cv.toBuffer("image/png");
+}
+
+// ── Animated reel ── render every frame on ONE reused canvas and stream raw RGBA
+// straight into ffmpeg (no frame files on disk, one frame in memory at a time).
+// Between scenes a two-tone brand wipe (orange/magenta panel) sweeps right→left:
+// it covers the end of scene i and uncovers the start of scene i+1 ("cut" in the
+// storyboard skips the wipe). Silent stereo track until voice/music are added.
+const WIPE = 0.38;
+const easeInOut = (x) => { x = clamp(x); return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; };
+function drawWipe(ctx, x, color, edge) {
+  ctx.fillStyle = color; ctx.fillRect(x, 0, W, H);
+  ctx.fillStyle = edge; ctx.fillRect(x, 0, 46, H); // leading two-tone band
+}
+async function ffmpegBin() {
+  const m = await import("ffmpeg-static"); const p = m.default || m;
+  if (!p || !fs.existsSync(p)) throw new Error("ffmpeg binary not found"); return p;
+}
+// scenes: [{ onScreenText, seconds, transition, layout?, photoPath? }]
+export async function renderMotionReel(scenes, outPath, { biz = {}, cta = "", fps = 25, onProgress } = {}) {
+  if (!Array.isArray(scenes) || !scenes.length) throw new Error("no scenes");
+  ensureFonts();
+  const n = scenes.length;
+  const durs = scenes.map((s) => Math.min(8, Math.max(1.5, +s.seconds || 3)));
+  const total = durs.reduce((a, b) => a + b, 0);
+  fs.mkdirSync(path.dirname(outPath), { recursive: true });
+  const bin = await ffmpegBin();
+  const proc = spawn(bin, [
+    "-y", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", `${W}x${H}`, "-r", String(fps), "-i", "-",
+    "-f", "lavfi", "-t", total.toFixed(2), "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+    "-map", "0:v", "-map", "1:a",
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p", "-threads", "1",
+    "-x264-params", "ref=1:bframes=0:rc-lookahead=0:keyint=50",
+    "-c:a", "aac", "-b:a", "96k", "-shortest", "-movflags", "+faststart", outPath,
+  ], { stdio: ["pipe", "ignore", "pipe"] });
+  let err = ""; proc.stderr.on("data", (d) => { err += d; if (err.length > 6000) err = err.slice(-6000); });
+  const done = new Promise((res, rej) => { proc.on("error", rej); proc.on("close", (c) => c === 0 ? res() : rej(new Error(`ffmpeg exited ${c}: ${err.slice(-400)}`))); });
+  // wait for each frame to be flushed before the canvas is redrawn
+  const writeFrame = (buf) => new Promise((res, rej) => { proc.stdin.write(buf, (e) => e ? rej(e) : res()); });
+  const cv = createCanvas(W, H); const ctx = cv.getContext("2d");
+  const wipeCol = (k) => k % 2 === 0 ? [BRAND.orange, BRAND.magenta] : [BRAND.magenta, BRAND.orange];
+  let frame = 0; const totalFrames = durs.reduce((a, d) => a + Math.round(d * fps), 0);
+  try {
+    for (let i = 0; i < n; i++) {
+      const sc = scenes[i], layout = layoutFor(sc, i, n), assets = await loadAssets(sc.photoPath);
+      const d = durs[i], N = Math.round(d * fps);
+      const wipeOut = i > 0 && String(scenes[i - 1].transition || "") !== "cut";
+      const wipeIn = i < n - 1 && String(sc.transition || "") !== "cut";
+      for (let f = 0; f < N; f++) {
+        const s = f / fps;
+        drawScene(ctx, { layout, scene: sc, assets, biz, cta, t: clamp(s / 0.85), p: s / d });
+        if (wipeOut && s < WIPE) { const [c, e] = wipeCol(i - 1); drawWipe(ctx, -W * easeInOut(s / WIPE), c, e); }
+        if (wipeIn && s > d - WIPE) { const [c, e] = wipeCol(i); drawWipe(ctx, W * (1 - easeInOut((s - (d - WIPE)) / WIPE)), c, e); }
+        await writeFrame(cv.data());
+        frame++; if (onProgress && frame % 25 === 0) onProgress(frame / totalFrames);
+      }
+      if (global.gc) { try { global.gc(); } catch (e) {} }
+    }
+    proc.stdin.end();
+    await done;
+  } catch (e) { try { proc.stdin.destroy(); proc.kill("SIGKILL"); } catch (x) {} throw e; }
+  const fd = fs.openSync(outPath, "r+"); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  return { outPath, seconds: total, frames: totalFrames };
 }
