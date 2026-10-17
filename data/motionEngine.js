@@ -314,17 +314,17 @@ const CW = 720, CH = 1280;
 // whole clip and crop to it, so no black ever shows inside a card or full-bleed.
 function detectCrop(bin, file) {
   return new Promise((res) => {
-    // Only the first second (where Veo letterboxes) and only SYMMETRIC bars count —
-    // a black abaya filling the bottom of the frame must never be cropped as a "bar".
-    const p = spawn(bin, ["-v", "info", "-i", file, "-t", "1", "-an", "-vf", "cropdetect=limit=20:round=2:reset=1", "-f", "null", "-"], { stdio: ["ignore", "ignore", "pipe"] });
+    // Only the first second (where Veo letterboxes) and only PURE black counts: Veo
+    // pads with video-range black (Y 16-21); a black abaya measures Y 40+ with texture — never a "bar".
+    const p = spawn(bin, ["-v", "info", "-i", file, "-t", "1", "-an", "-vf", "cropdetect=limit=26:round=2:reset=1", "-f", "null", "-"], { stdio: ["ignore", "ignore", "pipe"] });
     let best = null, buf = "", fw = 0, fh = 0;
     p.stderr.on("data", (d) => { buf += d; const lines = buf.split("\n"); buf = lines.pop();
       for (const l of lines) {
         const sz = l.match(/Stream.*Video.* (\d{3,4})x(\d{3,4})/); if (sz && !fw) { fw = +sz[1]; fh = +sz[2]; }
         const m = l.match(/crop=(\d+):(\d+):(\d+):(\d+)/); if (!m || !fw) continue;
         const [w, h, x, y] = m.slice(1).map(Number), top = y, bot = fh - h - y, lft = x, rgt = fw - w - x;
-        const sym = Math.abs(top - bot) <= 24 && Math.abs(lft - rgt) <= 24, modest = w >= fw * 0.7 && h >= fh * 0.7;
-        if (sym && modest && (top > 8 || lft > 8) && (!best || w * h < best[0] * best[1])) best = [w, h, x, y];
+        const modest = w >= fw * 0.6 && h >= fh * 0.6;
+        if (modest && (top > 8 || lft > 8 || bot > 8 || rgt > 8) && (!best || w * h < best[0] * best[1])) best = [w, h, x, y];
       } });
     p.on("close", () => res(best)); p.on("error", () => res(null));
   });
