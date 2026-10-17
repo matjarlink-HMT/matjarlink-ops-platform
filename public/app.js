@@ -1440,7 +1440,7 @@ async function openVideoProject(id, C) {
     if (!confirm(eng === "motion" ? "إنتاج الريل الآن؟ يولّد المشاهد (Gemini) وقد يأخذ دقيقة أو أكثر." : `إنتاج فيديو حقيقي بـ ${eng.slice(4)}؟ التكلفة القصوى ≈ ${usd.toFixed(2)}$ من حساب Gemini، وقد يأخذ عدة دقائق.`)) return;
     await fetch("/api/video/storyboard", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, storyboard: collectSB() }) }).catch(() => {});
     bp.disabled = true; bp.innerHTML = `<span class="dots"><i></i><i></i><i></i></span> جارٍ الإنتاج`;
-    const r = await fetch("/api/video/produce", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, voice: ($("#vsvoice") || {}).value, music: ($("#vsmusic") || {}).value, voiceover: !!($("#vsvo") || {}).checked, engine: eng === "motion" ? "motion" : "veo", videoModel: eng === "motion" ? undefined : eng.slice(4) }) }).then(x => x.json()).catch(() => null);
+    const r = await fetch("/api/video/produce", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, voice: ($("#vsvoice") || {}).value, music: ($("#vsmusic") || {}).value, voiceover: !!($("#vsvo") || {}).checked, engine: eng === "motion" ? "motion" : "veo", videoModel: eng === "motion" ? undefined : eng.slice(4), videoBudget: eng === "motion" ? undefined : Math.ceil(usd * 1.15 + 0.5) }) }).then(x => x.json()).catch(() => null);
     if (r && r.ok) pollVideoProduce(id, C); else { bp.disabled = false; bp.innerHTML = "🎬 أنتج الريل"; const m = $("#vdmsg"); if (m) m.textContent = "✗ " + friendlyErr((r && r.error) || ""); }
   };
 }

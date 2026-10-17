@@ -1152,6 +1152,7 @@ app.post("/api/video/produce", async (req, res) => {
   if (typeof b.voiceover === "boolean") prefs.voiceover = b.voiceover;
   if (b.engine === "motion" || b.engine === "veo") prefs.engine = b.engine;
   if (b.videoModel && /^(veo|gemini-omni)[\w.-]*$/.test(b.videoModel)) prefs.videoModel = b.videoModel;
+  if (b.videoBudget != null && isFinite(+b.videoBudget)) prefs.videoBudget = Math.max(0, Math.min(25, +b.videoBudget));
   if (typeof b.imageModel === "string" && /^(gemini|imagen)[\w.-]*$|^$/.test(b.imageModel)) prefs.imageModel = b.imageModel;
   if (Object.keys(prefs).length) store.saveVideoProject({ id: p.id, ...prefs });
   videoBusy = true;
@@ -1463,7 +1464,8 @@ async function makeStoryboardReel(project, onProgress, ver = null) {
         .map((j) => ({ ...j, file: path.join(adir, `clip-${fp(project.videoModel + "|" + path.basename(j.sc.photoPath) + "|" + j.motion + "|" + j.secs)}.mp4`) }));
       const todo = jobs.filter((j) => !fs.existsSync(j.file));
       const est = todo.reduce((a, j) => a + j.secs, 0) * veo.priceFor(project.videoModel);
-      const budget = +(store.cfgGet("VIDEO_BUDGET_USD") || 3);
+      // owner-approved budget for THIS production (sent with the confirmation), hard max $25
+      const budget = Math.min(25, +(project.videoBudget || store.cfgGet("VIDEO_BUDGET_USD") || 3));
       if (est > budget) throw new Error(`تكلفة الفيديو الحقيقي المتوقعة ${est.toFixed(2)}$ تتجاوز الحد ${budget}$ لكل إنتاج — خفّض عدد المشاهد أو ارفع VIDEO_BUDGET_USD`);
       for (const j of jobs) {
         if (fs.existsSync(j.file)) { vstats.clipsReused++; scenes[j.i].clipPath = j.file; continue; }
