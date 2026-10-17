@@ -1145,7 +1145,7 @@ app.post("/api/video/produce", async (req, res) => {
   // volume is still too full — instead of dying mid-render with ENOSPC.
   sweepTempFiles(30);
   const fm = freeDiskMB();
-  if (fm != null && fm < 30) return res.status(507).json({ ok: false, error: `مساحة التخزين شبه ممتلئة (${fm}MB متبقية) — الإنتاج يحتاج ~30MB. كبّر الـVolume في Railway أو نظّف ملفات قديمة.` });
+  if (fm != null && fm < 22) return res.status(507).json({ ok: false, error: `مساحة التخزين شبه ممتلئة (${fm}MB متبقية) — الإنتاج يحتاج ~22MB. كبّر الـVolume في Railway أو نظّف ملفات قديمة.` });
   const b = req.body || {}, prefs = {};
   if (b.voice && tts.VOICES.some((v) => v.id === b.voice)) prefs.voice = b.voice;
   if (b.music) prefs.music = String(b.music).slice(0, 20);
