@@ -20,6 +20,7 @@ import * as live from "./data/live.js";
 import * as charMod from "./data/characters.js";
 import * as videoStudio from "./data/videoStudio.js";
 import * as tts from "./integrations/tts.js";
+import * as veo from "./integrations/veo.js";
 import * as gemini from "./integrations/gemini.js";
 import * as apify from "./integrations/apify.js";
 
@@ -1176,6 +1177,11 @@ app.post("/api/video/produce", async (req, res) => {
   })();
 });
 // ── Voiceover (Gemini TTS) ── voices, discovered models, and a line preview.
+// Real-video engines this key can use (names only — never the key) + prices.
+app.get("/api/video/engines", async (req, res) => {
+  let models = [], error = ""; try { models = await veo.videoModels(); } catch (e) { error = e.message; }
+  res.json({ ok: true, ready: veo.veoReady(), models: models.map((m) => ({ ...m, usdPerSecond: veo.priceFor(m.id) })), error });
+});
 app.get("/api/audio/voices", async (req, res) => {
   let models = []; try { models = await tts.ttsModels(); } catch (e) { models = ["error: " + e.message]; }
   res.json({ ok: true, ready: tts.ttsReady(), voices: tts.VOICES, models });
