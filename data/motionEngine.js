@@ -256,6 +256,8 @@ export function layoutFor(scene, i, n, { mode = "" } = {}) {
   if (scene && scene.layout && LAYOUTS[scene.layout]) return scene.layout;
   if (i === 0) return STORY_MODES.has(mode) ? "photoHook" : "hook";
   if (i === n - 1) return "cta";
+  // the REVEAL (scene before the CTA) is the payoff of a story — full screen, never a small circle
+  if (STORY_MODES.has(mode) && i === n - 2) return "photoHook";
   if (/[0-9٠-٩٪%]/.test(scene && scene.onScreenText || "")) return "stat";
   const l = ROTATION[(i - 1) % ROTATION.length];
   return l === "phone" && PERSON_RE.test(scene && scene.visual || "") ? "photoCard" : l;
