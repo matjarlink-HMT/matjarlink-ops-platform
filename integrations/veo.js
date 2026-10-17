@@ -33,14 +33,21 @@ export const clipSeconds = (s) => (s <= 4 ? 4 : s <= 6 ? 6 : 8);
 // operation (Google: 11 s – 6 min) and downloads within the 2-day retention.
 export async function generateClip({ model, prompt, image, mime = "image/jpeg", seconds = 4, onPoll } = {}) {
   if (!KEY()) throw new Error("GEMINI_API_KEY not set");
-  const body = {
-    instances: [{ prompt, image: { inlineData: { mimeType: mime, data: image.toString("base64") } } }],
-    parameters: { aspectRatio: "9:16", resolution: "720p", durationSeconds: String(clipSeconds(seconds)), personGeneration: "allow_adult" },
-  };
+  // predictLongRunning takes the Vertex-style image ({bytesBase64Encoded, mimeType});
+  // the inlineData shape is tried only if a model rejects that one. A rejected
+  // request generates (and bills) nothing.
+  const b64 = image.toString("base64");
+  const shapes = [{ bytesBase64Encoded: b64, mimeType: mime }, { inlineData: { mimeType: mime, data: b64 } }];
   const h = { "x-goog-api-key": KEY(), "Content-Type": "application/json" };
-  const r = await fetch(`${BASE}/models/${model}:predictLongRunning`, { method: "POST", headers: h, body: JSON.stringify(body) });
-  if (!r.ok) { let m = `${r.status}`; try { const j = await r.json(); m = j.error?.message || m; } catch (e) {} throw new Error(`veo (${model}) ${m}`); }
-  const op = await r.json(); if (!op.name) throw new Error("veo: no operation returned");
+  let op = null, lastErr = "";
+  for (const img of shapes) {
+    const body = { instances: [{ prompt, image: img }], parameters: { aspectRatio: "9:16", resolution: "720p", durationSeconds: clipSeconds(seconds), personGeneration: "allow_adult" } };
+    const r = await fetch(`${BASE}/models/${model}:predictLongRunning`, { method: "POST", headers: h, body: JSON.stringify(body) });
+    if (r.ok) { op = await r.json(); break; }
+    let m = `${r.status}`; try { const j = await r.json(); m = j.error?.message || m; } catch (e) {}
+    lastErr = m; if (r.status !== 400 || !/inlineData|bytesBase64Encoded|image/i.test(m)) break;
+  }
+  if (!op) throw new Error(`veo (${model}) ${lastErr}`); if (!op.name) throw new Error("veo: no operation returned");
   const t0 = Date.now();
   for (;;) {
     await new Promise((res) => setTimeout(res, 10000));
