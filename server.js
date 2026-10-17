@@ -1303,7 +1303,7 @@ async function makeStoryboardReel(project, onProgress, ver = null) {
   if (!sb || !Array.isArray(sb.scenes) || !sb.scenes.length) throw new Error("لا يوجد Storyboard معتمد");
   const motion = await import("./data/motionEngine.js");
   const n = sb.scenes.length;
-  const layouts = sb.scenes.map((sc, i) => motion.layoutFor(sc, i, n));
+  const layouts = sb.scenes.map((sc, i) => motion.layoutFor(sc, i, n, { mode: project.mode }));
   if (layouts.some((l) => motion.needsPhoto(l)) && !gemini.geminiReady()) throw new Error("توليد صور المشاهد يحتاج ربط Gemini");
   const wantVO = project.voiceover !== false && sb.scenes.some((sc) => (sc.vo || "").trim());
   if (wantVO && !tts.ttsReady()) throw new Error("التعليق الصوتي يحتاج ربط Gemini");
@@ -1334,6 +1334,7 @@ async function makeStoryboardReel(project, onProgress, ver = null) {
         // wants breathing room.
         const frameHint = layout === "phone"
           ? "VERTICAL portrait framing of the scene's subject (a person or a product) — show NO phone, tablet, laptop or screen anywhere in the image, because it is displayed INSIDE a phone mockup"
+          : layout === "photoHook" ? "VERTICAL 9:16 full-frame shot that makes the action instantly readable, all key subjects and their expressions in the UPPER two-thirds of the frame (the bottom third is covered by the headline)"
           : layout === "stat" ? "subject centred tightly with a simple background (it is cropped into a circle)"
             : "main subject CENTERED with breathing room (it is cropped into a rounded card)";
         const prompt = `Photorealistic ${sc.visual}. Natural well-composed shot, ${frameHint}, warm natural light, subtle brand-coloured accents in the environment (deep magenta-rose and warm golden orange, NOT purple). NO readable words in any language anywhere — including calculators, displays, signs and packaging.${rm}`;
@@ -1386,7 +1387,7 @@ async function makeStoryboardReel(project, onProgress, ver = null) {
     // 4) picture + soundtrack
     const name = ver ? `${id}-v${ver}.mp4` : `${id}.mp4`;
     const out = path.join(dir, name);
-    await motion.renderMotionReel(scenes, out, { biz, cta: sb.cta || "قريبًا", audioPath, onProgress: (f) => report({ stage: "render", progress: 0.6 + f * 0.4 }) });
+    await motion.renderMotionReel(scenes, out, { biz, cta: sb.cta || "قريبًا", audioPath, mode: project.mode, onProgress: (f) => report({ stage: "render", progress: 0.6 + f * 0.4 }) });
     for (const f of fs.readdirSync(adir)) { if (!used.has(f)) { try { fs.unlinkSync(path.join(adir, f)); } catch (e) {} } } // keep only what this version uses
     return { url: `/media/design/${name}?v=${Date.now()}`, soundtrack: { voiceover: voClips.length, voice: project.voice || "Charon", music: moodKey, seconds: +total.toFixed(2) }, assets: stats };
   } finally { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {} }

@@ -137,6 +137,26 @@ const LAYOUTS = {
     drawCopy(ctx, f, W - SAFE.right, 560, t, { color: BRAND.white, pillFill: BRAND.orange, pillText: BRAND.magentaInk });
     drawFooter(ctx, a.biz, "rgba(255,255,255,0.85)", t);
   },
+  // 1b) PHOTO HOOK — the opening SHOWN, not told (comedy / story openers): the
+  // scene photo full-bleed with a slow push-in, a deep-magenta fade rising from the
+  // bottom, and the hook in giant white type + orange pill over it — readable
+  // inside the first second for muted viewers.
+  photoHook(ctx, a) {
+    const { t, p, copy, assets } = a;
+    ctx.fillStyle = BRAND.magentaInk; ctx.fillRect(0, 0, W, H);
+    coverDraw(ctx, assets.photo, 0, 0, W, H, 1.14 - 0.1 * p, 0);
+    const top = ctx.createLinearGradient(0, 0, 0, 360); top.addColorStop(0, "rgba(40,10,25,0.5)"); top.addColorStop(1, "rgba(40,10,25,0)");
+    ctx.fillStyle = top; ctx.fillRect(0, 0, W, 360);
+    const e = easeOut(clamp(t * 1.6)), gy = 1020 + (1 - e) * 200;
+    const g = ctx.createLinearGradient(0, gy, 0, H); g.addColorStop(0, "rgba(94,16,56,0)"); g.addColorStop(0.38, "rgba(94,16,56,0.86)"); g.addColorStop(1, "rgba(94,16,56,0.97)");
+    ctx.fillStyle = g; ctx.fillRect(0, gy, W, H - gy);
+    circle(ctx, 120, 1150 + (1 - e) * 120, 40 * easeOutBack(clamp(t * 1.8)), BRAND.orange, 0.95);
+    drawLogo(ctx, assets.logoWhite, W - SAFE.right - 180, 70, 180, t);
+    const f = fitCopy(ctx, copy.main, copy.key, W - SAFE.left - SAFE.right, 112, 72, 3);
+    const lines = f.main.length + f.key.length, blockH = f.main.length * f.size * 1.18 + f.key.length * f.size * 1.3;
+    drawCopy(ctx, f, W - SAFE.right, Math.min(1420, H - SAFE.bottom - blockH - 20 - (lines > 2 ? 0 : 40)), clamp(t * 1.5), { color: BRAND.white, pillFill: BRAND.orange, pillText: BRAND.magentaInk, gap: 0.09 });
+    drawFooter(ctx, a.biz, "rgba(255,255,255,0.85)", t);
+  },
   // 2) PHOTO CARD — cream field, rounded photo card with slow zoom, magenta copy.
   photoCard(ctx, a) {
     const { t, p, copy, assets } = a;
@@ -227,16 +247,23 @@ export const LAYOUT_KEYS = Object.keys(LAYOUTS);
 
 // Pick a composition per scene: first = hook, last = cta, digits → stat,
 // otherwise rotate photo-led layouts so consecutive scenes never repeat.
-export function layoutFor(scene, i, n) {
+// Comedy / story openers SHOW the first beat (photoHook) — a joke told only in
+// text is not a joke. A scene about a person never goes inside the phone mockup
+// (a man inside a phone reads as a video call, not the app).
+const PERSON_RE = /\b(man|woman|owner|shopkeeper|trader|merchant|boy|girl|son|daughter|worker|customer|person|people|he|she|his|her)\b/i;
+const STORY_MODES = new Set(["comedy", "storytelling", "ugc"]);
+export function layoutFor(scene, i, n, { mode = "" } = {}) {
   if (scene && scene.layout && LAYOUTS[scene.layout]) return scene.layout;
-  if (i === 0) return "hook";
+  if (i === 0) return STORY_MODES.has(mode) ? "photoHook" : "hook";
   if (i === n - 1) return "cta";
   if (/[0-9٠-٩٪%]/.test(scene && scene.onScreenText || "")) return "stat";
-  return PHOTO_LAYOUTS[(i - 1) % PHOTO_LAYOUTS.length];
+  const l = ROTATION[(i - 1) % ROTATION.length];
+  return l === "phone" && PERSON_RE.test(scene && scene.visual || "") ? "photoCard" : l;
 }
-// Layouts that place a scene photo inside a shape (hook / cta are pure graphics
-// — no image generation needed for them, which saves time, cost and disk).
-export const PHOTO_LAYOUTS = ["photoCard", "split", "phone", "stat"];
+// Layouts that place a scene photo (hook / cta are pure graphics — no image
+// generation needed for them, which saves time, cost and disk).
+const ROTATION = ["photoCard", "split", "phone", "stat"];
+export const PHOTO_LAYOUTS = [...ROTATION, "photoHook"];
 export const needsPhoto = (layout) => PHOTO_LAYOUTS.includes(layout);
 
 export async function loadAssets(photoPath) {
@@ -277,7 +304,7 @@ async function ffmpegBin() {
   if (!p || !fs.existsSync(p)) throw new Error("ffmpeg binary not found"); return p;
 }
 // scenes: [{ onScreenText, seconds, transition, layout?, photoPath? }]
-export async function renderMotionReel(scenes, outPath, { biz = {}, cta = "", fps = 25, onProgress, audioPath = null } = {}) {
+export async function renderMotionReel(scenes, outPath, { biz = {}, cta = "", fps = 25, onProgress, audioPath = null, mode = "" } = {}) {
   if (!Array.isArray(scenes) || !scenes.length) throw new Error("no scenes");
   ensureFonts();
   const n = scenes.length;
@@ -302,7 +329,7 @@ export async function renderMotionReel(scenes, outPath, { biz = {}, cta = "", fp
   let frame = 0; const totalFrames = durs.reduce((a, d) => a + Math.round(d * fps), 0);
   try {
     for (let i = 0; i < n; i++) {
-      const sc = scenes[i], layout = layoutFor(sc, i, n), assets = await loadAssets(sc.photoPath);
+      const sc = scenes[i], layout = layoutFor(sc, i, n, { mode }), assets = await loadAssets(sc.photoPath);
       const d = durs[i], N = Math.round(d * fps);
       const wipeOut = i > 0 && String(scenes[i - 1].transition || "") !== "cut";
       const wipeIn = i < n - 1 && String(sc.transition || "") !== "cut";
