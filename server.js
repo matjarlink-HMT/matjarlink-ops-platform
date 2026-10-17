@@ -485,6 +485,21 @@ function sweepTempFiles(maxAgeMin = 30) {
   if (n) console.log(`[sweep] removed ${n} orphaned render temp files (${(bytes / 1048576).toFixed(1)} MB)`);
   return { n, MB: +(bytes / 1048576).toFixed(1) };
 }
+// A reference image Gemini can actually read: detects the REAL type from the
+// file's magic bytes (a JPEG saved as .png used to be sent as image/png) and
+// rejects truncated files (e.g. written while the volume was full).
+function imageRef(p) {
+  try {
+    const buf = fs.readFileSync(p);
+    if (buf.length < 2048) return null;
+    let mime = null;
+    if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) { mime = "image/png"; if (buf.indexOf("IEND", buf.length - 16) < 0) return null; }
+    else if (buf[0] === 0xff && buf[1] === 0xd8) { mime = "image/jpeg"; if (!(buf[buf.length - 2] === 0xff && buf[buf.length - 1] === 0xd9)) return null; }
+    else if (buf.slice(0, 4).toString() === "RIFF" && buf.slice(8, 12).toString() === "WEBP") mime = "image/webp";
+    else return null;
+    return { data: buf.toString("base64"), mime };
+  } catch (e) { return null; }
+}
 function freeDiskMB() { try { const s = fs.statfsSync(designsDir()); return Math.round(s.bavail * s.bsize / 1048576); } catch (e) { return null; } }
 setTimeout(() => sweepTempFiles(10), 8000);              // on boot: nothing is rendering yet
 setInterval(() => sweepTempFiles(30), 60 * 60 * 1000);  // hourly
@@ -743,7 +758,7 @@ function clothingRefsFor(text) {
   if (picks.length > 2) { const off = hashInt(t) % picks.length; picks = [...picks.slice(off), ...picks.slice(0, off)]; }
   picks = picks.slice(0, 2);
   const refs = [];
-  for (const c of picks) { try { refs.push({ data: fs.readFileSync(path.join(designsDir(), c.file)).toString("base64"), mime: "image/png" }); } catch (e) {} }
+  for (const c of picks) { const r = imageRef(path.join(designsDir(), c.file)); if (r) refs.push(r); }
   const note = refs.length ? " GARMENT REFERENCE: the person must wear EXACTLY the Omani garment shown in the attached garment image(s) — copy ONLY the clothing (its fabric, colour, pattern and how it is worn). Do NOT copy the face or the person from the garment image; that image is for the clothing only." : "";
   return { refs, note };
 }
@@ -767,7 +782,8 @@ function characterFaceRef(text) {
   if (!pick) return { refs: [], note: "" };
   const p = charPathAny(pick.id);
   if (!p) return { refs: [], note: "" };
-  try { return { refs: [{ data: fs.readFileSync(p).toString("base64"), mime: "image/png" }], note: " FACE REFERENCE: the person's FACE and features (face shape, skin tone, features) must match the attached reference person image — same person's face." }; }
+  const fr = imageRef(p); if (!fr) return { refs: [], note: "" };
+  try { return { refs: [fr], note: " FACE REFERENCE: the person's FACE and features (face shape, skin tone, features) must match the attached reference person image — same person's face." }; }
   catch (e) { return { refs: [], note: "" }; }
 }
 // Combined hero references for a design: character FACE (from the characters list)
@@ -1296,7 +1312,9 @@ async function makeStoryboardReel(project, onProgress) {
         const prompt = `Photorealistic ${sc.visual}. Natural well-composed shot, ${frameHint}, warm natural light, subtle brand-coloured accents in the environment (deep magenta-rose and warm golden orange, NOT purple). NO readable words in any language anywhere — including calculators, displays, signs and packaging.${rm}`;
         report({ stage: `scene ${i + 1}/${n}`, progress: (i / n) * 0.4 });
         const { refs, note } = heroRefs(prompt);
-        const { buffer } = await gemini.generateImage(prompt + note, refs);
+        let buffer;
+        try { ({ buffer } = await gemini.generateImage(prompt + note, refs)); }
+        catch (e) { console.error("[produce] scene", i + 1, "retry without references:", e.message); ({ buffer } = await gemini.generateImage(prompt, [])); }
         photoPath = path.join(tmp, `photo-${i}.png`); fs.writeFileSync(photoPath, buffer);
       }
       scenes.push({ ...sc, layout, photoPath });
@@ -1765,6 +1783,12 @@ const STORAGE_CATS = [
   ["reels", (f) => /\.mp4$/.test(f)],
   ["designs", () => true],
 ];
+app.get("/api/debug/refs", (req, res) => {
+  const chk = (file) => { const p = path.join(designsDir(), file); const ok = !!imageRef(p); let size = 0; try { size = fs.statSync(p).size; } catch (e) {} return { ok, KB: Math.round(size / 1024) }; };
+  const clothing = store.getClothing().map((c) => ({ id: c.id, type: c.type, label: c.label, ...chk(c.file) }));
+  const characters = store.getCustomCharacters().map((c) => ({ id: c.id, label: c.label, ...chk(c.file) }));
+  res.json({ ok: true, clothing, characters, broken: [...clothing, ...characters].filter((x) => !x.ok).length });
+});
 app.get("/api/debug/storage", (req, res) => {
   const vol = process.env.RAILWAY_VOLUME_MOUNT_PATH || (fs.existsSync("/data") ? "/data" : "");
   let disk = null;
