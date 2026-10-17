@@ -1262,7 +1262,14 @@ async function makeStoryboardReel(project, onProgress) {
       if (motion.needsPhoto(layout)) {
         // The photo is cropped into a card / circle / phone screen and the copy sits
         // OUTSIDE it, so ask for a clean subject-centred shot (no headline space).
-        const prompt = `Photorealistic ${sc.visual}. Natural well-composed shot, main subject CENTERED with breathing room (it will be cropped into a rounded card, a circle or a phone screen), warm natural light, subtle brand-coloured accents in the environment (deep magenta-rose and warm golden orange, NOT purple).${rm}`;
+        // The prompt knows the frame it will live in: a phone mockup must not hold a
+        // photo OF a phone (phone-in-phone), a circle wants a tight subject, a card
+        // wants breathing room.
+        const frameHint = layout === "phone"
+          ? "VERTICAL portrait framing of the scene's subject (a person or a product) — show NO phone, tablet, laptop or screen anywhere in the image, because it is displayed INSIDE a phone mockup"
+          : layout === "stat" ? "subject centred tightly with a simple background (it is cropped into a circle)"
+            : "main subject CENTERED with breathing room (it is cropped into a rounded card)";
+        const prompt = `Photorealistic ${sc.visual}. Natural well-composed shot, ${frameHint}, warm natural light, subtle brand-coloured accents in the environment (deep magenta-rose and warm golden orange, NOT purple). NO readable words in any language anywhere — including calculators, displays, signs and packaging.${rm}`;
         report({ stage: `scene ${i + 1}/${n}`, progress: (i / n) * 0.5 });
         const { refs, note } = heroRefs(prompt);
         const { buffer } = await gemini.generateImage(prompt + note, refs);
