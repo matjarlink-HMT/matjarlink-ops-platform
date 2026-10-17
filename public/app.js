@@ -1392,6 +1392,11 @@ async function openVideoProject(id, C) {
         </div>
         <audio id="vsaudio" controls style="display:none;width:100%;margin-top:.4rem"></audio>
         <div class="mut" style="font-size:.78rem;margin-top:.3rem">الموسيقى أصلية مؤلَّفة برمجياً — بلا أي ترخيص خارجي، آمنة للاستخدام التجاري.</div></div>
+      <div class="pcard nofloat" style="margin-top:.5rem"><b>🎥 محرّك الفيديو</b>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-top:.35rem">
+          <select class="psel" id="vsengine" style="width:auto"><option value="motion">🖼 صور متحركة (مجاني)</option>${p.engine === "veo" && p.videoModel ? `<option value="veo:${escapeHtml(p.videoModel)}" selected>🎥 ${escapeHtml(p.videoModel)}</option>` : ""}</select>
+          <span class="mut" id="vsest" style="font-size:.84rem"></span></div>
+        <div class="mut" style="font-size:.78rem;margin-top:.3rem">الفيديو الحقيقي يحرّك صورة كل مشهد المعتمدة (نفس الشخصيات واللبس والمكان) — مدفوع بالثانية من حساب Gemini، ويُعاد استخدام المقاطع عند إعادة الإنتاج بلا تكلفة.</div>${p.video && p.video.engine === "veo" ? `<div class="mut" style="font-size:.8rem;margin-top:.25rem">آخر إنتاج: ${p.video.clipsNew} مقاطع جديدة · ${p.video.clipsReused} مُعاد استخدامها · ${p.video.usd}${(p.video.errors || []).length ? " · ⚠ " + p.video.errors.map(e => "مشهد " + e.scene + ": " + escapeHtml(e.error)).join(" · ") : ""}</div>` : ""}</div>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem;align-items:center">
         <button class="btn sm" id="vssave">💾 حفظ التعديلات</button>
         <select class="pinput" id="vsmode" style="max-width:14rem">${Object.entries(d.modes || {}).map(([k, v]) => `<option value="${k}"${k === p.mode ? " selected" : ""}>${escapeHtml(v.label)}</option>`).join("")}</select>
@@ -1422,11 +1427,19 @@ async function openVideoProject(id, C) {
     } catch (e) { const m = $("#vdmsg"); if (m) m.textContent = "✗ " + friendlyErr(String(e.message || e)); }
     bvp.disabled = false; bvp.innerHTML = lbl;
   };
+  const esel = $("#vsengine"), est = () => {
+    const o = esel && esel.selectedOptions[0]; const e = $("#vsest"); if (!e) return 0;
+    if (!o || o.value === "motion") { e.textContent = "بدون تكلفة فيديو"; return 0; }
+    const price = +o.dataset.price || 0, secs = ((sb && sb.scenes) || []).slice(0, -1).reduce((a, sc) => a + ((+sc.seconds || 3) <= 4 ? 4 : (+sc.seconds || 3) <= 6 ? 6 : 8), 0);
+    const usd = secs * price; e.textContent = price ? `≈ ${usd.toFixed(2)}$ كحد أقصى (${secs}ث × ${price}$) — المقاطع المحفوظة لا تُحسب` : ""; return usd;
+  };
+  if (esel) { esel.onchange = est; fetch("/api/video/engines").then(r => r.json()).then(d => { const cur = esel.value; const opts = ((d && d.models) || []).filter(m => (m.methods || []).some(x => /predictLongRunning/i.test(x))).map(m => `<option value="veo:${escapeHtml(m.id)}" data-price="${m.usdPerSecond}">🎥 ${escapeHtml(m.id)} · ${m.usdPerSecond}$/ث</option>`); esel.innerHTML = `<option value="motion">🖼 صور متحركة (مجاني)</option>` + opts.join(""); esel.value = [...esel.options].some(o => o.value === cur) ? cur : "motion"; est(); }).catch(() => est()); }
   const bp = re("#vsproduce"); if (bp) bp.onclick = async () => {
-    if (!confirm("إنتاج الريل الآن؟ يولّد المشاهد (Gemini) وقد يأخذ دقيقة أو أكثر.")) return;
+    const eng = (esel && esel.value) || "motion", usd = est();
+    if (!confirm(eng === "motion" ? "إنتاج الريل الآن؟ يولّد المشاهد (Gemini) وقد يأخذ دقيقة أو أكثر." : `إنتاج فيديو حقيقي بـ ${eng.slice(4)}؟ التكلفة القصوى ≈ ${usd.toFixed(2)}$ من حساب Gemini، وقد يأخذ عدة دقائق.`)) return;
     await fetch("/api/video/storyboard", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, storyboard: collectSB() }) }).catch(() => {});
     bp.disabled = true; bp.innerHTML = `<span class="dots"><i></i><i></i><i></i></span> جارٍ الإنتاج`;
-    const r = await fetch("/api/video/produce", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, voice: ($("#vsvoice") || {}).value, music: ($("#vsmusic") || {}).value, voiceover: !!($("#vsvo") || {}).checked }) }).then(x => x.json()).catch(() => null);
+    const r = await fetch("/api/video/produce", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, voice: ($("#vsvoice") || {}).value, music: ($("#vsmusic") || {}).value, voiceover: !!($("#vsvo") || {}).checked, engine: eng === "motion" ? "motion" : "veo", videoModel: eng === "motion" ? undefined : eng.slice(4) }) }).then(x => x.json()).catch(() => null);
     if (r && r.ok) pollVideoProduce(id, C); else { bp.disabled = false; bp.innerHTML = "🎬 أنتج الريل"; const m = $("#vdmsg"); if (m) m.textContent = "✗ " + friendlyErr((r && r.error) || ""); }
   };
 }
@@ -1437,7 +1450,7 @@ function pollVideoProduce(id, C) {
     if (!d || !d.ok) return;
     const p = d.project;
     const pct = p.status === "producing" && p.progress != null ? ` · ${Math.round(p.progress * 100)}%` : "";
-    const stage = !p.stage ? "" : p.stage.startsWith("scene") ? ` · صورة ${p.stage.replace("scene", "المشهد")}` : p.stage.startsWith("voice") ? ` · تعليق ${p.stage.replace("voice", "المشهد")}` : p.stage === "mix" ? " · مزج الصوت والموسيقى" : p.stage === "render" ? " · تحريك ومونتاج" : "";
+    const stage = !p.stage ? "" : p.stage.startsWith("scene") ? ` · صورة ${p.stage.replace("scene", "المشهد")}` : p.stage.startsWith("video") ? ` · فيديو ${p.stage.replace("video", "المشهد")} (Veo)` : p.stage.startsWith("voice") ? ` · تعليق ${p.stage.replace("voice", "المشهد")}` : p.stage === "mix" ? " · مزج الصوت والموسيقى" : p.stage === "render" ? " · تحريك ومونتاج" : "";
     if (st) st.textContent = `الحالة: ${(VS_ST[p.status] || [p.status])[0]}${pct}${stage} (${n * 4}s)`;
     if (p.status === "needsReview" || p.status === "completed") { clearInterval(t); openVideoProject(id, C); }
     else if (p.status === "failed") { clearInterval(t); if (st) st.textContent = "✗ فشل الإنتاج: " + (p.error || ""); }

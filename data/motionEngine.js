@@ -303,7 +303,41 @@ async function ffmpegBin() {
   const m = await import("ffmpeg-static"); const p = m.default || m;
   if (!p || !fs.existsSync(p)) throw new Error("ffmpeg binary not found"); return p;
 }
-// scenes: [{ onScreenText, seconds, transition, layout?, photoPath? }]
+// ── Real video clips inside the brand layouts ── a scene may carry clipPath (an
+// AI video whose first frame is the scene photo): its frames are decoded at the
+// reel fps and drawn exactly where the photo would be (card, circle, full-bleed),
+// so text, wipes and brand shapes stay identical; the last frame holds if the
+// clip is shorter than the scene. Streams one frame at a time (no frame files).
+const CW = 720, CH = 1280;
+function openClip(bin, file, fps) {
+  const p = spawn(bin, ["-v", "error", "-i", file, "-an", "-vf", `fps=${fps},scale=${CW}:${CH}:force_original_aspect_ratio=increase,crop=${CW}:${CH}`, "-f", "rawvideo", "-pix_fmt", "rgba", "-"], { stdio: ["ignore", "pipe", "ignore"] });
+  const out = p.stdout, size = CW * CH * 4;
+  const cv = createCanvas(CW, CH), cx = cv.getContext("2d"), img = cx.createImageData(CW, CH);
+  // flowing reads into a small queue (paused above ~3 frames = backpressure)
+  const q = []; let have = 0, ended = false, wake = null;
+  const poke = () => { if (wake) { const w = wake; wake = null; w(); } };
+  out.on("data", (c) => { q.push(c); have += c.length; if (have > size * 3) out.pause(); poke(); });
+  out.on("end", () => { ended = true; poke(); }); out.on("error", () => { ended = true; poke(); });
+  const readExact = async () => {
+    while (have < size && !ended) await new Promise((r) => { wake = r; });
+    if (have < size) return null;
+    let off = 0;
+    while (off < size) {
+      const c = q[0], take = Math.min(c.length, size - off);
+      img.data.set(c.subarray(0, take), off); off += take;
+      if (take === c.length) q.shift(); else q[0] = c.subarray(take);
+    }
+    have -= size; if (have < size * 2 && out.isPaused()) out.resume();
+    return true;
+  };
+  let has = false;
+  return {
+    canvas: cv,
+    async next() { if (await readExact()) { cx.putImageData(img, 0, 0); has = true; } return has ? cv : null; },
+    close() { try { p.kill("SIGKILL"); } catch (e) {} },
+  };
+}
+// scenes: [{ onScreenText, seconds, transition, layout?, photoPath?, clipPath? }]
 export async function renderMotionReel(scenes, outPath, { biz = {}, cta = "", fps = 25, onProgress, audioPath = null, mode = "" } = {}) {
   if (!Array.isArray(scenes) || !scenes.length) throw new Error("no scenes");
   ensureFonts();
@@ -331,16 +365,19 @@ export async function renderMotionReel(scenes, outPath, { biz = {}, cta = "", fp
     for (let i = 0; i < n; i++) {
       const sc = scenes[i], layout = layoutFor(sc, i, n, { mode }), assets = await loadAssets(sc.photoPath);
       const d = durs[i], N = Math.round(d * fps);
+      const clip = sc.clipPath && fs.existsSync(sc.clipPath) ? openClip(bin, sc.clipPath, fps) : null;
       const wipeOut = i > 0 && String(scenes[i - 1].transition || "") !== "cut";
       const wipeIn = i < n - 1 && String(sc.transition || "") !== "cut";
       for (let f = 0; f < N; f++) {
         const s = f / fps;
+        if (clip) { const fr = await clip.next(); if (fr) assets.photo = fr; }
         drawScene(ctx, { layout, scene: sc, assets, biz, cta, t: clamp(s / 0.85), p: s / d });
         if (wipeOut && s < WIPE) { const [c, e] = wipeCol(i - 1); drawWipe(ctx, -W * easeInOut(s / WIPE), c, e); }
         if (wipeIn && s > d - WIPE) { const [c, e] = wipeCol(i); drawWipe(ctx, W * (1 - easeInOut((s - (d - WIPE)) / WIPE)), c, e); }
         await writeFrame(cv.data());
         frame++; if (onProgress && frame % 25 === 0) onProgress(frame / totalFrames);
       }
+      if (clip) clip.close();
       if (global.gc) { try { global.gc(); } catch (e) {} }
     }
     proc.stdin.end();

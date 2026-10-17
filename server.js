@@ -1150,6 +1150,8 @@ app.post("/api/video/produce", async (req, res) => {
   if (b.voice && tts.VOICES.some((v) => v.id === b.voice)) prefs.voice = b.voice;
   if (b.music) prefs.music = String(b.music).slice(0, 20);
   if (typeof b.voiceover === "boolean") prefs.voiceover = b.voiceover;
+  if (b.engine === "motion" || b.engine === "veo") prefs.engine = b.engine;
+  if (b.videoModel && /^(veo|gemini-omni)[\w.-]*$/.test(b.videoModel)) prefs.videoModel = b.videoModel;
   if (Object.keys(prefs).length) store.saveVideoProject({ id: p.id, ...prefs });
   videoBusy = true;
   store.setVideoProjectStatus(p.id, "producing", { error: "", progress: 0, stage: "" });
@@ -1162,7 +1164,7 @@ app.post("/api/video/produce", async (req, res) => {
       const ver = Math.max(0, ...(p.versions || []).map(vnum)) + 1;
       const r = await makeStoryboardReel(store.getVideoProject(p.id), (pr) => store.setVideoProjectStatus(p.id, "producing", { progress: pr.progress, stage: pr.stage }), ver);
       const url = r.url;
-      let versions = [...(p.versions || []), { url, at: new Date().toISOString(), scenes: p.storyboard.scenes.length, soundtrack: r.soundtrack, assets: r.assets, n: ver }].map((v) => ({ ...v, n: vnum(v) }));
+      let versions = [...(p.versions || []), { url, at: new Date().toISOString(), scenes: p.storyboard.scenes.length, soundtrack: r.soundtrack, assets: r.assets, video: r.video, n: ver }].map((v) => ({ ...v, n: vnum(v) }));
       // Keep the files of the newest 3 versions (the volume is small); older entries
       // stay listed but marked gone. Older entries that shared one overwritten file
       // (before versioning) are not real versions — only the newest of them is live.
@@ -1171,7 +1173,7 @@ app.post("/api/video/produce", async (req, res) => {
       versions = versions.slice().reverse().map((v) => { const f = fileOf(v.url); const live = keep.has(f) && !seen.has(f) && fs.existsSync(f); seen.add(f); return { ...v, gone: !live }; }).reverse();
       for (const v of versions) { const f = fileOf(v.url); if (v.gone && !keep.has(f)) { try { fs.unlinkSync(f); } catch (e) {} } }
       versions = versions.slice(-8);
-      store.saveVideoProject({ id: p.id, previewUrl: url, versions, soundtrack: r.soundtrack, assets: r.assets, status: "needsReview", progress: 1, stage: "" });
+      store.saveVideoProject({ id: p.id, previewUrl: url, versions, soundtrack: r.soundtrack, assets: r.assets, video: r.video, status: "needsReview", progress: 1, stage: "" });
     } catch (e) { console.error("[video/produce]", e.message); store.setVideoProjectStatus(p.id, "failed", { error: e.message }); }
     finally { videoBusy = false; }
   })();
@@ -1307,6 +1309,18 @@ async function makeEditorialReel({ id, light = false, headline, pop, cta, valueL
 // storyboard montage (per-scene duration, directed camera motion, transitions,
 // brand grade, end-screen). Provider-agnostic: scenes are animated images today;
 // a real video-gen provider can replace this per-scene step later.
+// The cast sheet lists every recurring person ("LEAD = …. THE WORKER: …. THE SON: …");
+// a scene only gets the LEAD + the people its visual actually mentions, so a
+// character never wanders into a shot before the story introduces them.
+function castFor(cast, visual) {
+  const parts = String(cast || "").split(/\.\s+(?=(?:LEAD|THE)\b)/).map((x) => x.trim()).filter(Boolean);
+  const v = String(visual || "").toLowerCase();
+  return parts.filter((pt) => { if (/^LEAD\b/.test(pt)) return true; const role = (pt.match(/^THE\s+([A-Z][A-Z ]*?)\s*[:=]/) || [])[1]; return role ? v.includes(role.toLowerCase().trim().split(/\s+/).pop()) : true; }).join(". ").replace(/\.*$/, "");
+}
+const CAM = { "push-in": "slowly pushes in", "pull-out": "slowly pulls back", "pan-left": "pans gently left", "pan-right": "pans gently right", "tilt-up": "tilts up gently", static: "stays locked off", handheld: "is handheld with slight natural shake" };
+function motionPrompt(sc) {
+  return `${sc.visual}. Animate this exact photo as a short live-action shot: the people move naturally and act out the moment described, with big but real reactions; the camera ${CAM[sc.cameraMotion] || "slowly pushes in"}. Keep exactly the same people, faces, Omani clothes and shop as in the image — nobody new enters unless described. Nobody speaks: no dialogue, no lip-sync. No on-screen text, captions or subtitles. No music. Realistic, cinematic.`;
+}
 async function makeStoryboardReel(project, onProgress, ver = null) {
   const sb = project && project.storyboard;
   if (!sb || !Array.isArray(sb.scenes) || !sb.scenes.length) throw new Error("لا يوجد Storyboard معتمد");
@@ -1358,7 +1372,8 @@ async function makeStoryboardReel(project, onProgress, ver = null) {
         // ONE STORY = ONE CAST: every scene carries the same cast + location sheet,
         // and person scenes use the project's single LEAD portrait (its face AND its
         // authentic Omani outfit) instead of a face/garment rotated per prompt.
-        const continuity = `${sb.cast ? ` CAST (identical in every scene of this story): ${sb.cast}.` : ""}${sb.setting ? ` LOCATION (same place in every scene): ${sb.setting}.` : ""}`;
+        const cast = castFor(sb.cast, sc.visual);
+        const continuity = `${cast ? ` CAST (identical in every scene of this story): ${cast}. ONLY these people appear in this shot — nobody else from the story.` : ""}${sb.setting ? ` LOCATION (same place in every scene): ${sb.setting}.` : ""}`;
         const prompt = `Photorealistic candid photograph: ${sc.visual}.${continuity} Natural well-composed shot, ${frameHint}, warm natural light, subtle brand-coloured accents in the environment (deep magenta-rose and warm golden orange, NOT purple). Big expressions stay REAL — a candid photo of real people reacting, never a caricature or cartoon. NO readable words in any language anywhere — including calculators, displays, signs and packaging.${rm}`;
         const { refs, note } = leadRef && /owner|trader|shopkeeper|merchant|\bman\b|dishdasha|kummah|massar/i.test(sc.visual) ? leadRef : heroRefs(prompt);
         photoPath = path.join(adir, `photo-${fp(prompt + note)}.jpg`); used.add(path.basename(photoPath));
@@ -1395,6 +1410,31 @@ async function makeStoryboardReel(project, onProgress, ver = null) {
       at += sc.seconds;
     }
     const total = at;
+    // 2b) REAL VIDEO (owner-chosen paid engine): each photo scene is animated by
+    //     image-to-video from its approved photo, so cast/dress/shop stay exact.
+    //     Clips are cached by (model, photo, motion, length) and never pruned —
+    //     they cost money. A clip that fails (e.g. safety filter on a child) keeps
+    //     the animated photo for that scene and is reported, never faked.
+    const vstats = { engine: "motion", model: "", clipsNew: 0, clipsReused: 0, seconds: 0, usd: 0, errors: [] };
+    if (project.engine === "veo" && project.videoModel) {
+      vstats.engine = "veo"; vstats.model = project.videoModel;
+      const jobs = scenes.map((sc, i) => sc.photoPath ? { i, sc, secs: veo.clipSeconds(sc.seconds), motion: motionPrompt(sc) } : null).filter(Boolean)
+        .map((j) => ({ ...j, file: path.join(adir, `clip-${fp(project.videoModel + "|" + path.basename(j.sc.photoPath) + "|" + j.motion + "|" + j.secs)}.mp4`) }));
+      const todo = jobs.filter((j) => !fs.existsSync(j.file));
+      const est = todo.reduce((a, j) => a + j.secs, 0) * veo.priceFor(project.videoModel);
+      const budget = +(store.cfgGet("VIDEO_BUDGET_USD") || 3);
+      if (est > budget) throw new Error(`تكلفة الفيديو الحقيقي المتوقعة ${est.toFixed(2)}$ تتجاوز الحد ${budget}$ لكل إنتاج — خفّض عدد المشاهد أو ارفع VIDEO_BUDGET_USD`);
+      for (const j of jobs) {
+        if (fs.existsSync(j.file)) { vstats.clipsReused++; scenes[j.i].clipPath = j.file; continue; }
+        report({ stage: `video ${j.i + 1}/${n}`, progress: 0.4 + 0.15 * (j.i / n) });
+        try {
+          const buf = await veo.generateClip({ model: project.videoModel, prompt: j.motion, image: fs.readFileSync(j.sc.photoPath), mime: "image/jpeg", seconds: j.secs });
+          fs.writeFileSync(j.file, buf); scenes[j.i].clipPath = j.file;
+          vstats.clipsNew++; vstats.seconds += j.secs; vstats.usd += j.secs * veo.priceFor(project.videoModel);
+        } catch (e) { console.error("[produce] veo scene", j.i + 1, e.message); vstats.errors.push({ scene: j.i + 1, error: String(e.message).slice(0, 200) }); }
+      }
+      vstats.usd = +vstats.usd.toFixed(2);
+    }
     // 3) music: an original composed bed (no licence needed) unless turned off
     report({ stage: "mix", progress: 0.56 });
     let musicPath = null;
@@ -1410,8 +1450,8 @@ async function makeStoryboardReel(project, onProgress, ver = null) {
     const name = ver ? `${id}-v${ver}.mp4` : `${id}.mp4`;
     const out = path.join(dir, name);
     await motion.renderMotionReel(scenes, out, { biz, cta: sb.cta || "قريبًا", audioPath, mode: project.mode, onProgress: (f) => report({ stage: "render", progress: 0.6 + f * 0.4 }) });
-    for (const f of fs.readdirSync(adir)) { if (!used.has(f)) { try { fs.unlinkSync(path.join(adir, f)); } catch (e) {} } } // keep only what this version uses
-    return { url: `/media/design/${name}?v=${Date.now()}`, soundtrack: { voiceover: voClips.length, voice: project.voice || "Charon", music: moodKey, seconds: +total.toFixed(2) }, assets: stats };
+    for (const f of fs.readdirSync(adir)) { if (!used.has(f) && !/^clip-/.test(f)) { try { fs.unlinkSync(path.join(adir, f)); } catch (e) {} } } // keep only what this version uses
+    return { url: `/media/design/${name}?v=${Date.now()}`, soundtrack: { voiceover: voClips.length, voice: project.voice || "Charon", music: moodKey, seconds: +total.toFixed(2) }, assets: stats, video: vstats };
   } finally { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {} }
 }
 // Editorial CAROUSEL: a cover + content slides, each its own editorial scene.
