@@ -1198,6 +1198,14 @@ app.post("/api/audio/tts-preview", async (req, res) => {
 });
 // Delete ONE old version file (owner action, from the versions list). The live
 // version can never be deleted; the entry stays listed as gone for the history.
+// Image models this key can use (names only).
+app.get("/api/debug/image-models", async (req, res) => {
+  try {
+    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=300", { headers: { "x-goog-api-key": store.cfgGet("GEMINI_API_KEY") } });
+    const j = await r.json();
+    res.json({ ok: true, current: store.cfgGet("GEMINI_IMAGE_MODEL") || "gemini-2.5-flash-image", models: (j.models || []).filter((m) => /image|imagen/i.test(m.name)).map((m) => ({ id: m.name.replace(/^models\//, ""), methods: m.supportedGenerationMethods || [] })) });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
 // Diagnostics: each cached clip of a project + its detected letterbox crop.
 app.get("/api/debug/clips/:id", async (req, res) => {
   const motion = await import("./data/motionEngine.js");
