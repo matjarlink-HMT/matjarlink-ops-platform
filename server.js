@@ -1152,7 +1152,11 @@ app.post("/api/video/produce", async (req, res) => {
   // volume is still too full — instead of dying mid-render with ENOSPC.
   sweepTempFiles(30);
   const fm = freeDiskMB();
-  if (fm != null && fm < 22) return res.status(507).json({ ok: false, error: `مساحة التخزين شبه ممتلئة (${fm}MB متبقية) — الإنتاج يحتاج ~22MB. كبّر الـVolume في Railway أو نظّف ملفات قديمة.` });
+  // a project with cached photos/clips only needs room for the final mp4
+  const adirP = path.join(designsDir(), "assets", p.id);
+  const cached = fs.existsSync(adirP) && fs.readdirSync(adirP).some((f) => /^(photo|clip)-/.test(f));
+  const needMB = cached ? 15 : 22;
+  if (fm != null && fm < needMB) return res.status(507).json({ ok: false, error: `مساحة التخزين شبه ممتلئة (${fm}MB متبقية) — الإنتاج يحتاج ~${needMB}MB. كبّر الـVolume في Railway أو نظّف ملفات قديمة.` });
   const b = req.body || {}, prefs = {};
   if (b.voice && tts.VOICES.some((v) => v.id === b.voice)) prefs.voice = b.voice;
   if (b.music) prefs.music = String(b.music).slice(0, 20);
