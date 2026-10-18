@@ -226,7 +226,7 @@ app.post("/api/restore-original", (req, res) => {
 app.post("/api/generate-post", async (req, res) => {
   const { prompt, date, lang } = req.body || {};
   if (!generator.claudeReady()) return res.status(400).json({ ok: false, error: "add ANTHROPIC_API_KEY to enable generation" });
-  const idNum = nextIdNum(baseState().queue);
+  const idNum = nextIdNum(baseState().queue, store.getRemoved());
   const when = date || defaultNextSlot();
   let post;
   try { post = await generator.generatePost({ idNum, date: when, prompt: prompt || "", prefLine: store.hookPrefLine() }, lang || "ar"); }
@@ -236,7 +236,7 @@ app.post("/api/generate-post", async (req, res) => {
     if ((post.ty || "").includes("ريل")) { const r = await renderAndSaveReel(post, post); post.mediaUrl = r.mediaUrl; }
     else { const d = await renderAndSaveDesign(post, post); post.mediaUrl = d.mediaUrl; if (d.images?.length) post.images = d.images; }
   } catch (e) { console.error("[design]", e.message); }
-  appendPost(post);
+  store.resetPostRecord(post.id); appendPost(post);
   res.json({ ok: true, post });
 });
 
@@ -373,7 +373,7 @@ app.post("/api/plan/apply-item", async (req, res) => {
   const item = plan?.items?.find((i) => i.key === key);
   if (!item) return res.status(404).json({ ok: false, error: "plan item not found" });
   if (item.status === "applied" && item.id) return res.json({ ok: true, plan, post: null, already: true });
-  const idNum = nextIdNum(baseState().queue);
+  const idNum = nextIdNum(baseState().queue, store.getRemoved());
   const date = `${plan.year}-${String(plan.month).padStart(2, "0")}-${String(item.day).padStart(2, "0")} · ${item.time || "20:00"}`;
   let post;
   try { post = await generator.generatePost({ idNum, date, pillar: item.pillar, prompt: `نفّذ فكرة الخطة: «${item.t}» — النوع المطلوب حصراً: ${item.ty}` }, "ar"); }
@@ -384,7 +384,7 @@ app.post("/api/plan/apply-item", async (req, res) => {
     if ((post.ty || "").includes("ريل")) { const r = await renderAndSaveReel(post, post); post.mediaUrl = r.mediaUrl; }
     else { const d = await renderAndSaveDesign(post, post); post.mediaUrl = d.mediaUrl; if (d.images?.length) post.images = d.images; }
   } catch (e) { console.error("[plan-apply design]", e.message); }
-  appendPost(post);
+  store.resetPostRecord(post.id); appendPost(post);
   item.status = "applied"; item.id = post.id;
   store.setPlan(plan);
   res.json({ ok: true, plan, post });
@@ -969,7 +969,7 @@ app.post("/api/proposals/approve", (req, res) => {
   else if (p.kind === "post") {
     // Approved design → drop it into the publish queue (قائمة النشر), marked
     // approved (owner explicitly approved it here) so it's ready to publish.
-    const idNum = nextIdNum(baseState().queue);
+    const idNum = nextIdNum(baseState().queue, store.getRemoved());
     const qid = "MJ-" + String(idNum).padStart(3, "0");
     const media = (p.previewUrl || "").split("?")[0];  // /media/design/<id> (serves <id>.png or .mp4)
     const { date: today } = muscatDateHour();
@@ -977,6 +977,7 @@ app.post("/api/proposals/approve", (req, res) => {
     const isReel = fmt.includes("ريل") || /\.mp4/.test(p.previewUrl || "") || (p.ty || "").includes("ريل");
     const isCar = fmt.includes("كاروسيل") || (p.images && p.images.length > 1);
     const qty = p.qty || (isReel ? "ريل نوعي" : isCar ? "كاروسيل توعوي" : "منشور علامة");
+    store.resetPostRecord(qid); // never inherit an old record under this number
     appendPost({
       id: qid, t: p.t, t2: p.t2 || "", cta: p.cta || "",
       cap: `${p.t}${p.t2 ? " · " + p.t2 : ""}${p.cta ? "\n\n" + p.cta : ""}`,
@@ -1277,7 +1278,8 @@ app.post("/api/video/queue", (req, res) => {
   const stable = `post-${p.id}.mp4`; fs.copyFileSync(src, path.join(designsDir(), stable));
   // never reuse a number of a deleted post (it would be hidden by the delete list)
   const nums = [...removed].map((x) => parseInt(String(x).replace(/\D/g, ""), 10)).filter((n) => !isNaN(n));
-  const qid = "MJ-" + String(Math.max(nextIdNum(baseState().queue), ...nums.map((n) => n + 1))).padStart(3, "0");
+  const qid = "MJ-" + String(Math.max(nextIdNum(baseState().queue, store.getRemoved()), ...nums.map((n) => n + 1))).padStart(3, "0");
+  store.resetPostRecord(qid); // a new post never inherits an old record (e.g. «معتمد»)
   appendPost({ id: qid, t: sb.title || p.title || "ريل", t2: sb.hook || "", cta: sb.cta || "", cap, ty: "ريل نوعي", ch: "IG", tyc: "#6E1444", date, mediaUrl: `/media/design/${stable}`, images: [], gen: true });
   if (b.approve === true) store.approve(qid);
   store.saveVideoProject({ id: p.id, queueId: qid, status: "queued" });
@@ -1840,7 +1842,7 @@ app.post("/api/studio/publish", async (req, res) => {
   if (!d) return res.status(404).json({ ok: false, error: "draft not found" });
   if (!metaPublish.publishReady()) return res.status(400).json({ ok: false, error: "Meta publishing not configured (add META_ACCESS_TOKEN + META_IG_USER_ID)" });
   const post = studioToPost(d, d.date || defaultNextSlot());
-  appendPost(post);
+  store.resetPostRecord(post.id); appendPost(post);
   const input = resolveMedia(post, publicBase(req));
   if (!input) return res.status(400).json({ ok: false, error: "no media for this draft" });
   if (publishingNow.has(post.id)) return res.status(409).json({ ok: false, error: "publish already in progress" });
@@ -1860,7 +1862,7 @@ app.post("/api/studio/schedule", (req, res) => {
   if (!d) return res.status(404).json({ ok: false, error: "draft not found" });
   if (!b.date || !parseWhen(b.date)) return res.status(400).json({ ok: false, error: "valid date required (YYYY-MM-DD HH:mm)" });
   const post = studioToPost(d, b.date);
-  appendPost(post);
+  store.resetPostRecord(post.id); appendPost(post);
   store.approve(post.id); // approved → auto-publish scheduler will post it at its time
   store.deleteStudioDraft(d.id);
   res.json({ ok: true, id: post.id, date: post.date });
@@ -2151,6 +2153,7 @@ app.post("/api/notes", (req, res) => {
   const { id, note, action } = req.body || {};
   if (!id) return res.status(400).json({ ok: false, error: "id required" });
   if (action === "approve") return res.json({ ok: true, notes: store.approve(id) });
+  if (action === "unapprove") return res.json({ ok: true, notes: store.unapprove(id) });
   res.json({ ok: true, notes: store.setNote(id, note || "") });
 });
 
@@ -2310,7 +2313,7 @@ async function automationTick() {
     const when = new Date(py, pmo - 1, c.day || 1, 20, 0, 0);
     const daysAhead = (when - now) / 86400000;
     if (daysAhead < 0 || daysAhead > 7) continue;
-    const idNum = nextIdNum(baseState().queue);
+    const idNum = nextIdNum(baseState().queue, store.getRemoved());
     const dateStr = `${py}-${String(pmo).padStart(2, "0")}-${String(c.day || 1).padStart(2, "0")} · 20:00`;
     try {
       const post = await generator.generatePost({ idNum, date: dateStr, pillar: c.pillar || "", prompt: c.t || "" });

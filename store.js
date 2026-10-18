@@ -69,6 +69,8 @@ export function setNote(id, value, status) {
   persist();
   return mem;
 }
+export function resetPostRecord(id) { if (mem[id]) { delete mem[id]; persist(); } return mem; }
+export function unapprove(id) { const cur = mem[id]; if (cur && cur.status === "معتمد") { cur.status = "بانتظار الاعتماد"; cur.at = new Date().toISOString(); persist(); } return mem; }
 export function approve(id) {
   const cur = mem[id] || {};
   cur.status = "معتمد"; cur.note = cur.note || ""; cur.at = new Date().toISOString();

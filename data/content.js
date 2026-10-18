@@ -47,8 +47,8 @@ export function appendPost(post) {
 }
 
 // Highest MJ-### number across seed + generated content (for the next id).
-export function nextIdNum(seedQueue = []) {
+export function nextIdNum(seedQueue = [], extraIds = []) {
   const doc = loadContent();
-  const ids = [...(seedQueue || []), ...((doc && doc.queue) || [])].map(q => parseInt((q.id || "").replace(/\D/g, ""), 10)).filter(n => !isNaN(n));
+  const ids = [...(seedQueue || []), ...((doc && doc.queue) || []), ...(extraIds || []).map((id) => ({ id }))].map(q => parseInt((q.id || "").replace(/\D/g, ""), 10)).filter(n => !isNaN(n));
   return (ids.length ? Math.max(...ids) : 0) + 1;
 }
