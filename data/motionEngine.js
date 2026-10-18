@@ -276,11 +276,72 @@ export async function loadAssets(photoPath) {
 }
 
 // Draw one frame of a scene at entrance t / progress p.
-export function drawScene(ctx, { layout, scene, assets, biz, cta, t = 1, p = 0.5 }) {
+export function drawScene(ctx, { layout, scene, assets, biz, cta, t = 1, p = 0.5, s = 2.5 }) {
   ensureFonts();
   const copy = splitKey(scene && scene.onScreenText);
   (LAYOUTS[layout] || LAYOUTS.photoCard)(ctx, { t, p, copy, assets, biz, cta });
+  const ov = scene && OVERLAYS[scene.overlay]; if (ov) ov(ctx, s, scene);
 }
+
+// ── Explainer overlays ── crisp brand motion graphics drawn over a scene where
+// AI footage cannot show a product truth (screens/text). Pure function of the
+// scene time s (seconds), so they animate frame-accurately.
+function cardBox(ctx, x, y, w, h, a) { ctx.save(); ctx.globalAlpha = a; shadow(ctx, 40, 18, 0.3); ctx.fillStyle = "rgba(255,255,255,0.96)"; rr(ctx, x, y, w, h, 36); ctx.fill(); noShadow(ctx); ctx.restore(); }
+function iconRegister(ctx, cx, cy, c) { // cashier: screen on a stand + base
+  ctx.save(); ctx.fillStyle = c; rr(ctx, cx - 44, cy - 40, 88, 56, 10); ctx.fill();
+  ctx.fillStyle = "#fff"; rr(ctx, cx - 34, cy - 31, 68, 38, 6); ctx.fill();
+  ctx.fillStyle = c; ctx.fillRect(cx - 8, cy + 16, 16, 14); rr(ctx, cx - 52, cy + 28, 104, 16, 8); ctx.fill(); ctx.restore();
+}
+function iconBag(ctx, cx, cy, c) { // online store: shopping bag
+  ctx.save(); ctx.fillStyle = c; rr(ctx, cx - 42, cy - 24, 84, 70, 14); ctx.fill();
+  ctx.strokeStyle = c; ctx.lineWidth = 9; ctx.beginPath(); ctx.arc(cx, cy - 24, 22, Math.PI, 0); ctx.stroke(); ctx.restore();
+}
+const eio = (x) => { x = clamp(x); return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; };
+const AR = (n) => String(n).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[d]);
+const OVERLAYS = {
+  // cashier sale → online store stock updates in the same instant
+  stockSync(ctx, s, scene) {
+    const o = scene.overlayText || {};
+    const appear = easeOut(clamp((s - 0.15) / 0.5)), T_SALE = 1.0, T_ARRIVE = 1.75;
+    const W2 = 400, H2 = 300, gap = 120, y = 760 + (1 - appear) * 60;
+    const xR = W / 2 + gap / 2, xL = W / 2 - gap / 2 - W2; // RTL: cashier on the right, store on the left
+    const after = s >= T_ARRIVE, pop = easeOutBack(clamp((s - T_ARRIVE) / 0.35));
+    const before = o.from ?? 1, now = o.to ?? 0;
+    for (const side of ["R", "L"]) {
+      const x = side === "R" ? xR : xL, cx = x + W2 / 2;
+      cardBox(ctx, x, y, W2, H2, appear);
+      ctx.save(); ctx.globalAlpha = appear;
+      if (side === "R") iconRegister(ctx, cx, y + 72, BRAND.magenta); else iconBag(ctx, cx, y + 76, BRAND.magenta);
+      ctx.direction = "rtl"; ctx.textAlign = "center"; ctx.fillStyle = BRAND.magentaInk; ctx.font = "38px MLXB";
+      ctx.fillText(side === "R" ? (o.left || "الكاشير") : (o.right || "المتجر الإلكتروني"), cx, y + 165);
+      ctx.font = "30px MLB"; ctx.fillStyle = BRAND.inkSoft; ctx.fillText(o.label || "المخزون", cx - 50, y + 240);
+      // the number flips at the moment the sale lands (both cards at once)
+      const n = after ? now : before, sc = after ? 0.6 + 0.4 * pop : 1;
+      ctx.save(); ctx.translate(cx + 70, y + 236); ctx.scale(sc, sc); ctx.font = "78px MLXB"; ctx.fillStyle = after ? BRAND.orangeDeep : BRAND.magenta; ctx.fillText(String(n), 0, 22); ctx.restore();
+      ctx.restore();
+    }
+    // connector + travelling pulse (cashier → store)
+    const ly = y + H2 / 2 - 10, x0 = xR - 6, x1 = xL + W2 + 6;
+    ctx.save(); ctx.globalAlpha = appear; ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.lineWidth = 6; ctx.setLineDash([14, 12]);
+    ctx.beginPath(); ctx.moveTo(x0, ly); ctx.lineTo(x1, ly); ctx.stroke(); ctx.setLineDash([]); ctx.restore();
+    if (s >= T_SALE && s < T_ARRIVE + 0.2) {
+      const k = eio(clamp((s - T_SALE) / (T_ARRIVE - T_SALE))), px = x0 + (x1 - x0) * k;
+      circle(ctx, px, ly, 26, BRAND.orange, 0.35); circle(ctx, px, ly, 15, BRAND.orange, 1);
+    }
+    // "sold out" pill on the store card + "instantly" tag
+    if (after) {
+      const e = pop; ctx.save(); ctx.globalAlpha = clamp(e); const lbl = o.done || "نفدت", cx = xL + W2 / 2;
+      ctx.font = "34px MLXB"; const tw = ctx.measureText(lbl).width, pw = tw + 56, ph = 58, px = cx - pw / 2, py = y - 34;
+      ctx.translate(cx, py + ph / 2); ctx.scale(0.7 + 0.3 * e, 0.7 + 0.3 * e); ctx.translate(-cx, -(py + ph / 2));
+      ctx.fillStyle = BRAND.orange; rr(ctx, px, py, pw, ph, ph / 2); ctx.fill();
+      ctx.direction = "rtl"; ctx.textAlign = "center"; ctx.fillStyle = BRAND.magentaInk; ctx.fillText(lbl, cx, py + 41); ctx.restore();
+      const tag = o.tag || "لحظياً", e2 = easeOut(clamp((s - T_ARRIVE - 0.15) / 0.4));
+      ctx.save(); ctx.globalAlpha = e2; ctx.font = "30px MLXB"; const w2 = ctx.measureText(tag).width + 40;
+      ctx.fillStyle = BRAND.magenta; rr(ctx, W / 2 - w2 / 2, ly - 70, w2, 50, 25); ctx.fill();
+      ctx.direction = "rtl"; ctx.textAlign = "center"; ctx.fillStyle = "#fff"; ctx.fillText(tag, W / 2, ly - 34); ctx.restore();
+    }
+  },
+};
 
 // Static style frame (t=1) → PNG buffer.
 export async function renderStyleFrame({ layout, scene, photoPath, biz, cta }) {
@@ -396,7 +457,7 @@ export async function renderMotionReel(scenes, outPath, { biz = {}, cta = "", fp
       for (let f = 0; f < N; f++) {
         const s = f / fps;
         if (clip) { const fr = await clip.next(); if (fr) assets.photo = fr; }
-        drawScene(ctx, { layout, scene: sc, assets, biz, cta, t: clamp(s / 0.85), p: s / d });
+        drawScene(ctx, { layout, scene: sc, assets, biz, cta, t: clamp(s / 0.85), p: s / d, s });
         if (wipeOut && s < WIPE) { const [c, e] = wipeCol(i - 1); drawWipe(ctx, -W * easeInOut(s / WIPE), c, e); }
         if (wipeIn && s > d - WIPE) { const [c, e] = wipeCol(i); drawWipe(ctx, W * (1 - easeInOut((s - (d - WIPE)) / WIPE)), c, e); }
         await writeFrame(cv.data());
