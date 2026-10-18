@@ -1016,7 +1016,8 @@ app.post("/api/proposals/reject", (req, res) => {
 app.post("/api/proposals/regenerate", async (req, res) => {
   const b = req.body || {}; const p = store.getProposals()[b.id];
   if (!p || p.status !== "pending") return res.status(404).json({ ok: false, error: "proposal not found" });
-  if (!gemini.geminiReady()) return res.status(400).json({ ok: false, error: "يحتاج ربط Gemini" });
+  const ownPhotos = list.every((p) => typeof p.photo === "string" && p.photo.length > 1000); // images made in the owner's Gemini app — no API cost
+  if (!ownPhotos && !gemini.geminiReady()) return res.status(400).json({ ok: false, error: "يحتاج ربط Gemini" });
   const note = (b.note || "").trim();
   try {
     if (p.kind === "post") {
@@ -1290,7 +1291,7 @@ app.post("/api/video/queue", (req, res) => {
 // the brand post engine → a pending proposal in «الاعتماد» (nothing reaches the
 // publish queue without the owner's approval there). Runs in the background.
 let brandPostsBusy = false;
-app.post("/api/posts/brand-batch", (req, res) => {
+app.post("/api/posts/brand-batch", express.json({ limit: "60mb" }), (req, res) => {
   const list = (Array.isArray((req.body || {}).posts) ? req.body.posts : []).slice(0, 8);
   if (!list.length) return res.status(400).json({ ok: false, error: "posts required" });
   if (!gemini.geminiReady()) return res.status(400).json({ ok: false, error: "يحتاج ربط Gemini" });
@@ -1307,8 +1308,18 @@ app.post("/api/posts/brand-batch", (req, res) => {
     for (let i = 0; i < list.length; i++) {
       const p = list[i], id = ids[i];
       try {
-        const { buffer } = await gemini.generateImage(`${String(p.scene || "")}.${noPeople}`, [], { aspect: "4:5", model, size: /pro|3\.1/.test(model) ? "2K" : undefined });
-        const img = await loadImage(buffer); const cv = createCanvas(img.width, img.height); cv.getContext("2d").drawImage(img, 0, 0);
+        let img;
+        if (typeof p.photo === "string" && p.photo.length > 1000) {
+          img = await loadImage(Buffer.from(p.photo.replace(/^data:[^,]+,/, ""), "base64"));
+        } else {
+          const { buffer } = await gemini.generateImage(`${String(p.scene || "")}.${noPeople}`, [], { aspect: "4:5", model, size: /pro|3\.1/.test(model) ? "2K" : undefined });
+          img = await loadImage(buffer);
+        }
+        // Gemini-app images carry a small ✦ mark in the bottom-right corner — crop a
+        // 6% border (keeps the framing centred) so it never shows in the post
+        const cut = typeof p.photo === "string" ? 0.06 : 0, cx0 = Math.round(img.width * cut), cy0 = Math.round(img.height * cut);
+        const cw = img.width - 2 * cx0, ch = img.height - 2 * cy0;
+        const cv = createCanvas(cw, ch); cv.getContext("2d").drawImage(img, cx0, cy0, cw, ch, 0, 0, cw, ch);
         const photoPath = path.join(dir, `${id}-photo.jpg`); fs.writeFileSync(photoPath, cv.toBuffer("image/jpeg", 90));
         const layout = POST_LAYOUTS.includes(p.layout) ? p.layout : POST_LAYOUTS[i % POST_LAYOUTS.length];
         fs.writeFileSync(path.join(dir, `${id}.png`), await renderBrandPost({ layout, photoPath, kicker: p.kicker || "", main: p.main || "", key: p.key || "", cta: p.cta || "قريباً", biz }));
