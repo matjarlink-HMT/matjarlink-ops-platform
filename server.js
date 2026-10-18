@@ -1484,7 +1484,14 @@ async function makeStoryboardReel(project, onProgress, ver = null) {
     if (project.engine === "veo" && project.videoModel) {
       vstats.engine = "veo"; vstats.model = project.videoModel;
       const jobs = scenes.map((sc, i) => sc.photoPath && !sc.still ? { i, sc, secs: veo.clipSeconds(sc.seconds), motion: motionPrompt(sc) } : null).filter(Boolean)
-        .map((j) => ({ ...j, file: path.join(adir, `clip-${fp(project.videoModel + "|" + path.basename(j.sc.photoPath) + "|" + j.motion + "|" + j.secs)}.mp4`) }));
+        .map((j) => {
+          const key = (n) => path.join(adir, `clip-${fp(project.videoModel + "|" + path.basename(j.sc.photoPath) + "|" + j.motion + "|" + n)}.mp4`);
+          // a paid clip of the same shot that is a bit SHORTER than the (re-voiced)
+          // scene is reused — its last frame holds the remaining moment — instead of
+          // paying for a longer one
+          const shorter = [8, 6, 4].filter((n) => n < j.secs && j.sc.seconds - n <= 1.5).map(key).find((f) => fs.existsSync(f));
+          return { ...j, file: fs.existsSync(key(j.secs)) ? key(j.secs) : (shorter || key(j.secs)) };
+        });
       const todo = jobs.filter((j) => !fs.existsSync(j.file));
       const est = todo.reduce((a, j) => a + j.secs, 0) * veo.priceFor(project.videoModel);
       // owner-approved budget for THIS production (sent with the confirmation), hard max $25
