@@ -1262,7 +1262,11 @@ app.post("/api/video/version/delete", (req, res) => {
 app.post("/api/video/queue", (req, res) => {
   const b = req.body || {}; const p = store.getVideoProject(b.id);
   if (!p) return res.status(404).json({ ok: false, error: "project not found" });
-  if (p.queueId && baseState().queue.some((q) => q.id === p.queueId)) return res.json({ ok: true, queueId: p.queueId, already: true });
+  // the live queue = seed + generated content, minus deleted (soft-hidden) ids
+  const removed = new Set(store.getRemoved());
+  const doc = loadContent() || { queue: [] }; doc.queue = doc.queue || [];
+  if (p.queueId && !removed.has(p.queueId) && [...baseState().queue, ...doc.queue].some((q) => q.id === p.queueId)) return res.json({ ok: true, queueId: p.queueId, already: true });
+  if (p.queueId) { doc.queue = doc.queue.filter((q) => q.id !== p.queueId); saveContent(doc); } // our own stale entry hidden under a deleted id
   if (!p.previewUrl) return res.status(400).json({ ok: false, error: "لا توجد نسخة منتجة" });
   const src = path.join(designsDir(), String(p.previewUrl).split("?")[0].replace(/^\/media\/design\//, ""));
   if (!fs.existsSync(src)) return res.status(404).json({ ok: false, error: "ملف الريل غير موجود" });
@@ -1271,7 +1275,9 @@ app.post("/api/video/queue", (req, res) => {
   const sb = p.storyboard || {};
   const cap = String(b.cap || "").trim() || [sb.hook, sb.cta].filter(Boolean).join("\n\n");
   const stable = `post-${p.id}.mp4`; fs.copyFileSync(src, path.join(designsDir(), stable));
-  const qid = "MJ-" + String(nextIdNum(baseState().queue)).padStart(3, "0");
+  // never reuse a number of a deleted post (it would be hidden by the delete list)
+  const nums = [...removed].map((x) => parseInt(String(x).replace(/\D/g, ""), 10)).filter((n) => !isNaN(n));
+  const qid = "MJ-" + String(Math.max(nextIdNum(baseState().queue), ...nums.map((n) => n + 1))).padStart(3, "0");
   appendPost({ id: qid, t: sb.title || p.title || "ريل", t2: sb.hook || "", cta: sb.cta || "", cap, ty: "ريل نوعي", ch: "IG", tyc: "#6E1444", date, mediaUrl: `/media/design/${stable}`, images: [], gen: true });
   if (b.approve === true) store.approve(qid);
   store.saveVideoProject({ id: p.id, queueId: qid, status: "queued" });
