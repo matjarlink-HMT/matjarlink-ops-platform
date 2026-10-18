@@ -1255,6 +1255,28 @@ app.post("/api/video/version/delete", (req, res) => {
   store.saveVideoProject({ id: p.id, versions });
   res.json({ ok: true, freedMB: +(freed / 1048576).toFixed(1), freeMB: freeDiskMB() });
 });
+// Send an approved reel to the publish queue (قائمة النشر). The current version
+// is COPIED to a stable post file (version files get pruned later), a project
+// can enter the queue only ONCE (no double publishing), and it is marked
+// «معتمد» (auto-publish at its time) only when the owner says so (approve:true).
+app.post("/api/video/queue", (req, res) => {
+  const b = req.body || {}; const p = store.getVideoProject(b.id);
+  if (!p) return res.status(404).json({ ok: false, error: "project not found" });
+  if (p.queueId && baseState().queue.some((q) => q.id === p.queueId)) return res.json({ ok: true, queueId: p.queueId, already: true });
+  if (!p.previewUrl) return res.status(400).json({ ok: false, error: "لا توجد نسخة منتجة" });
+  const src = path.join(designsDir(), String(p.previewUrl).split("?")[0].replace(/^\/media\/design\//, ""));
+  if (!fs.existsSync(src)) return res.status(404).json({ ok: false, error: "ملف الريل غير موجود" });
+  const date = String(b.date || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2} · \d{2}:\d{2}$/.test(date)) return res.status(400).json({ ok: false, error: "التاريخ بصيغة YYYY-MM-DD · HH:MM" });
+  const sb = p.storyboard || {};
+  const cap = String(b.cap || "").trim() || [sb.hook, sb.cta].filter(Boolean).join("\n\n");
+  const stable = `post-${p.id}.mp4`; fs.copyFileSync(src, path.join(designsDir(), stable));
+  const qid = "MJ-" + String(nextIdNum(baseState().queue)).padStart(3, "0");
+  appendPost({ id: qid, t: sb.title || p.title || "ريل", t2: sb.hook || "", cta: sb.cta || "", cap, ty: "ريل نوعي", ch: "IG", tyc: "#6E1444", date, mediaUrl: `/media/design/${stable}`, images: [], gen: true });
+  if (b.approve === true) store.approve(qid);
+  store.saveVideoProject({ id: p.id, queueId: qid, status: "queued" });
+  res.json({ ok: true, queueId: qid, approved: b.approve === true, mediaUrl: `/media/design/${stable}` });
+});
 app.post("/api/video/restore", (req, res) => {
   const b = req.body || {}; const p = store.getVideoProject(b.id);
   if (!p) return res.status(404).json({ ok: false, error: "project not found" });
