@@ -1967,7 +1967,7 @@ app.post("/api/live-reel", async (req, res) => {
   } catch (e) { console.error("[live-reel]", e.message); res.status(500).json({ ok: false, error: e.message }); }
 });
 app.get("/media/design/:id", (req, res) => {
-  const id = (req.params.id || "").replace(/[^A-Za-z0-9._-]/g, "").replace(/\.\.+/g, ".");
+  const id = (req.params.id || "").replace(/[^A-Za-z0-9._-]/g, "").replace(/\.\.+/g, ".").replace(/\.png$/i, ""); // accept <id> or <id>.png
   const isVideo = id.endsWith(".mp4");
   const f = path.join(designsDir(), isVideo ? id : id + ".png");
   if (!id || !fs.existsSync(f)) return res.status(404).send("no design");
