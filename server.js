@@ -503,6 +503,13 @@ function imageRef(p) {
 }
 function freeDiskMB() { try { const s = fs.statfsSync(designsDir()); return Math.round(s.bavail * s.bsize / 1048576); } catch (e) { return null; } }
 setTimeout(() => sweepTempFiles(10), 8000);              // on boot: nothing is rendering yet
+setTimeout(() => {
+  try {
+    const dir = designsDir(); const refd = new Set();
+    for (const p of store.getVideoProjects()) { for (const v of [...(p.versions || []).filter((x) => !x.gone).map((x) => x.url), p.previewUrl]) if (v) refd.add(String(v).split("?")[0].replace(/^\/media\/design\//, "")); }
+    for (const f of fs.readdirSync(dir)) if (/^vid-[\w]+-v\d+\.mp4$/.test(f) && !refd.has(f)) { try { fs.unlinkSync(path.join(dir, f)); console.log("[sweep] removed orphan reel", f); } catch (e) {} }
+  } catch (e) { console.error("[sweep] orphan reels:", e.message); }
+}, 9000);
 setInterval(() => sweepTempFiles(30), 60 * 60 * 1000);  // hourly
 const arDigits = (n) => String(n).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[d]);
 const DESIGN_TEMPLATES = ["classic", "luxe", "spotlight"];
@@ -1516,7 +1523,8 @@ async function makeStoryboardReel(project, onProgress, ver = null) {
     // 4) picture + soundtrack
     const name = ver ? `${id}-v${ver}.mp4` : `${id}.mp4`;
     const out = path.join(dir, name);
-    await motion.renderMotionReel(scenes, out, { biz, cta: sb.cta || "قريبًا", audioPath, mode: project.mode, onProgress: (f) => report({ stage: "render", progress: 0.6 + f * 0.4 }) });
+    try { await motion.renderMotionReel(scenes, out, { biz, cta: sb.cta || "قريبًا", audioPath, mode: project.mode, onProgress: (f) => report({ stage: "render", progress: 0.6 + f * 0.4 }) }); }
+    catch (e) { try { fs.unlinkSync(out); } catch (x) {} throw e; } // never keep a partial file
     for (const f of fs.readdirSync(adir)) { if (!used.has(f) && !/^clip-/.test(f)) { try { fs.unlinkSync(path.join(adir, f)); } catch (e) {} } } // keep only what this version uses
     return { url: `/media/design/${name}?v=${Date.now()}`, soundtrack: { voiceover: voClips.length, voice: project.voice || "Charon", music: moodKey, seconds: +total.toFixed(2) }, assets: stats, video: vstats };
   } finally { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {} }

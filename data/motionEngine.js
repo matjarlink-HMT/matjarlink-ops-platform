@@ -375,7 +375,7 @@ export async function renderMotionReel(scenes, outPath, { biz = {}, cta = "", fp
     "-y", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", `${W}x${H}`, "-r", String(fps), "-i", "-",
     ...(audioPath && fs.existsSync(audioPath) ? ["-i", audioPath] : ["-f", "lavfi", "-t", total.toFixed(2), "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]),
     "-map", "0:v", "-map", "1:a",
-    "-c:v", "libx264", "-preset", "fast", "-crf", "19", "-pix_fmt", "yuv420p", "-threads", "1",
+    "-c:v", "libx264", "-preset", "fast", "-crf", "21", "-pix_fmt", "yuv420p", "-threads", "1",
     "-x264-params", "ref=1:bframes=0:rc-lookahead=0:keyint=50",
     "-c:a", "aac", "-b:a", audioPath ? "160k" : "96k", "-shortest", "-movflags", "+faststart", outPath,
   ], { stdio: ["pipe", "ignore", "pipe"] });
