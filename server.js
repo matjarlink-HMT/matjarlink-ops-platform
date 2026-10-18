@@ -1285,6 +1285,38 @@ app.post("/api/video/queue", (req, res) => {
   store.saveVideoProject({ id: p.id, queueId: qid, status: "queued" });
   res.json({ ok: true, queueId: qid, approved: b.approve === true, mediaUrl: `/media/design/${stable}` });
 });
+// ── Brand posts (new theme) ── feed posts with NO people: devices, shops,
+// products. Each post: a cinematic 4:5 still (owner-chosen pro image model) →
+// the brand post engine → a pending proposal in «الاعتماد» (nothing reaches the
+// publish queue without the owner's approval there). Runs in the background.
+let brandPostsBusy = false;
+app.post("/api/posts/brand-batch", (req, res) => {
+  const list = (Array.isArray((req.body || {}).posts) ? req.body.posts : []).slice(0, 8);
+  if (!list.length) return res.status(400).json({ ok: false, error: "posts required" });
+  if (!gemini.geminiReady()) return res.status(400).json({ ok: false, error: "يحتاج ربط Gemini" });
+  if (brandPostsBusy) return res.status(429).json({ ok: false, error: "جارٍ توليد دفعة أخرى" });
+  brandPostsBusy = true;
+  const model = String((req.body || {}).imageModel || "gemini-3-pro-image");
+  const ids = list.map(() => "post-" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36));
+  res.json({ ok: true, ids });
+  (async () => {
+    const { renderBrandPost, POST_LAYOUTS } = await import("./data/postEngine.js");
+    const { createCanvas, loadImage } = await import("@napi-rs/canvas");
+    const dir = designsDir(), biz = store.getBrandData();
+    const noPeople = " Absolutely NO people: no faces, no hands, no bodies, no silhouettes, no mannequins — objects and places only. Ultra-realistic commercial product photograph, shot on a full-frame camera with a prime lens, shallow depth of field, soft natural window light, true-to-life colour, subtle film grain; subtle brand-colour accents in the scene (deep magenta-rose and warm golden orange, NOT purple). NOT CGI, NOT 3D render, NOT illustration. Any screen shows ONLY abstract shapes and icons — no readable words, no numbers, no prices, no currency. No text, no logos anywhere.";
+    for (let i = 0; i < list.length; i++) {
+      const p = list[i], id = ids[i];
+      try {
+        const { buffer } = await gemini.generateImage(`${String(p.scene || "")}.${noPeople}`, [], { aspect: "4:5", model, size: /pro|3\.1/.test(model) ? "2K" : undefined });
+        const img = await loadImage(buffer); const cv = createCanvas(img.width, img.height); cv.getContext("2d").drawImage(img, 0, 0);
+        const photoPath = path.join(dir, `${id}-photo.jpg`); fs.writeFileSync(photoPath, cv.toBuffer("image/jpeg", 90));
+        const layout = POST_LAYOUTS.includes(p.layout) ? p.layout : POST_LAYOUTS[i % POST_LAYOUTS.length];
+        fs.writeFileSync(path.join(dir, `${id}.png`), await renderBrandPost({ layout, photoPath, kicker: p.kicker || "", main: p.main || "", key: p.key || "", cta: p.cta || "قريباً", biz }));
+        store.saveProposal({ id, kind: "post", template: "brand-motion", t: p.main || "", t2: p.key || "", cta: p.cta || "قريباً", cap: p.cap || "", ty: "منشور علامة", format: "منشور", name: `${p.kicker || p.main} · ثيم جديد`, previewUrl: `/media/design/${id}.png?v=${Date.now()}` });
+      } catch (e) { console.error("[brand-post]", i + 1, e.message); store.saveProposal({ id, kind: "post", status: "failed", t: p.main || "", name: `✗ ${p.kicker || p.main}`, error: String(e.message).slice(0, 200) }); }
+    }
+  })().finally(() => { brandPostsBusy = false; });
+});
 app.post("/api/video/restore", (req, res) => {
   const b = req.body || {}; const p = store.getVideoProject(b.id);
   if (!p) return res.status(404).json({ ok: false, error: "project not found" });
