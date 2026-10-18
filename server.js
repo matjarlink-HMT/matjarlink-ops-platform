@@ -1016,6 +1016,7 @@ app.post("/api/proposals/reject", (req, res) => {
 app.post("/api/proposals/regenerate", async (req, res) => {
   const b = req.body || {}; const p = store.getProposals()[b.id];
   if (!p || p.status !== "pending") return res.status(404).json({ ok: false, error: "proposal not found" });
+  for (const p of list) if (p.photoRef) { const f = ["jpg", "png"].map((e) => path.join(designsDir(), "ingest", String(p.photoRef).replace(/[^a-z0-9_-]/gi, "") + "." + e)).find((x) => fs.existsSync(x)); if (f) p.photo = "data:image/jpeg;base64," + fs.readFileSync(f).toString("base64"); }
   const ownPhotos = list.every((p) => typeof p.photo === "string" && p.photo.length > 1000); // images made in the owner's Gemini app — no API cost
   if (!ownPhotos && !gemini.geminiReady()) return res.status(400).json({ ok: false, error: "يحتاج ربط Gemini" });
   const note = (b.note || "").trim();
@@ -1290,6 +1291,31 @@ app.post("/api/video/queue", (req, res) => {
 // products. Each post: a cinematic 4:5 still (owner-chosen pro image model) →
 // the brand post engine → a pending proposal in «الاعتماد» (nothing reaches the
 // publish queue without the owner's approval there). Runs in the background.
+// ── Photo ingest ── lets images made in the owner's Gemini app (another site in
+// the same browser) be sent straight to the platform without file downloads.
+// The token is created ONLY from the logged-in dashboard, lives 30 min, accepts
+// at most 24 JPEG/PNG images of ≤6MB, and can only write into designs/ingest.
+const ingestTokens = new Map(); // token → { exp, left }
+app.post("/api/ingest/token", (req, res) => {
+  const t = crypto.randomBytes(18).toString("hex"); ingestTokens.set(t, { exp: Date.now() + 30 * 60 * 1000, left: 24 });
+  res.json({ ok: true, token: t, expiresInMin: 30 });
+});
+app.post("/media-ingest/:token/:name", express.text({ type: "*/*", limit: "8mb" }), (req, res) => {
+  res.set("Access-Control-Allow-Origin", "*");
+  const tk = ingestTokens.get(req.params.token);
+  if (!tk || tk.exp < Date.now() || tk.left <= 0) return res.status(403).send("token");
+  const name = String(req.params.name || "").replace(/[^a-z0-9_-]/gi, "").slice(0, 40);
+  const m = String(req.body || "").match(/^data:image\/(jpeg|png);base64,([A-Za-z0-9+/=]+)$/);
+  if (!name || !m) return res.status(400).send("bad");
+  const buf = Buffer.from(m[2], "base64"); if (buf.length > 6 * 1024 * 1024) return res.status(413).send("big");
+  const dir = path.join(designsDir(), "ingest"); fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, name + (m[1] === "png" ? ".png" : ".jpg")), buf); tk.left--;
+  res.send("ok");
+});
+app.get("/api/ingest/list", (req, res) => {
+  const dir = path.join(designsDir(), "ingest");
+  res.json({ ok: true, files: fs.existsSync(dir) ? fs.readdirSync(dir).map((f) => ({ f, KB: Math.round(fs.statSync(path.join(dir, f)).size / 1024) })) : [] });
+});
 let brandPostsBusy = false;
 app.post("/api/posts/brand-batch", express.json({ limit: "60mb" }), (req, res) => {
   const list = (Array.isArray((req.body || {}).posts) ? req.body.posts : []).slice(0, 8);
