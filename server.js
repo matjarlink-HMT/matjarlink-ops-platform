@@ -506,7 +506,7 @@ setTimeout(() => sweepTempFiles(10), 8000);              // on boot: nothing is 
 setTimeout(() => {
   try {
     const dir = designsDir(); const refd = new Set();
-    for (const p of store.getVideoProjects()) { for (const v of [...(p.versions || []).filter((x) => !x.gone).map((x) => x.url), p.previewUrl]) if (v) refd.add(String(v).split("?")[0].replace(/^\/media\/design\//, "")); }
+    for (const p of Object.values(store.getVideoProjects())) { for (const v of [...(p.versions || []).filter((x) => !x.gone).map((x) => x.url), p.previewUrl]) if (v) refd.add(String(v).split("?")[0].replace(/^\/media\/design\//, "")); }
     for (const f of fs.readdirSync(dir)) if (/^vid-[\w]+-v\d+\.mp4$/.test(f) && !refd.has(f)) { try { fs.unlinkSync(path.join(dir, f)); console.log("[sweep] removed orphan reel", f); } catch (e) {} }
   } catch (e) { console.error("[sweep] orphan reels:", e.message); }
 }, 9000);
