@@ -228,7 +228,8 @@ const LAYOUTS = {
     const head = stripBrand([copy.main, copy.key].filter(Boolean).join(" "));
     const ctaTxt = String(cta || "").trim();
     let y = 1130;
-    if (head && head.replace(/[.\s]/g, "") !== ctaTxt.replace(/[.\s]/g, "")) {
+    const norm = (x) => x.replace(/[.\s،,!؟]/g, "");
+    if (head && !norm(ctaTxt).includes(norm(head))) { // never repeat what the CTA pill already says
       ctx.font = "84px MLXB"; const f = fitCopy(ctx, head, "", W - SAFE.left - SAFE.right, 84, 60, 2);
       y = drawCopy(ctx, f, W / 2, y, clamp(t * 1.2 - 0.25), { align: "center", color: BRAND.white });
       y += 20;
