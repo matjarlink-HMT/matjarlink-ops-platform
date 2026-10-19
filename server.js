@@ -226,7 +226,7 @@ app.post("/api/restore-original", (req, res) => {
 app.post("/api/generate-post", async (req, res) => {
   const { prompt, date, lang } = req.body || {};
   if (!generator.claudeReady()) return res.status(400).json({ ok: false, error: "add ANTHROPIC_API_KEY to enable generation" });
-  const idNum = nextIdNum(baseState().queue, store.getRemoved());
+  const idNum = nextIdNum(baseState().queue, usedIds());
   const when = date || defaultNextSlot();
   let post;
   try { post = await generator.generatePost({ idNum, date: when, prompt: prompt || "", prefLine: store.hookPrefLine() }, lang || "ar"); }
@@ -373,7 +373,7 @@ app.post("/api/plan/apply-item", async (req, res) => {
   const item = plan?.items?.find((i) => i.key === key);
   if (!item) return res.status(404).json({ ok: false, error: "plan item not found" });
   if (item.status === "applied" && item.id) return res.json({ ok: true, plan, post: null, already: true });
-  const idNum = nextIdNum(baseState().queue, store.getRemoved());
+  const idNum = nextIdNum(baseState().queue, usedIds());
   const date = `${plan.year}-${String(plan.month).padStart(2, "0")}-${String(item.day).padStart(2, "0")} · ${item.time || "20:00"}`;
   let post;
   try { post = await generator.generatePost({ idNum, date, pillar: item.pillar, prompt: `نفّذ فكرة الخطة: «${item.t}» — النوع المطلوب حصراً: ${item.ty}` }, "ar"); }
@@ -969,7 +969,7 @@ app.post("/api/proposals/approve", (req, res) => {
   else if (p.kind === "post") {
     // Approved design → drop it into the publish queue (قائمة النشر), marked
     // approved (owner explicitly approved it here) so it's ready to publish.
-    const idNum = nextIdNum(baseState().queue, store.getRemoved());
+    const idNum = nextIdNum(baseState().queue, usedIds());
     const qid = "MJ-" + String(idNum).padStart(3, "0");
     const media = (p.previewUrl || "").split("?")[0];  // /media/design/<id> (serves <id>.png or .mp4)
     // Default slot = the next 20:00 Oman time that is still AHEAD (approving after
@@ -1302,7 +1302,7 @@ app.post("/api/video/queue", (req, res) => {
   const stable = `post-${p.id}.mp4`; fs.copyFileSync(src, path.join(designsDir(), stable));
   // never reuse a number of a deleted post (it would be hidden by the delete list)
   const nums = [...removed].map((x) => parseInt(String(x).replace(/\D/g, ""), 10)).filter((n) => !isNaN(n));
-  const qid = "MJ-" + String(Math.max(nextIdNum(baseState().queue, store.getRemoved()), ...nums.map((n) => n + 1))).padStart(3, "0");
+  const qid = "MJ-" + String(Math.max(nextIdNum(baseState().queue, usedIds()), ...nums.map((n) => n + 1))).padStart(3, "0");
   store.resetPostRecord(qid); // a new post never inherits an old record (e.g. «معتمد»)
   appendPost({ id: qid, t: sb.title || p.title || "ريل", t2: sb.hook || "", cta: sb.cta || "", cap, ty: "ريل نوعي", ch: "IG", tyc: "#6E1444", date, mediaUrl: `/media/design/${stable}`, images: [], gen: true });
   if (b.approve === true) store.approve(qid);
@@ -1318,6 +1318,18 @@ app.post("/api/video/queue", (req, res) => {
 // The token is created ONLY from the logged-in dashboard, lives 30 min, accepts
 // at most 24 JPEG/PNG images of ≤6MB, and can only write into designs/ingest.
 const ingestTokens = new Map(); // token → { exp, left }
+// Ids never to reuse: removed posts AND everything ever published — a new post
+// under a published id would be treated as already published and never go out.
+function usedIds() { return [...store.getRemoved(), ...Object.keys(store.getPublished())]; }
+// Move a generated (content.json) post that sits on a reused id to a fresh id.
+app.post("/api/queue/renumber", (req, res) => {
+  const id = String((req.body || {}).id || "");
+  const doc = loadContent(); const q = doc && (doc.queue || []).find((x) => x.id === id);
+  if (!q) return res.status(404).json({ ok: false, error: "post not found" });
+  const newId = "MJ-" + String(nextIdNum(baseState().queue, usedIds())).padStart(3, "0");
+  patchPost(id, { id: newId }); store.moveNote(id, newId);
+  res.json({ ok: true, from: id, to: newId });
+});
 // Set the caption of a generated queue post (one that lives in content.json).
 app.post("/api/queue/caption", (req, res) => {
   const { id, cap } = req.body || {};
@@ -2421,7 +2433,7 @@ async function automationTick() {
     const when = new Date(py, pmo - 1, c.day || 1, 20, 0, 0);
     const daysAhead = (when - now) / 86400000;
     if (daysAhead < 0 || daysAhead > 7) continue;
-    const idNum = nextIdNum(baseState().queue, store.getRemoved());
+    const idNum = nextIdNum(baseState().queue, usedIds());
     const dateStr = `${py}-${String(pmo).padStart(2, "0")}-${String(c.day || 1).padStart(2, "0")} · 20:00`;
     try {
       const post = await generator.generatePost({ idNum, date: dateStr, pillar: c.pillar || "", prompt: c.t || "" });
