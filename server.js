@@ -972,7 +972,10 @@ app.post("/api/proposals/approve", (req, res) => {
     const idNum = nextIdNum(baseState().queue, store.getRemoved());
     const qid = "MJ-" + String(idNum).padStart(3, "0");
     const media = (p.previewUrl || "").split("?")[0];  // /media/design/<id> (serves <id>.png or .mp4)
-    const { date: today } = muscatDateHour();
+    // Default slot = the next 20:00 Oman time that is still AHEAD (approving after
+    // 20:00 used to date it today 20:00 → already due → auto-published within a minute).
+    const { date: today, hour } = muscatDateHour();
+    const slotDay = hour >= 20 ? new Date(Date.parse(today + "T00:00:00Z") + 86400000).toISOString().slice(0, 10) : today;
     const fmt = p.format || "";
     const isReel = fmt.includes("ريل") || /\.mp4/.test(p.previewUrl || "") || (p.ty || "").includes("ريل");
     const isCar = fmt.includes("كاروسيل") || (p.images && p.images.length > 1);
@@ -982,7 +985,7 @@ app.post("/api/proposals/approve", (req, res) => {
       id: qid, t: p.t, t2: p.t2 || "", cta: p.cta || "",
       cap: `${p.t}${p.t2 ? " · " + p.t2 : ""}${p.cta ? "\n\n" + p.cta : ""}`,
       ty: qty, ch: "IG", tyc: "#6E1444",
-      date: p.date || `${today} · 20:00`,
+      date: p.date || `${slotDay} · 20:00`,
       mediaUrl: media, images: (p.images || []).map((u) => u.split("?")[0]), gen: true, template: p.template, regenerated: isCar,
     });
     store.approve(qid);   // status «معتمد» → shows approved & publish-ready in the queue
