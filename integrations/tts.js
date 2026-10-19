@@ -107,8 +107,19 @@ export async function speakVariant(text, { voice = "Charon", model, direction = 
   if (out.seconds > maxSec * 1.25) throw new Error(`the model read extra text (${out.seconds.toFixed(1)}s for ${words} words)`);
   return out;
 }
+// Owner-approved house voice (2026-10-19, «العينة 1»): Gemini 2.5 Pro TTS with an
+// INLINE Omani direction — the 3.x models drifted Saudi and reject a system
+// instruction. Tried first; the discovery chain below is only the fallback.
+export const HOUSE_TTS_MODEL = "gemini-2.5-pro-preview-tts";
+export const OMANI_DIRECTION = "Speak the following Arabic line in a natural OMANI accent from Muscat — Omani Gulf dialect pronunciation, NOT Saudi, NOT Najdi, NOT Egyptian — warm, friendly, conversational, like an Omani shop owner";
 const sysIsRead = new Set();
 export async function speak(text, { voice = "Charon", style = "" } = {}) {
+  if (!KEY()) throw new Error("GEMINI_API_KEY not set");
+  if (!String(text || "").trim()) throw new Error("empty voiceover line");
+  if (!style) { try { return { ...(await speakVariant(text, { voice, model: HOUSE_TTS_MODEL, direction: OMANI_DIRECTION, mode: "inline" })), attempts: 1 }; } catch (e) {} }
+  return speakDiscovered(text, { voice, style });
+}
+async function speakDiscovered(text, { voice = "Charon", style = "" } = {}) {
   if (!KEY()) throw new Error("GEMINI_API_KEY not set");
   const line = String(text || "").trim(); if (!line) throw new Error("empty voiceover line");
   const words = line.split(/\s+/).filter(Boolean).length;
