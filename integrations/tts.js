@@ -98,6 +98,15 @@ async function callTTS(model, text, voice, sys) {
   const pcm = cleanSpeech(Buffer.from(inl.data, "base64"), rate);
   return { wav: pcmToWav(pcm, rate), seconds: pcm.length / (rate * 2), model, rate };
 }
+// Accent trials: speak ONE line with a chosen model and an accent direction,
+// either in the system instruction or inline before the line. Rejects clips far
+// longer than the words allow (the model read the direction aloud).
+export async function speakVariant(text, { voice = "Charon", model, direction = "", mode = "inline" } = {}) {
+  const line = String(text || "").trim(), words = line.split(/\s+/).length, maxSec = 2 + words * 0.8;
+  const out = mode === "system" ? await callTTS(model, line, voice, direction) : await callTTS(model, direction ? `${direction}: ${line}` : line, voice, null);
+  if (out.seconds > maxSec * 1.25) throw new Error(`the model read extra text (${out.seconds.toFixed(1)}s for ${words} words)`);
+  return out;
+}
 const sysIsRead = new Set();
 export async function speak(text, { voice = "Charon", style = "" } = {}) {
   if (!KEY()) throw new Error("GEMINI_API_KEY not set");

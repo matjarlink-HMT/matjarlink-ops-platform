@@ -1207,7 +1207,7 @@ app.post("/api/audio/tts-save", async (req, res) => {
   if (!name || !String(b.text || "").trim()) return res.status(400).json({ ok: false, error: "name & text required" });
   try {
     const voice = tts.VOICES.some((v) => v.id === b.voice) ? b.voice : "Charon";
-    const out = await tts.speak(String(b.text).trim(), { voice });
+    const out = b.model ? await tts.speakVariant(String(b.text).trim(), { voice, model: String(b.model), direction: String(b.direction || ""), mode: b.mode === "system" ? "system" : "inline" }) : await tts.speak(String(b.text).trim(), { voice });
     const dir = path.join(designsDir(), "audio"); fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, name + ".wav"), out.wav);
     res.json({ ok: true, url: `/media/audio/${name}.wav`, seconds: +out.seconds.toFixed(2) });
