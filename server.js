@@ -1319,21 +1319,30 @@ app.post("/api/ingest/token", (req, res) => {
   const t = crypto.randomBytes(18).toString("hex"); ingestTokens.set(t, { exp: Date.now() + 30 * 60 * 1000, left: 24 });
   res.json({ ok: true, token: t, expiresInMin: 30 });
 });
-app.post("/media-ingest/:token/:name", express.text({ type: "*/*", limit: "8mb" }), (req, res) => {
+app.post("/media-ingest/:token/:name", express.text({ type: "*/*", limit: "18mb" }), (req, res) => {
   res.set("Access-Control-Allow-Origin", "*");
   const tk = ingestTokens.get(req.params.token);
   if (!tk || tk.exp < Date.now() || tk.left <= 0) return res.status(403).send("token");
   const name = String(req.params.name || "").replace(/[^a-z0-9_-]/gi, "").slice(0, 40);
-  const m = String(req.body || "").match(/^data:image\/(jpeg|png);base64,([A-Za-z0-9+/=]+)$/);
+  const m = String(req.body || "").match(/^data:(?:image|video)\/(jpeg|png|mp4);base64,([A-Za-z0-9+/=]+)$/);
   if (!name || !m) return res.status(400).send("bad");
-  const buf = Buffer.from(m[2], "base64"); if (buf.length > 6 * 1024 * 1024) return res.status(413).send("big");
+  const buf = Buffer.from(m[2], "base64"); if (buf.length > (m[1] === "mp4" ? 12 : 6) * 1024 * 1024) return res.status(413).send("big");
   const dir = path.join(designsDir(), "ingest"); fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, name + (m[1] === "png" ? ".png" : ".jpg")), buf); tk.left--;
+  fs.writeFileSync(path.join(dir, name + (m[1] === "png" ? ".png" : m[1] === "mp4" ? ".mp4" : ".jpg")), buf); tk.left--;
   res.send("ok");
 });
 app.get("/api/ingest/list", (req, res) => {
   const dir = path.join(designsDir(), "ingest");
   res.json({ ok: true, files: fs.existsSync(dir) ? fs.readdirSync(dir).map((f) => ({ f, KB: Math.round(fs.statSync(path.join(dir, f)).size / 1024) })) : [] });
+});
+app.post("/api/proposals/reel", (req, res) => {
+  const b = req.body || {}; const ref = String(b.ref || "").replace(/[^a-z0-9_-]/gi, "");
+  const src = path.join(designsDir(), "ingest", ref + ".mp4");
+  if (!ref || !fs.existsSync(src)) return res.status(404).json({ ok: false, error: "reel not uploaded" });
+  const id = "reel-" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+  fs.renameSync(src, path.join(designsDir(), id + ".mp4"));
+  store.saveProposal({ id, kind: "post", template: "brand-motion", format: "ريل", ty: "ريل نوعي", t: String(b.t || "ريل"), t2: String(b.t2 || ""), cta: String(b.cta || "قريباً"), cap: String(b.cap || ""), name: String(b.name || b.t || "ريل"), previewUrl: `/media/design/${id}.mp4?v=${Date.now()}` });
+  res.json({ ok: true, id });
 });
 let brandPostsBusy = false;
 app.post("/api/posts/brand-batch", express.json({ limit: "60mb" }), (req, res) => {
