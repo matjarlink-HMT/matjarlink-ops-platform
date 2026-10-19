@@ -1200,6 +1200,25 @@ app.get("/api/video/engines", async (req, res) => {
   let models = [], error = ""; try { models = await veo.videoModels(); } catch (e) { error = e.message; }
   res.json({ ok: true, ready: veo.veoReady(), models: models.map((m) => ({ ...m, usdPerSecond: veo.priceFor(m.id) })), error });
 });
+// Save a voiceover line as a WAV under designs/audio (served publicly at
+// /media/audio/<name>.wav — like reels, so an external editor can fetch it).
+app.post("/api/audio/tts-save", async (req, res) => {
+  const b = req.body || {}; const name = String(b.name || "").replace(/[^a-z0-9_-]/gi, "").slice(0, 40);
+  if (!name || !String(b.text || "").trim()) return res.status(400).json({ ok: false, error: "name & text required" });
+  try {
+    const voice = tts.VOICES.some((v) => v.id === b.voice) ? b.voice : "Charon";
+    const out = await tts.speak(String(b.text).trim(), { voice });
+    const dir = path.join(designsDir(), "audio"); fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, name + ".wav"), out.wav);
+    res.json({ ok: true, url: `/media/audio/${name}.wav`, seconds: +out.seconds.toFixed(2) });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.get("/media/audio/:name", (req, res) => {
+  const name = String(req.params.name || "").replace(/[^a-z0-9_.-]/gi, "").replace(/\.\.+/g, ".");
+  const f = path.join(designsDir(), "audio", name);
+  if (!/\.wav$/.test(name) || !fs.existsSync(f)) return res.status(404).send("no audio");
+  res.setHeader("Content-Type", "audio/wav"); fs.createReadStream(f).pipe(res);
+});
 app.get("/api/audio/voices", async (req, res) => {
   let models = []; try { models = await tts.ttsModels(); } catch (e) { models = ["error: " + e.message]; }
   res.json({ ok: true, ready: tts.ttsReady(), voices: tts.VOICES, models });
