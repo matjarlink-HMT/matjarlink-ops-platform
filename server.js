@@ -6,7 +6,7 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { baseState } from "./data/seed.js";
 import { getAnalytics } from "./data/analytics.js";
-import { loadContent, saveContent, appendPost, nextIdNum } from "./data/content.js";
+import { loadContent, saveContent, appendPost, patchPost, nextIdNum } from "./data/content.js";
 import * as generator from "./data/generator.js";
 import * as store from "./store.js";
 import * as meta from "./integrations/meta.js";
@@ -983,7 +983,7 @@ app.post("/api/proposals/approve", (req, res) => {
     store.resetPostRecord(qid); // never inherit an old record under this number
     appendPost({
       id: qid, t: p.t, t2: p.t2 || "", cta: p.cta || "",
-      cap: `${p.t}${p.t2 ? " · " + p.t2 : ""}${p.cta ? "\n\n" + p.cta : ""}`,
+      cap: p.cap || `${p.t}${p.t2 ? " · " + p.t2 : ""}${p.cta ? "\n\n" + p.cta : ""}`, // the proposal's own caption (reels carry the full one)
       ty: qty, ch: "IG", tyc: "#6E1444",
       date: p.date || `${slotDay} · 20:00`,
       mediaUrl: media, images: (p.images || []).map((u) => u.split("?")[0]), gen: true, template: p.template, regenerated: isCar,
@@ -1318,6 +1318,14 @@ app.post("/api/video/queue", (req, res) => {
 // The token is created ONLY from the logged-in dashboard, lives 30 min, accepts
 // at most 24 JPEG/PNG images of ≤6MB, and can only write into designs/ingest.
 const ingestTokens = new Map(); // token → { exp, left }
+// Set the caption of a generated queue post (one that lives in content.json).
+app.post("/api/queue/caption", (req, res) => {
+  const { id, cap } = req.body || {};
+  if (!id || !String(cap || "").trim()) return res.status(400).json({ ok: false, error: "id & cap required" });
+  if (store.isPublished(id)) return res.status(409).json({ ok: false, error: "already published" });
+  const post = patchPost(String(id), { cap: String(cap).trim() });
+  res.json(post ? { ok: true, id, cap: post.cap } : { ok: false, error: "post not found" });
+});
 app.post("/api/ingest/token", (req, res) => {
   const t = crypto.randomBytes(18).toString("hex"); ingestTokens.set(t, { exp: Date.now() + 30 * 60 * 1000, left: 24 });
   res.json({ ok: true, token: t, expiresInMin: 30 });

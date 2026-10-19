@@ -46,6 +46,12 @@ export function appendPost(post) {
   return doc;
 }
 
+export function patchPost(id, patch) {
+  const doc = loadContent(); const q = doc && (doc.queue || []).find((x) => x.id === id);
+  if (!q) return null;
+  Object.assign(q, patch); saveContent(doc); return q;
+}
+
 // Highest MJ-### number across seed + generated content (for the next id).
 export function nextIdNum(seedQueue = [], extraIds = []) {
   const doc = loadContent();
