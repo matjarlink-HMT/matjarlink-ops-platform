@@ -962,7 +962,8 @@ app.get("/api/proposals", (req, res) => {
   res.json({ ok: true, posts: all.filter((p) => p.kind === "post"), templates: all.filter((p) => p.kind === "template"), characters: all.filter((p) => p.kind === "character"), geminiReady: gemini.geminiReady(), lastRun: store.nightlyRanOn() });
 });
 app.post("/api/proposals/approve", (req, res) => {
-  const p = store.getProposals()[(req.body || {}).id];
+  const b = req.body || {}; // b.pending → into the queue «بانتظار الاعتماد»; b.date → its slot
+  const p = store.getProposals()[b.id];
   if (!p || p.status !== "pending") return res.status(404).json({ ok: false, error: "proposal not found" });
   let routedTo = "";
   if (p.kind === "template") { store.addCustomTemplate({ id: p.id, name: p.name, base: p.base, accent: p.accent }); routedTo = "templates"; }
@@ -985,10 +986,10 @@ app.post("/api/proposals/approve", (req, res) => {
       id: qid, t: p.t, t2: p.t2 || "", cta: p.cta || "",
       cap: p.cap || `${p.t}${p.t2 ? " · " + p.t2 : ""}${p.cta ? "\n\n" + p.cta : ""}`, // the proposal's own caption (reels carry the full one)
       ty: qty, ch: "IG", tyc: "#6E1444",
-      date: p.date || `${slotDay} · 20:00`,
+      date: String(b.date || "").trim().slice(0, 40) || p.date || `${slotDay} · 20:00`,
       mediaUrl: media, images: (p.images || []).map((u) => u.split("?")[0]), gen: true, template: p.template, regenerated: isCar,
     });
-    store.approve(qid);   // status «معتمد» → shows approved & publish-ready in the queue
+    if (b.pending !== true) store.approve(qid);   // status «معتمد» → shows approved & publish-ready in the queue
     routedTo = "pipeline";
     // Reflect the approval on the SOURCE plan item so «خطة المحتوى» shows it as
     // designed + approved (locked) — not a re-designable «مسودة» as if untouched.
@@ -1291,6 +1292,8 @@ app.post("/api/video/queue", (req, res) => {
   const removed = new Set(store.getRemoved());
   const doc = loadContent() || { queue: [] }; doc.queue = doc.queue || [];
   if (p.queueId && !removed.has(p.queueId) && [...baseState().queue, ...doc.queue].some((q) => q.id === p.queueId)) return res.json({ ok: true, queueId: p.queueId, already: true });
+  const byMedia = doc.queue.find((q) => q.mediaUrl === `/media/design/post-${p.id}.mp4` && !removed.has(q.id)); // renumbered entry
+  if (byMedia) { store.saveVideoProject({ id: p.id, queueId: byMedia.id, status: "queued" }); return res.json({ ok: true, queueId: byMedia.id, already: true }); }
   if (p.queueId) { doc.queue = doc.queue.filter((q) => q.id !== p.queueId); saveContent(doc); } // our own stale entry hidden under a deleted id
   if (!p.previewUrl) return res.status(400).json({ ok: false, error: "لا توجد نسخة منتجة" });
   const src = path.join(designsDir(), String(p.previewUrl).split("?")[0].replace(/^\/media\/design\//, ""));
@@ -1328,6 +1331,7 @@ app.post("/api/queue/renumber", (req, res) => {
   if (!q) return res.status(404).json({ ok: false, error: "post not found" });
   const newId = "MJ-" + String(nextIdNum(baseState().queue, usedIds())).padStart(3, "0");
   patchPost(id, { id: newId }); store.moveNote(id, newId);
+  for (const vp of Object.values(store.getVideoProjects())) if (vp.queueId === id) store.saveVideoProject({ id: vp.id, queueId: newId });
   res.json({ ok: true, from: id, to: newId });
 });
 // Re-date a generated queue post: "YYYY-MM-DD · HH:MM" (Oman time), or a label
