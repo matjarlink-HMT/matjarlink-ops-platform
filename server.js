@@ -1330,6 +1330,15 @@ app.post("/api/queue/renumber", (req, res) => {
   patchPost(id, { id: newId }); store.moveNote(id, newId);
   res.json({ ok: true, from: id, to: newId });
 });
+// Re-date a generated queue post: "YYYY-MM-DD · HH:MM" (Oman time), or a label
+// with no time (e.g. «بعد المراجعة») which the scheduler never auto-publishes.
+app.post("/api/queue/date", (req, res) => {
+  const { id, date } = req.body || {}; const d = String(date || "").trim().slice(0, 40);
+  if (!id || !d) return res.status(400).json({ ok: false, error: "id & date required" });
+  if (store.isPublished(id)) return res.status(409).json({ ok: false, error: "already published" });
+  const post = patchPost(String(id), { date: d });
+  res.json(post ? { ok: true, id, date: post.date, autoPublishable: Boolean(parseWhen(post.date)) } : { ok: false, error: "post not found" });
+});
 // Set the caption of a generated queue post (one that lives in content.json).
 app.post("/api/queue/caption", (req, res) => {
   const { id, cap } = req.body || {};
