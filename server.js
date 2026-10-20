@@ -977,6 +977,10 @@ app.post("/api/proposals/approve", (req, res) => {
     // 20:00 used to date it today 20:00 → already due → auto-published within a minute).
     const { date: today, hour } = muscatDateHour();
     const slotDay = hour >= 20 ? new Date(Date.parse(today + "T00:00:00Z") + 86400000).toISOString().slice(0, 10) : today;
+    // The slot proposed in «الاعتماد» (owner-editable) — unless it has already
+    // passed by the time of approval, then the next 20:00 still ahead.
+    let qdate = String(b.date || "").trim().slice(0, 40) || p.date || "";
+    const qwhen = parseWhen(qdate); if (!qwhen || qwhen.getTime() < Date.now()) qdate = `${slotDay} · 20:00`;
     const fmt = p.format || "";
     const isReel = fmt.includes("ريل") || /\.mp4/.test(p.previewUrl || "") || (p.ty || "").includes("ريل");
     const isCar = fmt.includes("كاروسيل") || (p.images && p.images.length > 1);
@@ -986,7 +990,7 @@ app.post("/api/proposals/approve", (req, res) => {
       id: qid, t: p.t, t2: p.t2 || "", cta: p.cta || "",
       cap: p.cap || `${p.t}${p.t2 ? " · " + p.t2 : ""}${p.cta ? "\n\n" + p.cta : ""}`, // the proposal's own caption (reels carry the full one)
       ty: qty, ch: "IG", tyc: "#6E1444",
-      date: String(b.date || "").trim().slice(0, 40) || p.date || `${slotDay} · 20:00`,
+      date: qdate,
       mediaUrl: media, images: (p.images || []).map((u) => u.split("?")[0]), gen: true, template: p.template, regenerated: isCar,
     });
     if (b.pending !== true) store.approve(qid);   // status «معتمد» → shows approved & publish-ready in the queue
@@ -1333,6 +1337,29 @@ app.post("/api/queue/renumber", (req, res) => {
   patchPost(id, { id: newId }); store.moveNote(id, newId);
   for (const vp of Object.values(store.getVideoProjects())) if (vp.queueId === id) store.saveVideoProject({ id: vp.id, queueId: newId });
   res.json({ ok: true, from: id, to: newId });
+});
+// «الاعتماد» carries a proposed, owner-editable publish slot per design.
+const SLOT_RE = /^\d{4}-\d{2}-\d{2} · \d{2}:\d{2}$/;
+app.post("/api/proposals/date", (req, res) => {
+  const { id, date } = req.body || {}; const p = store.getProposals()[id];
+  if (!p || p.status !== "pending") return res.status(404).json({ ok: false, error: "proposal not found" });
+  if (!SLOT_RE.test(String(date || ""))) return res.status(400).json({ ok: false, error: "التاريخ بصيغة YYYY-MM-DD · HH:MM" });
+  store.saveProposal({ ...p, date: String(date) });
+  res.json({ ok: true, id, date: String(date) });
+});
+// Send an unapproved generated queue post back to «الاعتماد» with a proposed slot.
+app.post("/api/queue/to-approval", (req, res) => {
+  const { id, date } = req.body || {};
+  const doc = loadContent(); const q = doc && (doc.queue || []).find((x) => x.id === id);
+  if (!q) return res.status(404).json({ ok: false, error: "post not found" });
+  if (store.isPublished(id) || (store.getNotes()[id] || {}).status === "معتمد") return res.status(409).json({ ok: false, error: "published or approved" });
+  if (!q.mediaUrl) return res.status(400).json({ ok: false, error: "no media" });
+  const pid = (/\.mp4/.test(q.mediaUrl) ? "reel-" : "post-") + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+  const isReel = /\.mp4/.test(q.mediaUrl);
+  store.saveProposal({ id: pid, kind: "post", template: q.template || "brand-motion", format: isReel ? "ريل" : "منشور", ty: q.ty || (isReel ? "ريل نوعي" : "منشور علامة"), t: q.t || "", t2: q.t2 || "", cta: q.cta || "", cap: q.cap || "", name: (isReel ? "ريل · " : "") + (q.t || ""), previewUrl: `${q.mediaUrl}?v=${Date.now()}`, date: SLOT_RE.test(String(date || "")) ? String(date) : "", fromQueue: id });
+  doc.queue = doc.queue.filter((x) => x.id !== id); saveContent(doc); store.resetPostRecord(id);
+  for (const vp of Object.values(store.getVideoProjects())) if (vp.queueId === id) store.saveVideoProject({ id: vp.id, queueId: null, status: "needsReview" });
+  res.json({ ok: true, from: id, proposal: pid });
 });
 // Re-date a generated queue post: "YYYY-MM-DD · HH:MM" (Oman time), or a label
 // with no time (e.g. «بعد المراجعة») which the scheduler never auto-publishes.

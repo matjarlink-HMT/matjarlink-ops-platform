@@ -792,6 +792,9 @@ async function renderApprovals(C) {
     return `<div class="tplcard">
       <div class="tplhd"><span class="tplname">${APPR_ICON[p.kind]} ${escapeHtml(p.name || p.label || p.t || "")}</span>${fmtBadge || (p.date ? `<span class="pill p-info">${escapeHtml((p.date || "").split(" · ")[0])}${p.ty ? " · " + escapeHtml(p.ty) : ""}</span>` : "")}</div>
       <div class="tplshots apreview" data-appr="${p.id}" title="اضغط للمعاينة" style="grid-template-columns:1fr;cursor:zoom-in;position:relative">${media}<span style="position:absolute;top:.45rem;left:.45rem;background:rgba(0,0,0,.6);color:#fff;border-radius:.45rem;padding:.12rem .45rem;font-size:.82rem;font-weight:700;pointer-events:none">${isVid ? "▶ تشغيل" : nSlides > 1 ? "⤢ " + nSlides + " شرائح" : "🔍 تكبير"}</span></div>
+      ${p.kind === "post" ? `<label class="mut" style="display:flex;align-items:center;gap:.3rem;flex-wrap:wrap;margin-top:.4rem">📅 موعد النشر المقترح:
+        <input type="date" class="sinput sm adate" data-appr="${p.id}" value="${escapeHtml((p.date || "").split(" · ")[0] || "")}" style="width:auto">
+        <input type="time" class="sinput sm atime" data-appr="${p.id}" value="${escapeHtml((p.date || "").split(" · ")[1] || "20:00")}" style="width:auto"></label>` : ""}
       <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.4rem">
         <button class="btn ok sm aappr" data-appr="${p.id}">✓ ${T("appr_approve")}</button>
         ${isVid ? `<button class="btn sm amontir" data-appr="${p.id}" title="مراجعة وتحسين احترافي للريل">🎬 المونتير</button>` : ""}
@@ -836,9 +839,17 @@ async function renderApprovals(C) {
   const run = $("#apprrun");
   if (run) run.onclick = async () => { run.disabled = true; run.innerHTML = `<span class="dots"><i></i><i></i><i></i></span> ${T("prop_running")}`; await fetch("/api/proposals/run-now", { method: "POST" }).catch(() => {}); renderApprovals(C); };
   const msg = (id) => C.querySelector(`.amsg[data-appr="${id}"]`);
+  const saveSlot = async (id) => {
+    const d = C.querySelector(`.adate[data-appr="${id}"]`), t = C.querySelector(`.atime[data-appr="${id}"]`), m = msg(id);
+    if (!d || !d.value || !t || !t.value) return;
+    const r = await fetch("/api/proposals/date", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, date: `${d.value} · ${t.value}` }) }).then(x => x.json()).catch(() => null);
+    if (byId[id] && r && r.ok) byId[id].date = r.date;
+    if (m) m.textContent = r && r.ok ? `✓ الموعد: ${r.date}` : `⚠ ${(r && r.error) || "تعذّر حفظ الموعد"}`;
+  };
+  C.querySelectorAll(".adate,.atime").forEach(el => el.onchange = () => saveSlot(el.dataset.appr));
   C.querySelectorAll(".aappr").forEach(b => b.onclick = async () => {
     const m = msg(b.dataset.appr); if (m) m.textContent = "…";
-    const r = await fetch("/api/proposals/approve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: b.dataset.appr }) }).then(x => x.json()).catch(() => null);
+    const r = await fetch("/api/proposals/approve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: b.dataset.appr, ...(() => { const d = C.querySelector(`.adate[data-appr="${b.dataset.appr}"]`), t = C.querySelector(`.atime[data-appr="${b.dataset.appr}"]`); return d && d.value && t && t.value ? { date: `${d.value} · ${t.value}` } : {}; })() }) }).then(x => x.json()).catch(() => null);
     if (r && r.ok) {
       // Refresh state so the newly-approved design is immediately visible in قائمة النشر.
       try { S = await fetch("/api/state").then(x => x.json()); buildChrome(); } catch (e) {}
