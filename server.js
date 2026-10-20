@@ -104,7 +104,7 @@ app.get("/api/state", async (req, res) => {
   state.notes = store.getNotes();
   state.leads = store.getLeads();
   state.publishReady = metaPublish.publishReady();
-  state.autoPublish = (store.cfgGet("AUTO_PUBLISH") || process.env.AUTO_PUBLISH) === "on";
+  state.autoPublish = (store.cfgStored("AUTO_PUBLISH") || process.env.AUTO_PUBLISH) === "on";
   state.publishedLog = store.getPublished();
   // Apply Claude-regenerated content overrides onto the queue.
   state.queue = state.queue.map(applyOverride);
@@ -2352,7 +2352,7 @@ app.post("/api/republish", (req, res) => {
 // and that have public media, then records them so they never double-post.
 // The dashboard setting wins over the Railway env var, so the owner can pause
 // publishing from the platform without a redeploy.
-const AUTO = () => (store.cfgGet("AUTO_PUBLISH") || process.env.AUTO_PUBLISH) === "on";
+const AUTO = () => (store.cfgStored("AUTO_PUBLISH") || process.env.AUTO_PUBLISH) === "on";
 function parseWhen(date) { const m = (date || "").match(/(\d{4}-\d{2}-\d{2})[^\d]+(\d{2}):(\d{2})/); return m ? new Date(`${m[1]}T${m[2]}:${m[3]}:00+04:00`) : null; } // Oman time (GST)
 const STALE_MS = 24 * 3600 * 1000; // don't auto-post backlog older than a day
 // Per-post in-flight lock shared by the scheduler AND manual publish — closes

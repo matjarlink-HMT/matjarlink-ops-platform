@@ -37,6 +37,7 @@ try { cfg = JSON.parse(fs.readFileSync(CFG_FILE, "utf8")); } catch (e) { cfg = {
 function persistCfg() { try { writeDurable(CFG_FILE, JSON.stringify(cfg)); } catch (e) {} }
 // Resolve a key: environment variable wins, then runtime config.
 export function cfgGet(key) { return process.env[key] || cfg[key] || ""; }
+export function cfgStored(key) { return cfg[key] || ""; } // the dashboard-saved value only (env ignored)
 export function cfgSet(map) { for (const k in map) { if (map[k] === "" || map[k] == null) delete cfg[k]; else cfg[k] = map[k]; } persistCfg(); }
 export function cfgHas(key) { return Boolean(cfgGet(key)); }
 
